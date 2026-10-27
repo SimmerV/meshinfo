@@ -5,7 +5,7 @@ import json
 from storage.retention import RETENTION_SCOPES, retention_policy
 
 OPERATIONS = frozenset({"retention", "compression", "backup"})
-STATUSES = frozenset({"disabled", "forever", "busy", "complete", "partial", "blocked", "error", "success", "unknown"})
+STATUSES = frozenset({"disabled", "forever", "busy", "complete", "partial", "blocked", "error", "success", "unknown", "packed", "unchanged", "no_candidates", "running"})
 
 
 async def prepare_retention_index(connection, config: dict) -> None:

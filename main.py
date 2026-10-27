@@ -85,6 +85,7 @@ async def maintenance_loop(config, data, interval_seconds: float = MAINTENANCE_I
     tick = 0
     backup_task: asyncio.Task | None = None
     retention_task: asyncio.Task | None = None
+    compression_task: asyncio.Task | None = None
     try:
         while True:
             try:
@@ -97,6 +98,10 @@ async def maintenance_loop(config, data, interval_seconds: float = MAINTENANCE_I
                 # Each bounded cycle is independent of MQTT, API and node upkeep.
                 if retention_task is None or retention_task.done():
                     retention_task = asyncio.create_task(maintenance.run_retention(config, data.pg_storage))
+                if (tick % 60 == 0
+                        and config.get("storage", {}).get("compression", {}).get("enabled", False)
+                        and (compression_task is None or compression_task.done())):
+                    compression_task = asyncio.create_task(maintenance.run_compression(config, data.pg_storage, after=retention_task))
                 # Backups run whenever the newest dump is older than the schedule —
                 # a single-flight background task; a multi-GB dump must not stall this loop.
                 if (backup_task is None or backup_task.done()) and maintenance.backup_due(config):
@@ -109,7 +114,7 @@ async def maintenance_loop(config, data, interval_seconds: float = MAINTENANCE_I
             await asyncio.sleep(interval_seconds)
 
     finally:
-        tasks = [task for task in (retention_task, backup_task) if task is not None]
+        tasks = [task for task in (retention_task, backup_task, compression_task) if task is not None]
         for task in tasks:
             task.cancel()
         if tasks:

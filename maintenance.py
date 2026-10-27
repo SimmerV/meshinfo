@@ -66,6 +66,33 @@ def backup_dir(config: Dict[str, Any]) -> Path:
     return d if d.is_absolute() else REPO_ROOT / d
 
 
+async def run_compression(config, storage, *, after=None) -> dict:
+    """One opt-in, space-checked closed-index packing attempt per hour."""
+    from storage.db.index_maintenance import run_index_packing_cycle
+    from storage.db.compression import CompressionRefused
+    from storage.db.maintenance_status import save_status
+
+    result = {"status": "error"}
+    try:
+        if after is not None:
+            await asyncio.shield(after)
+        async with storage.pool.acquire(timeout=3) as conn:
+            try:
+                result = await run_index_packing_cycle(conn, config)
+            except CompressionRefused as exc:
+                result = {"status": "blocked", "reason": str(exc)}
+            except Exception as exc:
+                logger.exception("Index packing could not finish")
+                result = {"status": "error", "reason": type(exc).__name__}
+            await save_status(conn, "compression", result)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("Index-packing status could not be persisted")
+        result = {**result, "status": "error", "status_persisted": False}
+    return result
+
+
 def latest_backup_age_days(dir_path: Path, now: Optional[float] = None) -> Optional[float]:
     """Age in days of the newest finished dump, or None if there is none."""
     now = time.time() if now is None else now

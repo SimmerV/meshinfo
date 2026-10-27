@@ -83,6 +83,14 @@ def test_cleanse_redacts_encryption_keys_in_both_shapes():
     assert out["broker"]["channels"]["encryption"]["key"] == "***REDACTED***"
 
 
+def test_cleanse_keeps_operator_database_filesystem_private():
+    import config as config_mod
+    source = {"storage": {"compression": {"enabled": True, "database_filesystem": "/private/database"}}}
+    cleaned = config_mod.Config.cleanse(source)
+    assert cleaned["storage"]["compression"]["database_filesystem"] == "***REDACTED***"
+    assert source["storage"]["compression"]["database_filesystem"] == "/private/database"
+
+
 def _flood_guard_warnings(**storage_over):
     import config as config_mod
 

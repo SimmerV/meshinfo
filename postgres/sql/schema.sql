@@ -126,7 +126,10 @@ CREATE TABLE IF NOT EXISTS telemetry (
 );
 
 CREATE INDEX IF NOT EXISTS idx_telemetry_from_node_id ON telemetry(from_node_id);
-CREATE INDEX IF NOT EXISTS idx_telemetry_created_at ON telemetry(created_at DESC);
+-- Ascending append-time indexes avoid repeated left-edge page splits; PostgreSQL
+-- uses backward scans for newest-first queries. Existing indexes retain their
+-- definitions until explicitly rebuilt (IF NOT EXISTS never rewrites them).
+CREATE INDEX IF NOT EXISTS idx_telemetry_created_at ON telemetry(created_at);
 CREATE INDEX IF NOT EXISTS idx_telemetry_rx_time ON telemetry(rx_time DESC);
 
 CREATE INDEX IF NOT EXISTS idx_telemetry_type ON telemetry(telemetry_type);
@@ -161,8 +164,8 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_channel_id ON chat_messages(channel_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_from_node_id ON chat_messages(from_node_id);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp);
 
 -- Traceroutes table
 CREATE TABLE IF NOT EXISTS traceroutes (
@@ -187,7 +190,7 @@ CREATE TABLE IF NOT EXISTS traceroutes (
 
 CREATE INDEX IF NOT EXISTS idx_traceroutes_from_node_id ON traceroutes(from_node_id);
 CREATE INDEX IF NOT EXISTS idx_traceroutes_to_node_id ON traceroutes(to_node_id);
-CREATE INDEX IF NOT EXISTS idx_traceroutes_created_at ON traceroutes(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_traceroutes_created_at ON traceroutes(created_at);
 
 -- Resolved return-path hop ids (reply rows only; NULL = not resolved).
 -- Fresh-install copies: existing databases get these from the ensure_schema
@@ -230,8 +233,8 @@ END $mqtt$;
 
 -- pg_trgm + trgm topic index live in ensure_schema's fail-soft migration — this
 -- file runs as one implicit transaction and must not abort on a restricted PG.
-CREATE INDEX IF NOT EXISTS idx_mqtt_messages_created_at ON mqtt_messages(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_mqtt_messages_timestamp ON mqtt_messages(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_mqtt_messages_created_at ON mqtt_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_mqtt_messages_timestamp ON mqtt_messages(timestamp);
 
 -- Node ID columns for filtered packet queries (managed via ensure_schema migrations)
 ALTER TABLE mqtt_messages ADD COLUMN IF NOT EXISTS from_node_id VARCHAR(8);

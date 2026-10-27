@@ -47,6 +47,20 @@ months = 0
 overrides = {}                       # e.g. { packets = 3, telemetry = 6, chat = 0 }
 # Other available scopes: traceroutes, neighbors.
 
+# Lossless packing of indexes on closed packet-history months. Opt-in; processes
+# one eligible index per hour. This does not compress small JSON payloads or
+# impose a disk quota. Read STORAGE.md before enabling.
+[storage.compression]
+enabled = false
+after_months = 6
+index_fillfactor = 100
+max_index_mib = 64
+reserve_mib = 1024
+max_seconds = 5
+# Must be a directory on the ACTUAL PostgreSQL index filesystem, accessible to
+# this process. The application host's filesystem is not a valid assumption.
+database_filesystem = ""
+
 # Database snapshot backups. The app schedules these itself — the schedule is
 # applied automatically on (re)start, no host cron needed. Backup retention is
 # separate from history retention; backups may still contain expired history.

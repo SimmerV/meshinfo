@@ -122,6 +122,52 @@ every expired record has already been removed.
 - Backups can contain history that has expired from the live database; backup
   retention is an independent policy.
 
+## Lossless index packing
+
+Small JSON payloads did not benefit from lowering TOAST targets in our measured
+traffic sample. This release does not claim to compress those payloads or create
+a separate cold archive. All retained data stays in the same PostgreSQL tables,
+with its existing identities, search, pagination, and reception reconstruction.
+Lossless index packing reduces overhead; forever retention still grows forever.
+
+Fresh schemas use ascending single-column time indexes. PostgreSQL supports
+newest-first results through backward scans; multi-column index order is left
+unchanged. Existing indexes are not silently replaced on startup.
+See PostgreSQL's [index ordering documentation](https://www.postgresql.org/docs/18/indexes-ordering.html).
+
+`[storage.compression]` is disabled by default. When enabled, an hourly task
+attempts one eligible B-tree index on packet/reception months older than
+`after_months` (default six). It waits for this process's retention cycle, then
+uses the shared maintenance lock. Default limits are 64 MiB per index, a
+five-second transaction, 100 ms lock wait, 32 MiB maintenance memory, no parallel
+workers, and at least four times the index size plus 1 GiB free headroom.
+The configured `database_filesystem` must be on the actual database filesystem;
+on separate database hosts, run the manual tool where that disk is accessible.
+Custom index tablespaces are excluded from automation. Replication slots or WAL
+archiving require a separately budgeted operation and are refused here.
+
+Use `python scripts/compress_storage.py plan` for a catalog-only preview.
+For a manual, explicitly named closed index:
+
+```sh
+python scripts/compress_storage.py pack-index INDEX_NAME --after-months 0 \
+  --apply --database-filesystem /actual/postgresql/filesystem
+```
+
+Zero `after_months` includes completed months, never the current month. Index
+packing is a short ordinary `REINDEX` transaction: some queries and late writes
+can briefly wait. Timeout, cancellation, insufficient headroom, index-definition
+changes, or a larger replacement rolls back the operation. No invalid staging
+index is left behind. Larger indexes are visible as over-limit candidates and
+need an explicit maintenance budget; there is no background full-table rewrite.
+See PostgreSQL's [REINDEX documentation](https://www.postgresql.org/docs/18/sql-reindex.html).
+
+Reproduce bounded experiments with `scripts/compress_storage.py benchmark` and
+`benchmark-index`, both requiring `--database` naming a separate initialized
+test database. Samples are seeded block samples capped by rows and bytes. They
+are not a statistically representative prediction of whole-archive savings.
+Query measurements are cached observations, not cold-cache or load guarantees.
+
 ## Verification record
 
 Phase-specific commands, measurements, and deployment checks will be recorded
@@ -160,3 +206,31 @@ history.
   Edge history/packet/Stats requests returned HTTP 200. The live policy remains
   forever and disabled; an explicit manual cycle correctly returned `disabled`.
 - Approximately 6.4 GiB filesystem space remained. No live history was deleted.
+
+### Phase 3 — 2026-10-27
+
+- Bounded real sample: 2,000 packets across July–October. TOAST targets
+  2040/1024/512 all consumed 2,138,112 bytes. No ineffective setting was deployed.
+- A 20,000-row append model using those payloads produced an 819,200-byte
+  descending timestamp index versus 466,944 bytes ascending (43% smaller).
+  Repacking the descending index at fillfactor 100 reduced it to 425,984 bytes
+  (48% smaller); returned rows were identical. Cached query medians were
+  0.668–0.807 ms across the tested variants.
+- Live bounded verification: `mqtt_messages_2026_09_created_at_idx` decreased
+  from 28,524,544 to 14,327,808 bytes, saving **14,196,736 bytes (49.77%)** in
+  2.597 seconds. Index identity/keys/uniqueness/attachment were preserved; the
+  heap was untouched. The newest 100 complete packet tuples compared equal.
+  Five-query cached medians were 1.336 ms before and 0.967 ms after. WAL generated
+  during the operation was 14,677,088 bytes; other concurrent writes can contribute.
+- Eight isolated PostgreSQL packing scenarios verify exact packet/reception
+  preservation, cancellation, timeout, space refusal, post-build rollback,
+  writer contention, shared maintenance exclusion, and growth between preview
+  and lock acquisition. No live history expired.
+- Full regression run: 604 passed before the final CLI/redaction/race additions;
+  all added/changed focused checks subsequently passed (58 compression checks
+  including eight PostgreSQL cases; 10 configuration checks).
+- Rebuilt and deployed the backend. Operator preview inspected 77 indexes and
+  correctly found no six-month-old candidates on this deployment. Public
+  history/search/config checks returned HTTP 200; the filesystem path was
+  redacted. Automatic packing remains disabled here; the measured manual index
+  rebuild above is the only live packing performed. About 6.3 GiB remained free.

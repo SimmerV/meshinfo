@@ -19,6 +19,7 @@ from typing import Any
 
 from utils import normalize_node_id
 from storage.retention import retention_policy
+from storage.db.index_maintenance import packing_policy
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "storage": {
         # Opt-in history expiration. Zero preserves all history indefinitely.
         "retention": {"enabled": False, "months": 0, "overrides": {}},
+        "compression": {
+            "enabled": False, "after_months": 6, "index_fillfactor": 100,
+            "max_index_mib": 64, "reserve_mib": 1024, "max_seconds": 5,
+            "database_filesystem": "",
+        },
         # Uplink dedup (#526): store one canonical mqtt_messages row per mesh
         # packet and every per-gateway copy as a packet_receptions row (lossless).
         # Disable to restore the legacy one-row-per-copy firehose.
@@ -522,6 +528,7 @@ def validate(config: dict) -> list[str]:
     # shorter lifetime or continue with partly applied settings.
     try:
         retention_policy(config)
+        packing_policy(config)
     except ValueError as exc:
         raise ConfigValidationError(str(exc)) from exc
 
@@ -708,6 +715,7 @@ class Config:
             ("integrations", "geocoding", "geocode.maps.co", "api_key"),
             ("storage", "postgres", "password"),
             ("storage", "postgres", "username"),
+            ("storage", "compression", "database_filesystem"),
         ]
 
         for path in sensitive_paths:
