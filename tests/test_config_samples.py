@@ -91,6 +91,14 @@ def test_cleanse_keeps_operator_database_filesystem_private():
     assert source["storage"]["compression"]["database_filesystem"] == "/private/database"
 
 
+def test_cleanse_redacts_backup_destinations_but_keeps_policy_visible():
+    import config as config_mod
+    source = {"backups": {"dir": "/private/backups", "remote_target": "user@host:/private", "mode": "ssh", "keep_days": 30}}
+    cleaned = config_mod.Config.cleanse(source)["backups"]
+    assert cleaned["dir"] == cleaned["remote_target"] == "***REDACTED***"
+    assert cleaned["mode"] == "ssh" and cleaned["keep_days"] == 30
+
+
 def _flood_guard_warnings(**storage_over):
     import config as config_mod
 

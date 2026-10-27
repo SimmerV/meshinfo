@@ -104,8 +104,9 @@ async def maintenance_loop(config, data, interval_seconds: float = MAINTENANCE_I
                     compression_task = asyncio.create_task(maintenance.run_compression(config, data.pg_storage, after=retention_task))
                 # Backups run whenever the newest dump is older than the schedule —
                 # a single-flight background task; a multi-GB dump must not stall this loop.
-                if (backup_task is None or backup_task.done()) and maintenance.backup_due(config):
-                    backup_task = asyncio.create_task(maintenance.run_backup(config))
+                if (backup_task is None or backup_task.done()) and await maintenance.scheduled_backup_due(config, data.pg_storage):
+                    preceding = compression_task if compression_task is not None and not compression_task.done() else retention_task
+                    backup_task = asyncio.create_task(maintenance.run_backup(config, data.pg_storage, after=preceding))
             except asyncio.CancelledError:
                 raise
             except Exception:

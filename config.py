@@ -20,6 +20,8 @@ from typing import Any
 from utils import normalize_node_id
 from storage.retention import retention_policy
 from storage.db.index_maintenance import packing_policy
+from storage.backup import BackupPolicy
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -132,10 +134,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # off | daily | weekly | monthly — how often the app takes a pg_dump.
         "schedule": "daily",
         "keep_days": 4,
+        "mode": "local",
+        "min_free_mb": 256,
+        "timeout_seconds": 21600,
         # Relative paths resolve against the repo root (mounted at /app in Docker).
         "dir": "backups",
-        # Optional rsync destination for off-box copies, e.g. "user@host:/backups/meshinfo".
-        # Honored by scripts/backup_db.sh (host-side, where SSH keys live).
+        # mode=ssh streams here without a local archive; requires SSH setup.
         "remote_target": "",
     },
     "storage": {
@@ -599,6 +603,10 @@ def validate(config: dict) -> list[str]:
     check(_validate_positive_number(config, "backups.keep_days"))
     check(_validate_type(config, "backups.dir", str))
     check(_validate_type(config, "backups.remote_target", str))
+    try:
+        BackupPolicy.from_config(config, Path(__file__).resolve().parent)
+    except ValueError as exc:
+        raise ConfigValidationError(str(exc)) from exc
 
     # ── debug ─────────────────────────────────────────────────────────
     check(_validate_type(config, "debug", bool))
@@ -716,6 +724,8 @@ class Config:
             ("storage", "postgres", "password"),
             ("storage", "postgres", "username"),
             ("storage", "compression", "database_filesystem"),
+            ("backups", "dir"),
+            ("backups", "remote_target"),
         ]
 
         for path in sensitive_paths:

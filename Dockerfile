@@ -1,5 +1,6 @@
 # trunk-ignore-all(checkov/CKV_DOCKER_3)
-FROM python:3.15-slim
+# Pinned to 3.14: meshtastic 2.7.x declares Requires-Python <3.15.
+FROM python:3.14-slim
 
 LABEL org.opencontainers.image.source https://github.com/MeshAddicts/meshinfo
 LABEL org.opencontainers.image.description "Realtime web UI to run against a Meshtastic regional or private mesh network."
@@ -20,7 +21,7 @@ RUN apt-get update \
     && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt trixie-pgdg main" \
        > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client-18 \
+    && apt-get install -y --no-install-recommends postgresql-client-18 openssh-client \
     && apt-get purge -y gnupg \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*

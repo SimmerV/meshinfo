@@ -8,6 +8,7 @@ import shutil
 import sys
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -26,6 +27,9 @@ def load_config(path: Path) -> dict:
 
 def local_capacity(config: dict, config_path: Path) -> dict:
     """Only identify the backup filesystem; a remote DB has a different disk."""
+    if config.get("backups", {}).get("mode", "local") == "ssh":
+        return {"backup_filesystem": None, "database_filesystem": None,
+                "backup_filesystem_note": "SSH destination free space is checked during streaming; local app free space does not describe it."}
     directory = Path(config.get("backups", {}).get("dir", "backups"))
     if not directory.is_absolute():
         directory = config_path.resolve().parent / directory
@@ -50,6 +54,21 @@ def local_capacity(config: dict, config_path: Path) -> dict:
 async def report(args: argparse.Namespace) -> dict:
     config = load_config(args.config)
     pg = config["storage"]["postgres"]
+    if args.database:
+        pg["database"] = args.database
+    if args.command == "backup":
+        if not args.apply:
+            raise ValueError("backup requires --apply")
+        from storage.backup_controller import run_backup
+        pool = await asyncpg.create_pool(
+            host=pg["host"], port=pg.get("port", 5432), user=pg["username"],
+            password=pg.get("password", ""), database=pg["database"],
+            min_size=1, max_size=1, timeout=5, command_timeout=5,
+        )
+        try:
+            return await run_backup(config, SimpleNamespace(pool=pool), Path(__file__).resolve().parents[1], manual=True)
+        finally:
+            await pool.close()
     connection = await asyncpg.connect(
         host=pg["host"], port=pg.get("port", 5432),
         user=pg["username"], password=pg.get("password", ""),
@@ -74,8 +93,8 @@ async def report(args: argparse.Namespace) -> dict:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("command", nargs="?", choices=["report", "expire"], default="report")
-    result.add_argument("--apply", action="store_true", help="Allow the expire command to execute the enabled policy")
+    result.add_argument("command", nargs="?", choices=["report", "expire", "backup"], default="report")
+    result.add_argument("--apply", action="store_true", help="Execute an enabled expiration policy or an explicitly requested backup")
     result.add_argument("--config", type=Path, default=Path("config.toml"))
     result.add_argument("--database", help="Database override, for example an isolated test database")
     result.add_argument("--json", action="store_true", help="Machine-readable JSON (the default report format)")

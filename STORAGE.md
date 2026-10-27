@@ -168,6 +168,106 @@ test database. Samples are seeded block samples capped by rows and bytes. They
 are not a statistically representative prediction of whole-archive savings.
 Query measurements are cached observations, not cold-cache or load guarantees.
 
+## Backup retention and streaming
+
+Backups have their own lifetime. `backups.keep_days` controls local verified
+snapshots; `remote_keep_days` controls the SSH destination and defaults to
+`keep_days`. The newest verified snapshot is always retained, even if older
+than that lifetime. Shortening live-history retention does not erase records
+inside existing backups.
+
+`schedule = "off"` disables automatic snapshots. Explicit one-off commands are
+still available:
+
+```sh
+# Host Python 3.11+ and Docker; uses host SSH keys when mode=ssh.
+scripts/backup_db.sh --config config.toml
+
+# Container/app PostgreSQL clients; explicit one-off even if schedule is off.
+docker compose exec meshinfo python scripts/manage_storage.py backup --apply
+```
+
+For direct off-box streaming:
+
+```toml
+[backups]
+schedule = "daily"
+mode = "ssh"
+remote_target = "backupuser@backup-host:/srv/backups/this-mesh"
+keep_days = 4
+remote_keep_days = 30
+min_free_mb = 256
+timeout_seconds = 21600
+```
+
+The SSH destination needs a Unix filesystem, Python 3, and a compatible
+`pg_restore` (PostgreSQL 18 for this stack). Provision a dedicated directory,
+SSH key, and verified `known_hosts` entry. Connections use batch mode and strict
+host-key checking. The receiver is transmitted with each invocation; no service
+or installed MeshInfo agent is required remotely. To use the in-app scheduler,
+mount the prepared SSH configuration read-only into the backend, for example:
+
+```yaml
+services:
+  meshinfo:
+    volumes:
+      - ./backup-ssh:/root/.ssh:ro
+```
+
+The host script uses the host's SSH configuration instead. It retains the
+`CONFIG_TOML`, `CONTAINER`, `DB_USER`, `DB_NAME`, `BACKUP_DIR`, `KEEP_DAYS`, and
+`REMOTE_TARGET` environment overrides; `BACKUP_MODE` explicitly selects a mode.
+A legacy nonempty remote target without an explicit mode selects streaming,
+which does not also retain a local archive. The host tool rejects an explicit
+local mode paired with a remote target rather than silently omit the remote copy.
+
+Snapshots use custom-format `pg_dump`, 256 KiB streaming chunks, bounded error
+buffers, and destination free-space checks. Local filesystem operations run
+outside the backend event loop; cancellation waits for those operations before
+closing or removing files. SSH mode creates no full local staging archive.
+The configured deadline covers dump, transfer, and verification; filesystem
+operations already in progress must finish safely during cancellation.
+
+Publication requires producer success, a complete SHA-256/size match, and a full
+`pg_restore` archive decode. A sidecar manifest records that verification.
+Atomic publication never overwrites an existing archive. Expiration runs only
+after a new verified snapshot exists. A pruning failure preserves that snapshot
+and reports `partial`. Archive decoding is not a substitute for a restore drill.
+
+One monitored PostgreSQL advisory lock coordinates backup, retention, and index
+packing. Loss of that connection cancels the dump. Host Docker jobs additionally
+track and terminate the actual container processes; stopping `docker exec`
+alone is insufficient. Scheduled jobs wait for this process's preceding bounded
+maintenance. Durable last-success/destination metadata survives restarts and
+makes a newly selected destination due immediately. Failures have a one-hour
+retry backoff, including across restarts. Operator reports include status,
+last-success time, bytes, verification, and cleanup counts; public responses
+omit paths and diagnostic details.
+
+Each database owns its backup directory using a durable UUID and a locked owner
+marker. A different database cannot adopt or prune that directory. Restoring a
+backup restores its identity, supporting disaster recovery into the same backup
+destination. For an **independent clone**, select a separate destination and
+rotate the identity in the cloned database before enabling its backups:
+
+```sql
+UPDATE storage_identity SET instance_id = gen_random_uuid() WHERE singleton;
+```
+
+Do not delete an ownership marker to bypass a mismatch. Crash-left recognized
+partial files are cleaned only after identity and exclusive-lock checks. Final
+archives, foreign files, symlinks, and legacy dumps without the new verification
+manifests are preserved. Existing installations should inventory and manually
+review legacy dumps after verifying their replacement; they are not silently
+deleted during upgrade and will otherwise continue occupying space.
+
+For a restore drill, check the archive against its manifest SHA-256, restore it
+into a **new empty test database** with `pg_restore --exit-on-error --no-owner
+--no-privileges`, then check records, constraints, sequences, packet links and
+reconstructed copies through MeshInfo. Remove only that disposable database
+after inspection. The integration tests in `tests/test_backup_integration.py`
+provide a repeatable guarded example using tiny synthetic data.
+
 ## Verification record
 
 Phase-specific commands, measurements, and deployment checks will be recorded
@@ -234,3 +334,44 @@ history.
   history/search/config checks returned HTTP 200; the filesystem path was
   redacted. Automatic packing remains disabled here; the measured manual index
   rebuild above is the only live packing performed. About 6.3 GiB remained free.
+
+### Phase 4 and final verification — 2026-10-27
+
+- Full backend regression: **746 passed**, with all 47 PostgreSQL/restore cases
+  enabled on disposable databases. Final frontend suite: **401 passed** across
+  37 files; production frontend build and TypeScript checks passed.
+- Actual deployment image: **699 non-database tests passed**, then **45 real
+  PostgreSQL tests passed** using that image's Python and asyncpg versions. The
+  other two database cases are the host/Docker-pipe restore drills below. The
+  runtime checks also corrected a test-order assumption about pre-existing
+  synthetic expired rows; production expiration behavior was correct.
+- Two complete restore drills passed: local host wrapper produced a 129,077-byte
+  archive (2.837-second round trip); the actual receiver over a local Docker
+  pipe produced 129,088 bytes (1.792 seconds). Each fixture contained 64 canonical
+  packets and 192 reception copies, all history families, and current state.
+  Restored raw rows, Unicode payloads, timestamps, IDs, 128 indexes, 111
+  constraints, 10 sequences, reconstructed copies and pagination matched.
+- The receiver test validates framing, checksums, decoding and restoration;
+  an external SSH server/network was not configured or exercised.
+- The deployed backend controller additionally completed a 101,908-byte
+  temporary snapshot of the isolated database, with durable success status.
+  The snapshot was immediately removed; schedule-off stayed off.
+- Failure tests cover producer/transport errors, connection loss, timeout,
+  repeated cancellation, destination mismatch/change, disk reserve exhaustion,
+  orphan cleanup, pruning failure, and publication followed by status failure.
+  A real Docker process check demonstrated that stopping `docker exec` leaves
+  the container process alive, then verified token-checked cleanup terminates it.
+- Backend image rebuilt/deployed with SSH client support. Final backend and
+  PostgreSQL health checks were healthy; history, packet, nodes, Stats and Logs
+  requests returned HTTP 200. Existing deployment settings remain forever,
+  expiration disabled, automatic packing disabled, and scheduled backups off.
+- Both task-created test databases and temporary restore artifacts were removed.
+  Selected obsolete build cache from this task reclaimed 375.9 MB; current and
+  WebAssembly caches and all data volumes were preserved. Approximately 6.3 GiB
+  remained free. No live history records were expired.
+
+Validation used PostgreSQL 18 and Python 3.14 in the deployment image. The final
+commit includes the existing Docker/development Python 3.14 compatibility pins:
+Meshtastic 2.7.11 requires Python below 3.15, so leaving the upstream 3.15 values
+would prevent a clean checkout from building the tested deployment. Local
+configuration and the development Compose override remain Git-ignored.

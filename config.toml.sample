@@ -66,11 +66,16 @@ database_filesystem = ""
 # separate from history retention; backups may still contain expired history.
 [backups]
 schedule = "daily"                    # off | daily | weekly | monthly
-keep_days = 4                         # prune local dumps older than this
+mode = "local"                        # local | ssh (stream directly off-box)
+keep_days = 4                         # local snapshot retention, independent of history
+# remote_keep_days = 4                # SSH destination retention; defaults to keep_days
+min_free_mb = 256                     # leave at least this much on the destination
+timeout_seconds = 21600               # entire dump/transfer/verification deadline
 dir = "backups"                       # relative to the repo root, or absolute
-remote_target = ""                    # optional rsync destination for off-box copies
-                                      # (e.g. "user@host:/backups/meshinfo"); pushed by
-                                      # scripts/backup_db.sh on the host, where SSH keys live
+remote_target = ""                    # mode=ssh: "user@host:/backups/meshinfo"
+# SSH needs preconfigured keys/known_hosts and Python 3 + matching pg_restore on
+# the remote host. scripts/backup_db.sh uses host SSH configuration and Docker
+# PostgreSQL clients. See STORAGE.md for container SSH setup and restore checks.
 
 [storage.postgres]
 enabled = true

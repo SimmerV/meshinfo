@@ -37,6 +37,11 @@ directly for integrations. Responses are JSON unless noted.
 | GET | `/v1/storage/history` | Read-only retention policy and enclosing history bounds for packets, telemetry, chat, traceroutes, and neighbors. `months=0` means forever; `enforcement_enabled=false` means preview only. Partition bounds are approximate storage months, not exact first/last records. Cached for 60 seconds; returns 503 when unavailable. No filesystem paths or database credentials. |
 | GET | `/v1/channels` | Channel buckets with display facts and no messages — for labeling/filtering UIs. Query params: `range` (`1h`/`24h`/`7d`/`all`, default `24h`). Returns `{"channels": {"<id>": {"name", "totalMessages", "recentMessages", "newestTimestamp"}}}` with the same field semantics as `/v1/chat`. |
 
+The history response also includes `maintenance`, keyed by `retention`,
+`compression`, or `backup` when a durable result exists. Each exposes only its
+`updated_at`, status code, and per-history-scope status. Counts, diagnostics,
+backup destinations, and filesystem capacity remain in the operator report.
+
 ### Live events (SSE)
 
 | Method | Path | Notes |

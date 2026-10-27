@@ -215,11 +215,11 @@ def test_scheduler_keeps_each_worker_single_flight_and_awaits_cancellation(monke
                 await asyncio.sleep(0)
                 stopped[name].set()
 
-        monkeypatch.setattr(maintenance, "backup_due", lambda _config: True)
+        monkeypatch.setattr(maintenance, "scheduled_backup_due", AsyncMock(return_value=True))
 
         async def retention(*_args):
             return await worker("retention")
-        async def snapshot(*_args):
+        async def snapshot(*_args, **_kwargs):
             return await worker("backup")
         monkeypatch.setattr(maintenance, "run_retention", retention)
         monkeypatch.setattr(maintenance, "run_backup", snapshot)

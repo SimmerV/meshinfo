@@ -335,28 +335,37 @@ forever and can't be compacted — deploy early in a month to minimize it.
 
 ### Backups
 
-The archive is keep-forever, so backups are the only copy of history. The app
-schedules snapshots itself from config.toml — applied on every (re)start, no
-host cron required:
+History defaults to forever; optional retention controls live history. Backup
+retention is independent and can preserve records already expired from the live
+database. The app schedules snapshots from config.toml after restart:
 
 ```toml
 [backups]
 schedule = "daily"        # off | daily | weekly | monthly
-keep_days = 4             # prune local dumps older than this
+mode = "local"            # local | ssh
+keep_days = 4             # local verified snapshot retention
+# remote_keep_days = 4    # defaults to keep_days
 dir = "backups"           # relative to the repo root, or absolute
-remote_target = ""        # optional rsync destination for off-box copies
+remote_target = ""        # mode=ssh: user@host:/dedicated/backup/directory
 ```
 
-Dumps are pg_dump `-Fc` (compressed), validated with `pg_restore --list`
-before being trusted, written to the `./backups` mount, and pruned to
-`keep_days`. A backup runs whenever the newest dump is older than the
-schedule, so a missed window (host was off) is caught up at the next start.
+Dumps use compressed `pg_dump -Fc`, full archive decoding and SHA-256 checks,
+atomic completion markers, and destination ownership. Expired verified snapshots
+are pruned only after a new one succeeds; the newest is always retained. Legacy
+dumps without manifests are preserved for manual review. SSH mode streams
+directly off-box without a full local staging file. Durable status controls the
+schedule across restarts, and all maintenance shares one database advisory lock.
 
-`scripts/backup_db.sh` reads the same `[backups]` section for manual or
-host-cron runs, and is the path that pushes to `remote_target` (SSH keys live
-on the host, not in the container). Environment variables (`KEEP_DAYS`,
+`scripts/backup_db.sh` reads the same section for manual or host-cron runs using
+host SSH keys and Docker PostgreSQL clients. Environment variables (`KEEP_DAYS`,
 `BACKUP_DIR`, `REMOTE_TARGET`, `CONTAINER`, `DB_USER`, `DB_NAME`) override the
-config for one-off runs.
+config for one-off runs. Legacy nonempty `remote_target` without an explicit
+mode selects direct SSH streaming; it no longer creates an additional local
+archive. Explicit `mode=local` plus `remote_target` is rejected by the host tool
+to avoid silently omitting the remote copy.
+
+See [STORAGE.md](STORAGE.md) for retention, measured index packing, SSH setup,
+restore drills, independent-clone identity, and operational limits.
 
 ## Security
 

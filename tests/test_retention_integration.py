@@ -356,10 +356,16 @@ def test_every_row_scope_expires_history_and_preserves_current_state():
             for table in state_tables:
                 column = "id" if table == "nodes" else "node_id"
                 before[table] = dict(await conn.fetchrow(f"SELECT * FROM {table} WHERE {column}='abcd1900'"))
+            # Other synthetic integration suites may leave old history in this
+            # disposable DB. A finite policy should expire those rows too.
+            expected_deleted = {
+                table: await conn.fetchval(f"SELECT count(*) FROM {table} WHERE created_at < $1", cutoff)
+                for table in ("telemetry", "chat_messages", "traceroutes", "node_neighborinfo_history")
+            }
             result = await enforce_retention(conn, policy(telemetry=1, chat=1, traceroutes=1, neighbors=1))
             assert result["status"] == "complete", result
             for scope, table in (("telemetry", "telemetry"), ("chat", "chat_messages"), ("traceroutes", "traceroutes"), ("neighbors", "node_neighborinfo_history")):
-                assert result["scopes"][scope]["rows_deleted"] == 1
+                assert result["scopes"][scope]["rows_deleted"] == expected_deleted[table]
                 assert await conn.fetchval(f"SELECT count(*) FROM {table} WHERE id=$1", BASE + 1) == 0
                 assert await conn.fetchval(f"SELECT count(*) FROM {table} WHERE id=$1", BASE + 2) == 1
             for table in state_tables:

@@ -22,6 +22,7 @@ See live instances at [Central Valley Mesh](https://meshinfo.cvme.sh),
 - **Telemetry** -- Device metrics, environment sensors, and power data per node
 - **Traceroutes** -- Hop-by-hop path visualization between nodes
 - **MQTT Log** -- Live stream of raw mesh traffic for debugging
+- **History storage** -- Optional calendar-month retention, visible history coverage, guarded index packing, and verified local or streamed backups. See [STORAGE.md](STORAGE.md).
 - **Discord Integration** -- Bridge mesh messages and position updates to Discord channels
 - **Node Enrichment** -- Augment node data from the MeshInfo network discovery service
 - **Reverse Geocoding** -- Resolve node coordinates to human-readable locations

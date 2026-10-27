@@ -7,6 +7,15 @@ CREATE TABLE IF NOT EXISTS storage_maintenance_status (
     result JSONB NOT NULL
 );
 
+-- A fresh database owns its backup destination independently of hostname/user.
+-- Restoring this row preserves disaster-recovery ownership. Independent clones
+-- must rotate the UUID before using their own backup destination (STORAGE.md).
+CREATE TABLE IF NOT EXISTS storage_identity (
+    singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    instance_id UUID NOT NULL DEFAULT gen_random_uuid()
+);
+INSERT INTO storage_identity (singleton) VALUES (TRUE) ON CONFLICT DO NOTHING;
+
 -- Nodes table - stores basic node information
 CREATE TABLE IF NOT EXISTS nodes (
     id VARCHAR(8) PRIMARY KEY,  -- 8 hex character node ID
