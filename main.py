@@ -84,24 +84,36 @@ async def maintenance_loop(config, data, interval_seconds: float = MAINTENANCE_I
     threshold = config['server']['node_activity_prune_threshold']
     tick = 0
     backup_task: asyncio.Task | None = None
-    while True:
-        try:
-            pruned = await data.pg_storage.mark_nodes_inactive_by_age(threshold)
-            if pruned:
-                logger.debug("Pruned %d node(s) inactive for >= %ds", pruned, threshold)
-            # Hourly: create next month's partition ahead of the rollover.
-            if tick % 60 == 0:
-                await data.pg_storage.ensure_mqtt_partitions()
-            # Backups run whenever the newest dump is older than the schedule —
-            # a single-flight background task; a multi-GB dump must not stall this loop.
-            if (backup_task is None or backup_task.done()) and maintenance.backup_due(config):
-                backup_task = asyncio.create_task(maintenance.run_backup(config))
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Maintenance loop iteration failed")
-        tick += 1
-        await asyncio.sleep(interval_seconds)
+    retention_task: asyncio.Task | None = None
+    try:
+        while True:
+            try:
+                pruned = await data.pg_storage.mark_nodes_inactive_by_age(threshold)
+                if pruned:
+                    logger.debug("Pruned %d node(s) inactive for >= %ds", pruned, threshold)
+                # Hourly: create next month's partition ahead of the rollover.
+                if tick % 60 == 0:
+                    await data.pg_storage.ensure_mqtt_partitions()
+                # Each bounded cycle is independent of MQTT, API and node upkeep.
+                if retention_task is None or retention_task.done():
+                    retention_task = asyncio.create_task(maintenance.run_retention(config, data.pg_storage))
+                # Backups run whenever the newest dump is older than the schedule —
+                # a single-flight background task; a multi-GB dump must not stall this loop.
+                if (backup_task is None or backup_task.done()) and maintenance.backup_due(config):
+                    backup_task = asyncio.create_task(maintenance.run_backup(config))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Maintenance loop iteration failed")
+            tick += 1
+            await asyncio.sleep(interval_seconds)
+
+    finally:
+        tasks = [task for task in (retention_task, backup_task) if task is not None]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 ENRICHMENT_JITTER_FRAC = 0.1

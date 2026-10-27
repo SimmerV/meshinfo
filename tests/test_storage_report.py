@@ -79,9 +79,11 @@ class FakeConnection:
             raise self.error
         return self.catalog
 
-    async def fetchval(self, query):
+    async def fetchval(self, query, *, timeout=None):
         assert self.active
         self.commands.append(query)
+        if "to_regclass" in query:
+            return None
         return 1_000_000
 
 

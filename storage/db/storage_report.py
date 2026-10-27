@@ -22,6 +22,7 @@ from storage.retention import (
     RETENTION_SCOPES, SCOPE_TABLES, complete_month_cutoff, retention_policy,
     retention_summary, timestamp_json, utc_datetime,
 )
+from storage.db.maintenance_status import read_status, public_status
 
 # Names select only the app's public history tables. Identifiers are never
 # interpolated into SQL, including names returned from the catalogs.
@@ -186,7 +187,9 @@ async def build_storage_report(connection_or_pool, config: Mapping, *,
             now = utc_datetime(now or await conn.fetchval("SELECT CURRENT_TIMESTAMP"))
             catalog = [dict(row) for row in await conn.fetch(_CATALOG_SQL, table_names)]
             database_bytes = await conn.fetchval("SELECT pg_database_size(current_database())")
+            maintenance = await read_status(conn)
     public = retention_summary(config, now=now, enforcement_available=enforcement_available)
+    public["maintenance"] = public_status(maintenance)
     scopes = {}
     for scope in RETENTION_SCOPES:
         cutoff = complete_month_cutoff(now, policy.months_for(scope))
@@ -221,6 +224,7 @@ async def build_storage_report(connection_or_pool, config: Mapping, *,
         "row_estimates_source": "pg_class.reltuples (may be stale; no table scans)",
         "candidate_bytes_note": "Whole paired partitions before the UTC cutoff; execution checks may retain them. Row deletes do not promise filesystem space reclamation.",
         "scopes": scopes,
+        "maintenance": maintenance,
     }
     return {"public": public, "details": details}
 

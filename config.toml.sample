@@ -36,9 +36,8 @@ ingest_denylist = []                  # e.g. ["eba3d8e8"]
 # typical finite choices are 1, 3, 6, or 12 months. A partial boundary month is
 # retained, so the actual history may be up to one month longer than requested.
 # Current node state and channel settings are never expired by this policy.
-# Phase 1 reports a preview only. Setting enabled=true becomes destructive only
-# once a release with the retention executor is installed: inspect the preview
-# before enabling. Shorter retention permanently removes expired history.
+# Inspect `scripts/manage_storage.py report` before enabling. Setting enabled
+# to true activates expiration; shorter retention permanently removes history.
 [storage.retention]
 enabled = false
 months = 0

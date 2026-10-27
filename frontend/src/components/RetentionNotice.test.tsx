@@ -75,7 +75,7 @@ describe("History retention visibility", () => {
     stubApi({ history: fixture });
     await mountAt("/chat", <RetentionNotice scope="chat" />);
     expect(document.querySelector("summary")?.textContent).toBe("History retention: 1 calendar month");
-    expect(document.body.textContent).toContain("Older history expires automatically");
+    expect(document.body.textContent).toContain("Automatic expiration is enabled");
     expect(document.body.textContent).not.toContain("12 calendar months");
     expect(document.body.textContent).not.toContain("preview only");
   });
@@ -137,5 +137,68 @@ describe("History retention visibility", () => {
     expect(document.body.textContent).toContain("History retention information is unavailable");
     expect(document.body.textContent).toContain("does not change the configured retention policy");
     expect(document.body.textContent).not.toContain("History retention: Forever");
+  });
+
+  it("reports that enabled expiration has not completed a cycle yet", async () => {
+    const fixture = history({ enforcement_enabled: true, configured_enabled: true });
+    fixture.scopes.packets.months = 6;
+    stubApi({ history: fixture });
+    await mountAt("/logs", <RetentionNotice scope="packets" />);
+    expect(document.body.textContent).toContain("has not reported a completed cycle yet");
+  });
+
+  it("shows a blocked scope without suggesting successful deletion", async () => {
+    const fixture = history({ enforcement_enabled: true, configured_enabled: true });
+    fixture.scopes.packets.months = 6;
+    fixture.maintenance = {
+      retention: {
+        updated_at: "2026-10-27T12:00:00Z",
+        status: "partial",
+        scopes: { packets: { status: "blocked" }, telemetry: { status: "complete" } },
+      },
+    };
+    stubApi({ history: fixture });
+    await mountAt("/logs", <RetentionNotice scope="packets" />);
+    expect(document.body.textContent).toContain("Expiration maintenance: blocked");
+    expect(document.body.textContent).toContain("Some older history may remain");
+    expect(document.body.textContent).not.toContain("Expiration maintenance: partial");
+  });
+
+  it("does not show another scope's maintenance failure for a forever policy", async () => {
+    const fixture = history({ enforcement_enabled: true, configured_enabled: true });
+    fixture.scopes.packets.months = 6;
+    fixture.maintenance = {
+      retention: { updated_at: "2026-10-27T12:00:00Z", status: "error", scopes: {} },
+    };
+    stubApi({ history: fixture });
+    await mountAt("/chat", <RetentionNotice scope="chat" />);
+    expect(document.querySelector("summary")?.textContent).toBe("History retention: Forever");
+    expect(document.body.textContent).not.toContain("Expiration maintenance");
+  });
+
+  it("hides old maintenance failures when expiration has been disabled", async () => {
+    const fixture = history();
+    fixture.scopes.packets.months = 6;
+    fixture.maintenance = {
+      retention: { updated_at: "2026-10-27T12:00:00Z", status: "error", scopes: {} },
+    };
+    stubApi({ history: fixture });
+    await mountAt("/stats", <HistoryRetentionPanel />);
+    expect(document.body.textContent).toContain("Preview only");
+    expect(document.body.textContent).not.toContain("Expiration maintenance");
+  });
+
+  it.each([
+    ["2026-10-27T11:57:00Z", false],
+    ["2026-10-27T11:56:59Z", true],
+  ])("checks maintenance freshness against the report's server clock (%s)", async (updated_at, stale) => {
+    const fixture = history({ enforcement_enabled: true, configured_enabled: true });
+    fixture.scopes.packets.months = 6;
+    fixture.maintenance = {
+      retention: { updated_at, status: "complete", scopes: { packets: { status: "complete" } } },
+    };
+    stubApi({ history: fixture });
+    await mountAt("/logs", <RetentionNotice scope="packets" />);
+    expect(document.body.textContent?.includes("No recent expiration maintenance result")).toBe(stale);
   });
 });

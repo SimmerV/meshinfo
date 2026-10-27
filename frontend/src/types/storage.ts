@@ -22,4 +22,9 @@ export interface IStorageHistory {
   configured_enabled: boolean;
   granularity: "calendar_month";
   scopes: Record<HistoryScope, IHistoryPolicy>;
+  maintenance?: Record<string, {
+    updated_at: string;
+    status: string;
+    scopes: Partial<Record<HistoryScope, { status: string }>>;
+  }>;
 }

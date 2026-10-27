@@ -56,7 +56,16 @@ async def report(args: argparse.Namespace) -> dict:
         database=args.database or pg["database"], timeout=5, command_timeout=5,
     )
     try:
-        result = await build_storage_report(connection, config, enforcement_available=False)
+        if args.command == "expire":
+            if not args.apply:
+                raise ValueError("expire requires --apply; use report to preview")
+            from storage.db.maintenance_status import prepare_retention_index, save_status
+            from storage.db.retention_executor import enforce_retention
+            await prepare_retention_index(connection, config)
+            result = await enforce_retention(connection, config)
+            await save_status(connection, "retention", result)
+        else:
+            result = await build_storage_report(connection, config, enforcement_available=True)
     finally:
         await connection.close()
     result["capacity"] = local_capacity(config, args.config)
@@ -65,7 +74,8 @@ async def report(args: argparse.Namespace) -> dict:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("command", nargs="?", choices=["report"], default="report")
+    result.add_argument("command", nargs="?", choices=["report", "expire"], default="report")
+    result.add_argument("--apply", action="store_true", help="Allow the expire command to execute the enabled policy")
     result.add_argument("--config", type=Path, default=Path("config.toml"))
     result.add_argument("--database", help="Database override, for example an isolated test database")
     result.add_argument("--json", action="store_true", help="Machine-readable JSON (the default report format)")
@@ -80,7 +90,7 @@ def main() -> int:
         print(f"Storage report failed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(result, indent=2, sort_keys=True, default=str))
-    return 0
+    return 2 if result.get("status") in {"error", "blocked", "partial", "busy"} else 0
 
 
 if __name__ == "__main__":

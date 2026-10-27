@@ -48,7 +48,7 @@ increasing retention cannot recover it.
 
 Configuration alone never silently changes an existing installation's default:
 the default is forever, and automatic expiration requires a separate explicit
-enable setting. During phase 1 all finite policies are previews only.
+enable setting. With `enabled = false`, all finite policies are previews only.
 
 ```toml
 [storage.retention]
@@ -66,6 +66,45 @@ filesystem's available space. Inside Compose use
 The command does not assume that PostgreSQL lives on the app's filesystem.
 History pages and the Stats page expose the public subset through
 `GET /v1/storage/history`; no operator capacity details are public.
+
+## Expiration operation
+
+After previewing, set `enabled = true` and restart the backend. A single
+background task attempts a bounded cycle every minute. For a manual cycle use
+`python scripts/manage_storage.py expire --apply --config config.toml`; it still
+requires an enabled finite policy. This command returns a nonzero exit code for
+busy, blocked, partial, or failed work, and can be retried safely.
+
+Each cycle has a 12-second work budget. Packet expiration takes at most two
+complete month pairs and at most 5,000 cross-month reception tails per atomic
+transaction. Packet locks are acquired without waiting; exclusive work is
+bounded to five seconds. Other history families delete up to four 1,000-row
+batches each, with short lock waits and statement timeouts. Already committed
+batches remain committed if a later batch fails; status reports that progress.
+Ingestion and HTTP requests may briefly wait while a packet cohort is removed.
+
+Packet/reception relationships are checked under locks. Bounded overlapping-ID
+checks handle normal concurrent inserts at midnight. Ambiguous imported IDs,
+populated default partitions, non-monthly or unpaired partitions, missing
+indexes, and user dependencies block expiration with an operator-visible reason.
+No `CASCADE` or unbounded legacy-table delete is used. Retained packet identities
+and reception copies remain intact. An unsupported layout needs operator repair;
+enabling retention does not silently migrate it.
+
+Unpartitioned history reuses freed space through ordinary PostgreSQL vacuuming;
+row deletion does not guarantee immediate filesystem reclamation. Entire packet
+partition drops reclaim their files. We do not run `VACUUM FULL` automatically.
+
+The neighbor-history age index is built concurrently only when finite neighbor
+expiration is enabled. If an interrupted build leaves
+`idx_neighbor_history_created_at` invalid, inspect it, drop that invalid index
+with `DROP INDEX CONCURRENTLY public.idx_neighbor_history_created_at`, and retry.
+Maintenance refuses to trust an invalid index.
+
+The operator report includes the last durable result and per-scope reasons.
+The public UI exposes only safe status codes and warns about partial, blocked,
+failed, busy, or stale maintenance. A configured policy is not a claim that
+every expired record has already been removed.
 
 ## Operational requirements
 
@@ -105,3 +144,19 @@ history.
   policy: 22.69 GiB of old paired partition candidates, pending execution checks.
 - Actual deployment: forever, expiration disabled, backups off. No live history
   was expired. Approximately 6.5 GiB filesystem space remained after builds.
+
+### Phase 2 — 2026-10-27
+
+- Full backend suite with all PostgreSQL gates enabled: **560 passed**, no
+  skipped tests. Destructive tests used only `meshinfo_storage_test`.
+- Nineteen real retention scenarios prove atomic reception-tail cleanup,
+  interleaved month-boundary IDs, dependency rollback, contention, repeatable
+  bounded progress, exact cutoffs, retained packet-copy reconstruction/search
+  pagination, and preservation of current node state across all history scopes.
+- Fourteen maintenance tests cover durable failures, public redaction,
+  single-flight work, and awaited cancellation. Fourteen frontend retention
+  tests cover preview, partial/blocked/stale results, and per-scope overrides.
+- Backend and frontend production builds passed and both were redeployed.
+  Edge history/packet/Stats requests returned HTTP 200. The live policy remains
+  forever and disabled; an explicit manual cycle correctly returned `disabled`.
+- Approximately 6.4 GiB filesystem space remained. No live history was deleted.

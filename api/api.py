@@ -66,7 +66,7 @@ class API:
                     raise RuntimeError("history storage unavailable")
                 async with pool.acquire() as conn:
                     report = await public_history_report(
-                        conn, self.config, enforcement_available=False,
+                        conn, self.config, enforcement_available=True,
                     )
                 self._history_cache = (time.monotonic() + 60, report)
                 return report

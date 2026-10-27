@@ -1,5 +1,12 @@
 -- Postgres schema for MeshInfo. Postgres is the sole storage backend.
 
+-- Bounded operational state; no history payloads or connection credentials.
+CREATE TABLE IF NOT EXISTS storage_maintenance_status (
+    operation TEXT PRIMARY KEY,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    result JSONB NOT NULL
+);
+
 -- Nodes table - stores basic node information
 CREATE TABLE IF NOT EXISTS nodes (
     id VARCHAR(8) PRIMARY KEY,  -- 8 hex character node ID

@@ -28,6 +28,39 @@ BACKUP_INTERVAL_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
 _next_backup_attempt_monotonic = 0.0
 
 
+async def run_retention(config, storage) -> dict:
+    """Run one bounded cycle and retain an operator-visible durable result."""
+    from storage.db.maintenance_status import prepare_retention_index, save_status
+    from storage.db.retention_executor import enforce_retention
+
+    try:
+        async with storage.pool.acquire(timeout=3) as conn:
+            try:
+                await prepare_retention_index(conn, config)
+            except Exception:
+                # Executor independently verifies usable indexes and reports a
+                # blocked neighbor scope; other history families can progress.
+                logger.exception("Retention age-index preparation failed")
+            try:
+                result = await enforce_retention(conn, config)
+            except Exception as exc:
+                logger.exception("Retention execution failed")
+                result = {"status": "error", "reason": type(exc).__name__}
+            try:
+                await save_status(conn, "retention", result)
+            except Exception:
+                logger.exception("Retention status could not be persisted")
+                result = {**result, "status": "error", "status_persisted": False}
+        if result["status"] in {"error", "blocked", "partial"}:
+            logger.warning("Retention cycle: %s", result)
+        return result
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("Retention maintenance failed")
+        return {"status": "error", "status_persisted": False}
+
+
 def backup_dir(config: Dict[str, Any]) -> Path:
     d = Path(config.get("backups", {}).get("dir") or "backups")
     return d if d.is_absolute() else REPO_ROOT / d

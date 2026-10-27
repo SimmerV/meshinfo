@@ -60,7 +60,7 @@ function PolicyDetails({
         {policy.months === 0
           ? "No age-based expiration is configured for this history. Keeping history forever allows disk use to grow as data arrives."
           : history.enforcement_enabled
-            ? `Keeps at least ${duration(policy).toLowerCase()}. Older history expires automatically.`
+            ? `Keeps at least ${duration(policy).toLowerCase()}. Automatic expiration is enabled and runs in bounded maintenance cycles.`
             : `Configured to keep at least ${duration(policy).toLowerCase()}. Preview only: automatic expiration is off.`}
       </p>
       {policy.months > 0 && history.granularity === "calendar_month" && (
@@ -91,8 +91,26 @@ export function RetentionNotice({ scope }: { scope: HistoryScope }) {
         {policy.months > 0 && !data.enforcement_enabled ? " · preview only" : ""}
       </summary>
       <PolicyDetails history={data} policy={policy} />
+      <MaintenanceNotice history={data} scope={scope} />
     </details>
   );
+}
+
+function MaintenanceNotice({ history, scope }: { history: IStorageHistory; scope?: HistoryScope }) {
+  if (!history.enforcement_enabled) return null;
+  if (!Object.values(history.scopes).some(policy => policy.months > 0)) return null;
+  if (scope && history.scopes[scope]?.months === 0) return null;
+  const last = history.maintenance?.retention;
+  const status = scope ? last?.scopes[scope]?.status ?? last?.status : last?.status;
+  const stale = last && Date.parse(history.generated_at) - Date.parse(last.updated_at) > 180_000;
+  const text = !last
+    ? "Automatic expiration has not reported a completed cycle yet."
+    : stale
+      ? "No recent expiration maintenance result is available. Older history may remain; the operator should check maintenance."
+    : status && ["error", "blocked", "partial", "busy"].includes(status)
+      ? `Expiration maintenance: ${status}. Some older history may remain; the operator report has details.`
+      : null;
+  return text ? <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{text}</p> : null;
 }
 
 /** Central read-only overview, including history without a dedicated page. */
@@ -116,6 +134,7 @@ export function HistoryRetentionPanel() {
         <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">Loading retention policy…</p>
       ) : data?.scopes ? (
         <>
+          <MaintenanceNotice history={data} />
           {hasFinitePolicy && !data.enforcement_enabled && (
             <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">Preview only: automatic expiration is off. No history is deleted by these policies.</p>
           )}
