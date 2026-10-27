@@ -14,6 +14,7 @@ import { ExportMenu } from "../components/ExportMenu";
 import { HeardBy } from "../components/HeardBy";
 import { LivePill } from "../components/LivePill";
 import { MobileSheet } from "../components/MobileSheet";
+import { RetentionNotice } from "../components/RetentionNotice";
 import { useAppSelector } from "../hooks/redux";
 import {
   REMEMBERED_CH_KEYS,
@@ -1444,6 +1445,8 @@ export const Chat = () => {
               <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
                 Chat
               </h1>
+
+              <RetentionNotice scope="chat" />
 
               {/* Desktop meta row */}
               <div className="mt-1 hidden sm:flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">

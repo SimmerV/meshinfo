@@ -16,6 +16,7 @@ import { Virtuoso, VirtuosoHandle } from "react-virtuoso";
 import { ChannelPillGroups } from "../components/ChannelPillGroups";
 import { LivePill } from "../components/LivePill";
 import { MobileSheet } from "../components/MobileSheet";
+import { RetentionNotice } from "../components/RetentionNotice";
 import { useLiveEvent } from "../hooks/useLiveEvent";
 import {
   REMEMBERED_CH_KEYS,
@@ -825,6 +826,7 @@ export const Log = () => {
               <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
                 Logs
               </h1>
+              <RetentionNotice scope="packets" />
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                 <span className={isFetching ? "animate-pulse" : ""}>
                   {isLoading ? "Loading…" : isFetching ? "Refreshing…" : "Ready"}

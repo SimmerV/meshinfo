@@ -12,6 +12,7 @@ import { apiSlice } from "../../slices/apiSlice";
 import { store } from "../../store";
 import type { IChannel, INode } from "../../types";
 import type { IConfigResponse } from "../../types/config";
+import type { IStorageHistory } from "../../types/storage";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -22,6 +23,8 @@ export interface ApiFixtures {
   chat?: Record<string, Partial<IChannel>>;
   nodes?: Record<string, Partial<INode>>;
   packets?: { messages: unknown[]; next_cursor: string | null };
+  history?: IStorageHistory;
+  historyStatus?: number;
 }
 
 /** URLs of every request the stub answered, in call order. */
@@ -52,6 +55,10 @@ export function stubApi(fixtures: ApiFixtures): void {
     if (p === "/v1/channels") return json({ channels: fixtures.channels ?? {} });
     if (p === "/v1/chat") return json({ channels: fixtures.chat ?? {} });
     if (p === "/v1/nodes") return json({ nodes: fixtures.nodes ?? {} });
+    if (p === "/v1/storage/history") {
+      if (fixtures.historyStatus) return new Response("unavailable", { status: fixtures.historyStatus });
+      return fixtures.history ? json(fixtures.history) : new Response("not found", { status: 404 });
+    }
     if (p === "/v1/packets")
       return json(fixtures.packets ?? { messages: [], next_cursor: null });
     if (p.startsWith("/v1/packets/")) return json({ packet: null });

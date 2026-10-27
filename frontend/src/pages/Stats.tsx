@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { HeardBy } from "../components/HeardBy";
 import { LivePill } from "../components/LivePill";
+import { HistoryRetentionPanel } from "../components/RetentionNotice";
 import {
   canonicalPresetName,
   FIRMWARE_MODEM_PRESETS,
@@ -489,6 +490,7 @@ export const Stats = () => {
       {/* ── Scrollable body ── */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="mx-auto max-w-400 px-4 py-5 lg:px-8 lg:py-6">
+          <HistoryRetentionPanel />
           {/* Hero */}
           <div>
             <Panel className="relative overflow-hidden">

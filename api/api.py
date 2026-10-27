@@ -47,6 +47,29 @@ class API:
     def __init__(self, config, data):
         self.config = config
         self.data = data
+        self._history_cache = None
+        self._history_lock = asyncio.Lock()
+
+    async def history_status(self) -> dict:
+        """Public, cached history policy/coverage; never a filesystem report."""
+        from storage.db.storage_report import public_history_report
+
+        if self._history_cache is not None and self._history_cache[0] > time.monotonic():
+            return self._history_cache[1]
+        # Bound waiting for another report as well as pool acquisition/SQL.
+        async with asyncio.timeout(6):
+            async with self._history_lock:
+                if self._history_cache is not None and self._history_cache[0] > time.monotonic():
+                    return self._history_cache[1]
+                pool = getattr(self.data.pg_storage, "pool", None)
+                if pool is None:
+                    raise RuntimeError("history storage unavailable")
+                async with pool.acquire() as conn:
+                    report = await public_history_report(
+                        conn, self.config, enforcement_available=False,
+                    )
+                self._history_cache = (time.monotonic() + 60, report)
+                return report
 
     @staticmethod
     def _coerce_node_id(raw: str) -> str:
@@ -402,6 +425,18 @@ class API:
         async def stats(request: Request) -> JSONResponse:
             stats = await self.data.pg_storage.query_stats()
             return JSONResponse(jsonable_encoder({"stats": stats}))
+
+        @app.get("/v1/storage/history")
+        async def storage_history(request: Request) -> JSONResponse:
+            try:
+                report = await self.history_status()
+                return JSONResponse(jsonable_encoder(report), headers={"Cache-Control": "no-cache"})
+            except Exception:
+                logger.exception("History availability report failed")
+                return JSONResponse(
+                    {"error": "history availability unavailable"}, status_code=503,
+                    headers={"Cache-Control": "no-store"},
+                )
 
         @app.get("/v1/events")
         async def events(request: Request) -> StreamingResponse:

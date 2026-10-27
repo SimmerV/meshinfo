@@ -11,6 +11,7 @@ import { useSearchParams } from "react-router";
 import { ExportMenu } from "../components/ExportMenu";
 import { HeardBy } from "../components/HeardBy";
 import { LivePill } from "../components/LivePill";
+import { RetentionNotice } from "../components/RetentionNotice";
 import { useGetNodesQuery, useGetTraceroutesQuery } from "../slices/apiSlice";
 import { copyTextToClipboard } from "../utils/clipboard";
 import { csvEscape, downloadBlob } from "../utils/export";
@@ -814,6 +815,8 @@ export const Traceroutes = () => {
               <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
                 Traceroutes
               </h1>
+
+              <RetentionNotice scope="traceroutes" />
 
               {/* Desktop meta row */}
               <div className="mt-1 hidden sm:flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">

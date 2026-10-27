@@ -12,6 +12,7 @@ import { VirtuosoHandle } from "react-virtuoso";
 import { ExportMenu } from "../components/ExportMenu";
 import { HeardBy } from "../components/HeardBy";
 import { LivePill } from "../components/LivePill";
+import { RetentionNotice } from "../components/RetentionNotice";
 import { useLiveEvent } from "../hooks/useLiveEvent";
 import { useGetNodesQuery, useGetTelemetryQuery } from "../slices/apiSlice";
 import { copyTextToClipboard } from "../utils/clipboard";
@@ -738,6 +739,8 @@ export const Telemetry = () => {
               <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
                 Telemetry
               </h1>
+
+              <RetentionNotice scope="telemetry" />
 
               {/* Desktop meta row */}
               <div className="mt-1 hidden sm:flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">

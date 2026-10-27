@@ -3,6 +3,7 @@ import { Link } from "react-router";
 
 import { Avatar } from "../../components/Avatar";
 import { HardwareImg } from "../../components/HardwareImg";
+import { RetentionNotice } from "../../components/RetentionNotice";
 import { Role } from "../../components/Role";
 import { useGetConfigQuery, useGetNodePacketsQuery } from "../../slices/apiSlice";
 import { INode } from "../../types";
@@ -169,6 +170,7 @@ function RecentPackets({
           View in logs
         </Link>
       </div>
+      <RetentionNotice scope="packets" />
 
       {isFetching && packets.length === 0 ? (
         <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">

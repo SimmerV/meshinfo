@@ -32,9 +32,25 @@ max_packets_per_node_per_hour = 600
 # updates). Hex ids.
 ingest_denylist = []                  # e.g. ["eba3d8e8"]
 
+# History retention uses complete UTC calendar months. 0 keeps everything;
+# typical finite choices are 1, 3, 6, or 12 months. A partial boundary month is
+# retained, so the actual history may be up to one month longer than requested.
+# Current node state and channel settings are never expired by this policy.
+# Phase 1 reports a preview only. Setting enabled=true becomes destructive only
+# once a release with the retention executor is installed: inspect the preview
+# before enabling. Shorter retention permanently removes expired history.
+[storage.retention]
+enabled = false
+months = 0
+# Optional scope-specific lifetimes; unspecified scopes inherit months.
+# packets includes both the packet archive and its gateway receptions.
+# A zero override keeps that scope forever even when the default is finite.
+overrides = {}                       # e.g. { packets = 3, telemetry = 6, chat = 0 }
+# Other available scopes: traceroutes, neighbors.
+
 # Database snapshot backups. The app schedules these itself — the schedule is
-# applied automatically on (re)start, no host cron needed. The raw archive is
-# keep-forever, so backups are the only other copy of history.
+# applied automatically on (re)start, no host cron needed. Backup retention is
+# separate from history retention; backups may still contain expired history.
 [backups]
 schedule = "daily"                    # off | daily | weekly | monthly
 keep_days = 4                         # prune local dumps older than this

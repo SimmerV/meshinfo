@@ -18,6 +18,7 @@ from copy import deepcopy
 from typing import Any
 
 from utils import normalize_node_id
+from storage.retention import retention_policy
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "remote_target": "",
     },
     "storage": {
+        # Opt-in history expiration. Zero preserves all history indefinitely.
+        "retention": {"enabled": False, "months": 0, "overrides": {}},
         # Uplink dedup (#526): store one canonical mqtt_messages row per mesh
         # packet and every per-gateway copy as a packet_receptions row (lossless).
         # Disable to restore the legacy one-row-per-copy firehose.
@@ -514,6 +517,13 @@ def validate(config: dict) -> list[str]:
 
     # ── storage section ───────────────────────────────────────────────
     check(_validate_type(config, "storage", dict))
+
+    # A malformed deletion policy must fail closed, never fall back to a
+    # shorter lifetime or continue with partly applied settings.
+    try:
+        retention_policy(config)
+    except ValueError as exc:
+        raise ConfigValidationError(str(exc)) from exc
 
     storage_cfg = config.get("storage", {})
 

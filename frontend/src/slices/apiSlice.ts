@@ -11,6 +11,7 @@ import {
   ITraceroutesResponse,
 } from "../types";
 import { IConfigResponse } from "../types/config";
+import type { IStorageHistory } from "../types/storage";
 import { transformNode } from "./nodeTransform";
 
 /** A parsed packet from the mqtt_messages archive. Loosely typed — the payload
@@ -56,6 +57,11 @@ export const apiSlice = createApi({
     baseUrl: `${env.API_BASE_URL ?? window.location.origin}/v1`,
   }),
   endpoints: (builder) => ({
+    getStorageHistory: builder.query<IStorageHistory, void>({
+      query: () => "storage/history",
+      // Shared by history pages and Stats; this metadata changes slowly.
+      keepUnusedDataFor: 300,
+    }),
     getConfig: builder.query<IConfigResponse, void>({
       query: () => "server/config",
       transformResponse: (response: { config: IConfigResponse }) =>
@@ -208,6 +214,7 @@ export const apiSlice = createApi({
 });
 
 export const {
+  useGetStorageHistoryQuery,
   useGetChannelsQuery,
   useGetChatsQuery,
   useGetNodesQuery,
