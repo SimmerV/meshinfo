@@ -20,6 +20,7 @@ import uuid
 from storage.backup import BackupPolicy, BackupResult, backup_destination_id, create_snapshot
 from storage.db.maintenance_status import read_status, save_status
 from storage.db.retention_executor import maintenance_lock
+from storage.db.maintenance_connection import database_settings, maintenance_connection
 
 logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -128,6 +129,8 @@ async def scheduled_backup_due(config, storage, *, now=None) -> bool:
     interval = INTERVAL_SECONDS.get(settings.get("schedule", "daily"))
     if interval is None:
         return False
+    config = {**config, "storage": {**config.get("storage", {}),
+                                    "postgres": database_settings(storage, config)}}
     if time.monotonic() < _BACKOFF_UNTIL.get(_key(config), 0):
         return False
     supplied_now = _timestamp(now) if now is not None else None
@@ -208,6 +211,10 @@ async def _drain(tasks):
         raise cancellation
 
 
+def _control_connection(config, storage=None):
+    return maintenance_connection(storage, config, application_name="meshinfo-backup-control")
+
+
 async def _guarded_snapshot(conn, config, repo_root, owner_id):
     stopped, terminated = asyncio.Event(), asyncio.Event()
     def session_ended(_connection):
@@ -280,6 +287,7 @@ async def run_backup(config, storage, repo_root, *, after=None, manual=False) ->
 
     Off schedules remain off unless an explicitly invoked operator command sets
     ``manual=True``. The host CLI also has its own explicit-action controller.
+    The control session is dedicated; the application pool remains available.
     ``after`` can be the current retention task, preventing a local scheduling
     race from repeatedly denying backups the shared maintenance lock.
     """
@@ -300,10 +308,14 @@ async def run_backup(config, storage, repo_root, *, after=None, manual=False) ->
               "last_success_destination": None}
     snapshot = None
     try:
+        # The dump and lock session must address the same effective database,
+        # including runtime storage overrides and explicit CLI --database use.
+        config = {**config, "storage": {**config.get("storage", {}),
+                                        "postgres": database_settings(storage, config)}}
         policy = BackupPolicy.from_config(config, Path(repo_root))
         status["mode"] = policy.mode
         status["destination_id"] = backup_destination_id(config)
-        async with storage.pool.acquire(timeout=3) as conn:
+        async with _control_connection(config, storage) as conn:
             async with maintenance_lock(conn) as acquired:
                 if not acquired:
                     _backoff(config, BUSY_RETRY_SECONDS)

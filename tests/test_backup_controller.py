@@ -13,11 +13,14 @@ from unittest.mock import AsyncMock
 import pytest
 
 from storage import backup_controller as controller
+from storage.db import maintenance_connection as connections
 from storage.backup import BackupError, BackupResult
 
 NOW = datetime(2026, 10, 27, 12, tzinfo=timezone.utc)
 IDENTITY = '12345678-1234-1234-1234-123456789abc'
 OLD_SUCCESS = (NOW - timedelta(days=3)).isoformat()
+_CONTROL_TARGET = None
+_CONNECT_CALLS = []
 
 
 def config(**settings):
@@ -45,6 +48,18 @@ class Connection:
         self.final_clock_failure = False
         self.clock_calls = 0
         self.identity = IDENTITY
+        self.closed = False
+
+    async def close(self, *, timeout):
+        assert timeout == connections.CLOSE_TIMEOUT_SECONDS
+        self.events.append('close')
+        self.closed = True
+        self.locked = False
+
+    def terminate(self):
+        self.events.append('terminate')
+        self.closed = True
+        self.locked = False
 
     def add_termination_listener(self, callback):
         self.listeners.append(callback)
@@ -121,12 +136,24 @@ class Pool:
 
 
 def storage(connection=None, **kwargs):
-    return SimpleNamespace(pool=Pool(connection or Connection(), **kwargs))
+    global _CONTROL_TARGET
+    _CONTROL_TARGET = SimpleNamespace(pool=Pool(connection or Connection(), **kwargs))
+    return _CONTROL_TARGET
 
 
 @pytest.fixture(autouse=True)
-def reset_backoff():
+def reset_backoff(monkeypatch):
+    global _CONTROL_TARGET
+    _CONTROL_TARGET = None
+    _CONNECT_CALLS.clear()
     controller._BACKOFF_UNTIL.clear()
+    async def connect(**kwargs):
+        _CONNECT_CALLS.append(kwargs)
+        assert _CONTROL_TARGET is not None, 'unexpected database connection'
+        if _CONTROL_TARGET.pool.fail:
+            raise OSError('secret connection path')
+        return _CONTROL_TARGET.pool.connection
+    monkeypatch.setattr(connections.asyncpg, 'connect', connect)
     yield
     controller._BACKOFF_UNTIL.clear()
 
@@ -187,7 +214,7 @@ def test_success_holds_lock_through_snapshot_and_status_and_hides_destinations(m
     result = asyncio.run(controller.run_backup(config(),storage(conn),Path('/repo')))
     assert result['status'] == 'complete' and result['status_persisted']
     assert result['last_success_at'] == controller._iso(NOW)
-    assert conn.events.index('save:complete') < conn.events.index('unlock') < conn.events.index('release')
+    assert conn.events.index('save:complete') < conn.events.index('unlock') < conn.events.index('close')
     assert conn.records[0]['last_success_at'] == controller._iso(datetime.fromisoformat(OLD_SUCCESS))
     encoded = json.dumps(result)
     assert not any(secret in encoded for secret in ('private-file','/private','secret'))
@@ -292,7 +319,7 @@ def test_loss_or_cancellation_waits_for_snapshot_cleanup_before_unlock(failure,m
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
-        assert conn.events.index('snapshot-cleanup') < conn.events.index('unlock') < conn.events.index('release')
+        assert conn.events.index('snapshot-cleanup') < conn.events.index('unlock') < conn.events.index('close')
         assert conn.records[-1]['status'] == 'error'
         assert conn.listeners == []
     asyncio.run(scenario())
@@ -437,5 +464,142 @@ def test_failed_backup_connection_defers_subsequent_schedule_checks(monkeypatch)
     result = asyncio.run(controller.run_backup(config(),target,Path('/repo')))
     assert result['status'] == 'error' and result['status_persisted'] is False
     assert not asyncio.run(controller.scheduled_backup_due(config(),target,now=NOW))
-    assert target.pool.acquisitions == 1
+    assert target.pool.acquisitions == 0 and len(_CONNECT_CALLS) == 1
     producer.assert_not_awaited()
+
+
+def test_backup_control_uses_configured_endpoint_and_bounded_timeouts(monkeypatch):
+    cfg = config()
+    cfg['storage']['postgres'].update(host='dedicated.example', port=5544, database='override_db',
+                                       username='backup_role', password='test-only-password',max_pool_size=1)
+    monkeypatch.setattr(controller,'create_snapshot',AsyncMock(return_value=snapshot()))
+    target = storage()
+    result = asyncio.run(controller.run_backup(cfg,target,Path('/repo')))
+    assert result['status'] == 'complete'
+    assert _CONNECT_CALLS == [{'host':'dedicated.example','port':5544,'database':'override_db',
+                              'user':'backup_role','password':'test-only-password','timeout':5,'command_timeout':10,
+                              'server_settings':{'application_name':'meshinfo-backup-control','timezone':'UTC'}}]
+    assert target.pool.acquisitions == 0 and target.pool.connection.closed
+
+
+def test_one_slot_application_pool_remains_usable_throughout_backup(monkeypatch):
+    async def scenario():
+        application, control = Connection(), Connection()
+        semaphore = asyncio.Semaphore(1)
+        class OneSlotPool:
+            acquisitions = 0
+            @asynccontextmanager
+            async def acquire(self, **kwargs):
+                async with semaphore:
+                    self.acquisitions += 1
+                    yield application
+        pool = OneSlotPool()
+        target = SimpleNamespace(pool=pool)
+        started, finish = asyncio.Event(), asyncio.Event()
+        async def producer(*args,**kwargs):
+            assert control.locked
+            started.set()
+            await finish.wait()
+            return snapshot()
+        monkeypatch.setattr(connections.asyncpg,'connect',AsyncMock(return_value=control))
+        monkeypatch.setattr(controller,'create_snapshot',producer)
+        cfg = config()
+        cfg['storage']['postgres']['max_pool_size'] = 1
+        task = asyncio.create_task(controller.run_backup(cfg,target,Path('/repo')))
+        await started.wait()
+        try:
+            async def query():
+                async with pool.acquire():
+                    return await application.fetchval('SELECT 1')
+            assert await asyncio.wait_for(query(), .2) == 1
+            assert not task.done() and control.locked and not control.closed
+        finally:
+            finish.set()
+            result = await task
+        assert result['status'] == 'complete'
+        assert pool.acquisitions == 1 and not application.closed and control.closed
+    asyncio.run(scenario())
+
+
+def test_cancelled_connect_resolves_and_closes_racing_connection(monkeypatch):
+    async def scenario():
+        conn = Connection()
+        connecting, finish = asyncio.Event(), asyncio.Event()
+        async def connect(**kwargs):
+            connecting.set()
+            await finish.wait()
+            return conn
+        monkeypatch.setattr(connections.asyncpg,'connect',connect)
+        async def work():
+            async with controller._control_connection(config()):
+                pytest.fail('cancelled acquisition must not enter its context')
+        task = asyncio.create_task(work())
+        await connecting.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        task.cancel()
+        assert not conn.closed
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert conn.closed and conn.events == ['close']
+    asyncio.run(scenario())
+
+
+def test_repeated_cancellation_waits_for_control_connection_close(monkeypatch):
+    async def scenario():
+        closing, finish = asyncio.Event(), asyncio.Event()
+        class SlowClose(Connection):
+            async def close(self, *, timeout):
+                closing.set()
+                await finish.wait()
+                await super().close(timeout=timeout)
+        conn = SlowClose()
+        monkeypatch.setattr(connections.asyncpg,'connect',AsyncMock(return_value=conn))
+        async def work():
+            async with controller._control_connection(config()):
+                pass
+        task = asyncio.create_task(work())
+        await closing.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not conn.closed and not task.done()
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert conn.closed
+    asyncio.run(scenario())
+
+
+def test_failed_graceful_close_terminates_dedicated_connection(monkeypatch):
+    class BrokenClose(Connection):
+        async def close(self, *, timeout):
+            raise TimeoutError('private connection detail')
+    conn = BrokenClose()
+    monkeypatch.setattr(connections.asyncpg,'connect',AsyncMock(return_value=conn))
+    monkeypatch.setattr(controller,'create_snapshot',AsyncMock(return_value=snapshot()))
+    result = asyncio.run(controller.run_backup(config(),None,Path('/repo')))
+    assert result['status'] == 'complete'
+    assert conn.closed and conn.events[-1] == 'terminate'
+
+
+def test_runtime_storage_settings_address_same_database_for_dump_and_control(monkeypatch):
+    cfg = config()
+    target = storage()
+    target.pg_config = {'host':'active-db','port':5545,'database':'active-database',
+                        'username':'active-role','password':'active-password','max_pool_size':1,
+                        'not_a_connection_option':'must not forward'}
+    producer = AsyncMock(return_value=snapshot())
+    monkeypatch.setattr(controller,'create_snapshot',producer)
+    result = asyncio.run(controller.run_backup(cfg,target,Path('/repo')))
+    assert result['status'] == 'complete'
+    used = producer.await_args.args[0]['storage']['postgres']
+    assert used == {'host':'active-db','port':5545,'database':'active-database',
+                    'username':'active-role','password':'active-password'}
+    assert _CONNECT_CALLS[0]['host'] == used['host']
+    assert _CONNECT_CALLS[0]['database'] == used['database']
+    assert _CONNECT_CALLS[0]['user'] == used['username']
+    assert _CONNECT_CALLS[0]['password'] == used['password']
+    assert cfg['storage']['postgres']['host'] == 'db'

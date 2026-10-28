@@ -48,9 +48,11 @@ function oldestHistory(policy: IHistoryPolicy): string | null {
 function PolicyDetails({
   history,
   policy,
+  scope,
 }: {
   history: IStorageHistory;
   policy: IHistoryPolicy;
+  scope: HistoryScope;
 }) {
   const oldest = oldestHistory(policy);
   const effectiveCutoff = utcDate(policy.effective_cutoff);
@@ -67,11 +69,24 @@ function PolicyDetails({
         <p>
           Expiration follows UTC calendar-month boundaries, so history may be
           kept for up to one additional month.
-          {effectiveCutoff && ` Only history before ${effectiveCutoff} (UTC) is eligible.`}
+          {effectiveCutoff && (scope === "packets"
+            ? ` Packets first received before ${effectiveCutoff} (UTC) are eligible.`
+            : ` Only history before ${effectiveCutoff} (UTC) is eligible.`)}
+        </p>
+      )}
+      {scope === "packets" && policy.months > 0 && (
+        <p>
+          All reception copies expire with their packet, including copies received
+          after the cutoff. A later copy does not extend the packet’s retention.
         </p>
       )}
       {oldest && <p>{oldest}</p>}
-      <p>Retention is based on when this server received the data. Current node state is kept separately.</p>
+      <p>
+        {scope === "packets"
+          ? "Packet age starts when this server first received the packet."
+          : "Retention is based on when this server received the data."}
+        {" "}Current node state is kept separately.
+      </p>
     </div>
   );
 }
@@ -90,7 +105,7 @@ export function RetentionNotice({ scope }: { scope: HistoryScope }) {
         History retention: {duration(policy)}
         {policy.months > 0 && !data.enforcement_enabled ? " · preview only" : ""}
       </summary>
-      <PolicyDetails history={data} policy={policy} />
+      <PolicyDetails history={data} policy={policy} scope={scope} />
       <MaintenanceNotice history={data} scope={scope} />
     </details>
   );
@@ -154,6 +169,13 @@ export function HistoryRetentionPanel() {
               );
             })}
           </dl>
+          {data.scopes.packets?.months > 0 && (
+            <p className="mt-3 text-xs text-gray-600 dark:text-gray-400">
+              Packet age starts at its first receipt on this server. All reception
+              copies expire with their packet, including copies received after the cutoff.
+              Other history uses each record’s receipt time.
+            </p>
+          )}
           <p className="mt-3 text-xs text-gray-600 dark:text-gray-400">
             Age is measured from server receipt in UTC. Current node state is retained separately.
             {hasFinitePolicy && data.granularity === "calendar_month"

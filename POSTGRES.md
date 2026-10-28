@@ -275,6 +275,14 @@ row** (~70 B vs ~700 B per copy):
 | `rx_rssi` `rx_snr` `rx_time` `hop_limit` `hops_away` `relay_node` `transport` | the per-copy RF envelope |
 | `extras` | sparse JSONB patch vs. the reconstruction template (usually NULL) |
 
+Optional `packets` retention treats a canonical packet and its receptions as
+one group. The canonical row's `created_at` (first receipt on this server)
+determines expiration, not each copy's arrival time or a device timestamp. When
+the packet expires, all of its reception copies expire atomically, including
+copies received after the cutoff. A later copy does not extend the packet's
+lifetime. Other history families use each record's own `created_at`; see the
+[retention policy](STORAGE.md#policy).
+
 **Losslessness contract:** each original copy is exactly reconstructible as
 `reception_template(canonical, gateway, topic, fields)` + `extras` patch — see
 `storage/db/uplink_dedup.py` (`reconstruct_copy`). Copies whose patch cannot be

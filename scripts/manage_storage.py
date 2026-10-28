@@ -8,7 +8,6 @@ import shutil
 import sys
 import tomllib
 from pathlib import Path
-from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -60,15 +59,9 @@ async def report(args: argparse.Namespace) -> dict:
         if not args.apply:
             raise ValueError("backup requires --apply")
         from storage.backup_controller import run_backup
-        pool = await asyncpg.create_pool(
-            host=pg["host"], port=pg.get("port", 5432), user=pg["username"],
-            password=pg.get("password", ""), database=pg["database"],
-            min_size=1, max_size=1, timeout=5, command_timeout=5,
-        )
-        try:
-            return await run_backup(config, SimpleNamespace(pool=pool), Path(__file__).resolve().parents[1], manual=True)
-        finally:
-            await pool.close()
+        # The controller owns its dedicated session; an idle one-slot pool
+        # would only consume another PostgreSQL backend during this command.
+        return await run_backup(config, None, Path(__file__).resolve().parents[1], manual=True)
     connection = await asyncpg.connect(
         host=pg["host"], port=pg.get("port", 5432),
         user=pg["username"], password=pg.get("password", ""),

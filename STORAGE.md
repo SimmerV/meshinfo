@@ -40,11 +40,18 @@ than packet history, for example. The supported history families are `packets`
 `traceroutes`, and `neighbors`. Current node state, current telemetry, ownership,
 configuration, and channel definitions are not historical-retention targets.
 
-Expiration is rounded down to a UTC month boundary, so at least the requested
-history is preserved. Depending on the current date, almost one extra month may
-remain. A time policy is not a byte quota: higher ingestion volume still needs
-more space. Shortening retention permanently removes expired history; later
-increasing retention cannot recover it.
+Age follows server ingestion time (`created_at`), not device timestamps. For
+`packets`, the canonical packet's first receipt sets the age of the whole group.
+When that packet expires, all of its gateway receptions expire with it, even if
+a copy arrived after the cutoff. A later copy does not extend the packet's
+lifetime. Other history families use each record's own ingestion time.
+
+Expiration is rounded down to a UTC month boundary, preserving at least the
+requested window of canonical packets and other history records. Individual
+reception copies follow their packet's lifetime. Depending on the current date,
+almost one extra month may remain. A time policy is not a byte quota: higher
+ingestion volume still needs more space. Shortening retention permanently removes
+expired history; later increasing retention cannot recover it.
 
 Configuration alone never silently changes an existing installation's default:
 the default is forever, and automatic expiration requires a separate explicit
@@ -116,7 +123,9 @@ every expired record has already been removed.
   history or an invented zero-byte estimate.
 - Maintenance takes an advisory lock, uses short lock waits, and limits each
   cycle's work. A failed or interrupted operation must be safe to retry.
-- Never expire a packet while leaving retained receptions that require it.
+- Expire a canonical packet and its reception copies atomically, including
+  copies received after the cutoff; never leave copies that require an expired
+  packet.
 - No rate-limit tightening, lossy aggregation, or silent removal of gateway
   copies is a storage optimization.
 - Backups can contain history that has expired from the live database; backup
@@ -145,6 +154,14 @@ The configured `database_filesystem` must be on the actual database filesystem;
 on separate database hosts, run the manual tool where that disk is accessible.
 Custom index tablespaces are excluded from automation. Replication slots or WAL
 archiving require a separately budgeted operation and are refused here.
+
+Automatic attempts rotate through eligible index names, wrapping around, so a
+repeatedly blocked or slow index cannot prevent others from progressing. The
+scheduler saves its position before rebuilding in one private
+`compression_cursor` row in `storage_maintenance_status`; cancellation, restart,
+and failed attempts preserve that position. Busy attempts leave it unchanged.
+This is bounded scheduler metadata, not an attempt log. Manual packing does not
+advance the automatic cursor, and public maintenance summaries omit it.
 
 Use `python scripts/compress_storage.py plan` for a catalog-only preview.
 For a manual, explicitly named closed index:
@@ -235,7 +252,11 @@ after a new verified snapshot exists. A pruning failure preserves that snapshot
 and reports `partial`. Archive decoding is not a substitute for a restore drill.
 
 One monitored PostgreSQL advisory lock coordinates backup, retention, and index
-packing. Loss of that connection cancels the dump. Host Docker jobs additionally
+packing. Maintenance owns dedicated PostgreSQL sessions, leaving the application
+pool available even when `max_pool_size = 1`. Each maintenance job uses one
+additional control session; a backup also opens a `pg_dump` session. Account for
+brief overlapping control attempts when sizing PostgreSQL’s connection limit.
+Loss of the backup control connection cancels the dump. Host Docker jobs additionally
 track and terminate the actual container processes; stopping `docker exec`
 alone is insufficient. Scheduled jobs wait for this process's preceding bounded
 maintenance. Durable last-success/destination metadata survives restarts and
@@ -375,3 +396,68 @@ commit includes the existing Docker/development Python 3.14 compatibility pins:
 Meshtastic 2.7.11 requires Python below 3.15, so leaving the upstream 3.15 values
 would prevent a clean checkout from building the tested deployment. Local
 configuration and the development Compose override remain Git-ignored.
+
+### Development-branch follow-up — 2026-10-28 UTC
+
+Read-only live checks compared 300 canonical packet rows across July–October
+against PostgreSQL, including three consecutive pages per month. Payloads and
+row order matched; no duplicate or omitted rows occurred. Twelve historical
+deep links matched their canonical packets and 130 stored reception entries;
+the API returned reconstructed copies for every sampled reception. Matching and
+absent text searches over bounded two-minute windows completed in 70–139 ms.
+Date-bounded query plans pruned unrelated partitions and used the existing time
+indexes, including the packed September index. No invalid indexes were present.
+
+The following HTTP timings include the local reverse proxy and API. The 25-row
+medians use seven repeated month-end queries; the 200-row medians use five
+queries on fixed mid-month dates (October 25 for October). The latter matches
+the Logs page size. Each 1,000-row value is a single request on the same date.
+
+| History month | 25 rows, median | 200 rows, median | 1,000 rows |
+| --- | ---: | ---: | ---: |
+| July | 9.7 ms | 28.6 ms | 150.0 ms |
+| August | 8.0 ms | 25.1 ms | 124.5 ms |
+| September, packed time index | 8.1 ms | 34.0 ms | 179.1 ms |
+| October | 11.6 ms | 28.2 ms | 147.6 ms |
+
+These are bounded serial observations with warm caches, not a cold-cache,
+concurrent-load, or unrestricted full-history text-search guarantee. Historical
+data remains in PostgreSQL; no separate compressed payload archive was created.
+The September index remains 14,327,808 bytes, preserving the earlier measured
+49.77% index reduction.
+
+An eleven-sample observation from 03:04:22 through 03:11:52 UTC showed ingestion
+advancing at every sample, with no additional deadlocks, conflicts, or temporary
+database files. History-status requests took at most 42.2 ms and newest-packet
+requests at most 10.4 ms. The existing device-clock and node-field-length
+warnings remained; no new history-query or storage-maintenance error appeared.
+This verification did not expire live history or enable scheduled backups.
+
+Follow-up review fixed two availability/progress issues before final deployment:
+maintenance no longer occupies an application-pool connection, and automatic
+packing no longer retries one failing candidate indefinitely ahead of others.
+Connection acquisition/closure remains bounded through cancellation, and the
+packing cursor is durable before the attempted rebuild. Packet-retention text
+also now explicitly describes canonical-packet age and grouped copy expiration.
+
+- Full backend regression: **729 passed**, with 52 opt-in database cases skipped
+  in that run. Separately, **13 affected PostgreSQL cases passed**: backup
+  control-session isolation/loss, rotation durability/exclusion, and actual
+  packing, data preservation, timeout/cancellation rollback, and space refusal.
+- The final deployment image passed **130 focused tests**, including those 13
+  real PostgreSQL cases. Python 3.14.10 and every installed Python package
+  version matched the preceding deployment despite rebuilding dependency layers.
+- Frontend: **27 focused tests passed**; full ESLint, TypeScript, and production
+  builds passed. The six history routes and the new retention-text bundle were
+  checked through the deployed reverse proxy. No browser binary was available,
+  so these were HTTP/source/jsdom checks rather than a visual browser session.
+- Rebuilt and deployed both application services. Exact source hashes matched
+  all four changed backend runtime modules. Both disposable test databases were
+  removed after checking that no sessions remained; no test backup files remain.
+- Post-deployment checks compared another **800 historical row IDs** across
+  July–October exactly. The first 200-row requests took 91.4/30.5/35.0/31.0 ms
+  respectively. Seven samples over a further three minutes showed ingestion
+  advancing, fresh disabled-retention status, no lingering maintenance sessions,
+  and no added deadlocks, conflicts, or temporary database files. Backend and
+  PostgreSQL were healthy; approximately **5.4 GiB** remained free. Forever
+  retention, disabled automatic packing, and scheduled backups off were preserved.

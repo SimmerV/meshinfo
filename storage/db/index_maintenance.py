@@ -10,6 +10,7 @@ are removed. Current/open months are always excluded.
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 import math
 import time
 from typing import Callable
@@ -130,62 +131,67 @@ async def pack_index(conn, index_name: str, *, free_bytes: Callable[[], int],
     limits = limits or IndexPackingLimits()
     if conn.is_in_transaction():
         raise ValueError("packing requires a dedicated connection outside a transaction")
-    started = time.monotonic()
     async with maintenance_lock(conn) as acquired:
         if not acquired:
             return {"status": "busy", "index": index_name}
-        async with asyncio.timeout(limits.max_seconds):
-            async with conn.transaction():
-                await conn.execute("SET LOCAL TIME ZONE 'UTC'")
-                await conn.execute("SET LOCAL lock_timeout='100ms'")
-                await conn.execute(f"SET LOCAL statement_timeout='{math.ceil(limits.max_seconds * 1000)}ms'")
-                await conn.execute("SET LOCAL maintenance_work_mem='32MB'")
-                await conn.execute("SET LOCAL max_parallel_maintenance_workers=0")
-                row = await conn.fetchrow(_INDEX_SQL + " AND idx.relname=$1", index_name)
-                if row is None:
-                    raise CompressionRefused("index is not attached to a supported packet-history partition")
-                now = await conn.fetchval("SELECT clock_timestamp()")
-                reason = _reason(row, now, limits)
-                if reason:
-                    raise CompressionRefused(reason)
-                required = required_headroom(row["index_bytes"], limits.reserve_bytes)
-                if free_bytes() < required:
-                    raise CompressionRefused(f"index rebuild requires at least {required} free bytes on its PostgreSQL filesystem")
-                if await conn.fetchval("SELECT EXISTS(SELECT 1 FROM pg_replication_slots)"):
-                    raise CompressionRefused("replication slots require an independently budgeted WAL operation")
-                if await conn.fetchval("SHOW archive_mode") != "off":
-                    raise CompressionRefused("WAL archiving requires an independently budgeted operation")
-                await conn.execute(f"LOCK TABLE ONLY {qualified(row['partition'])} IN SHARE MODE NOWAIT")
-                locked = await conn.fetchrow(_INDEX_SQL + " AND idx.relname=$1", index_name)
-                if locked is None or _fingerprint(locked) != _fingerprint(row):
-                    raise CompressionRefused("index changed while acquiring the partition lock")
-                # Imports or a concurrent writer can grow an old index between
-                # the catalog preview and the SHARE lock. Recheck both limits
-                # against its locked size before allocating a replacement.
-                locked_reason = _reason(locked, now, limits)
-                if locked_reason:
-                    raise CompressionRefused(locked_reason)
-                before = locked["index_bytes"]
-                if free_bytes() < required_headroom(before, limits.reserve_bytes):
-                    raise CompressionRefused("insufficient headroom after locking the current index size")
-                wal_start = await conn.fetchval("SELECT pg_current_wal_insert_lsn()::text")
-                await conn.execute(f"ALTER INDEX {qualified(index_name)} SET (fillfactor={limits.fillfactor})")
-                await conn.execute(f"REINDEX INDEX {qualified(index_name)}")
-                after = await conn.fetchrow(_INDEX_SQL + " AND idx.relname=$1", index_name)
-                if after is None or _fingerprint(after) != _fingerprint(row):
-                    raise CompressionRefused("index identity, definition, validity or attachment changed")
-                if after["index_bytes"] > before:
-                    raise CompressionRefused("replacement is larger; original index restored by rollback")
-                if free_bytes() < limits.reserve_bytes:
-                    raise CompressionRefused("reserved free-space floor reached; rebuild rolled back")
-                wal_bytes = await conn.fetchval("SELECT pg_wal_lsn_diff(pg_current_wal_insert_lsn(),$1::text::pg_lsn)::bigint", wal_start)
-                saved = before - after["index_bytes"]
-        return {"status": "packed" if saved else "unchanged", "index": index_name,
-                "partition": row["partition"], "before_bytes": before, "after_bytes": after["index_bytes"],
-                "bytes_saved": saved, "fillfactor": limits.fillfactor,
-                "elapsed_seconds": round(time.monotonic() - started, 3),
-                "wal_bytes_during_operation": wal_bytes,
-                "verification": "index OID, keys, predicates, uniqueness, validity and parent attachment preserved; heap data untouched"}
+        return await _pack_index_locked(conn, index_name, free_bytes=free_bytes, limits=limits)
+
+
+async def _pack_index_locked(conn, index_name, *, free_bytes, limits):
+    """Rebuild after the caller acquired the shared session maintenance lock."""
+    started = time.monotonic()
+    async with asyncio.timeout(limits.max_seconds):
+        async with conn.transaction():
+            await conn.execute("SET LOCAL TIME ZONE 'UTC'")
+            await conn.execute("SET LOCAL lock_timeout='100ms'")
+            await conn.execute(f"SET LOCAL statement_timeout='{math.ceil(limits.max_seconds * 1000)}ms'")
+            await conn.execute("SET LOCAL maintenance_work_mem='32MB'")
+            await conn.execute("SET LOCAL max_parallel_maintenance_workers=0")
+            row = await conn.fetchrow(_INDEX_SQL + " AND idx.relname=$1", index_name)
+            if row is None:
+                raise CompressionRefused("index is not attached to a supported packet-history partition")
+            now = await conn.fetchval("SELECT clock_timestamp()")
+            reason = _reason(row, now, limits)
+            if reason:
+                raise CompressionRefused(reason)
+            required = required_headroom(row["index_bytes"], limits.reserve_bytes)
+            if free_bytes() < required:
+                raise CompressionRefused(f"index rebuild requires at least {required} free bytes on its PostgreSQL filesystem")
+            if await conn.fetchval("SELECT EXISTS(SELECT 1 FROM pg_replication_slots)"):
+                raise CompressionRefused("replication slots require an independently budgeted WAL operation")
+            if await conn.fetchval("SHOW archive_mode") != "off":
+                raise CompressionRefused("WAL archiving requires an independently budgeted operation")
+            await conn.execute(f"LOCK TABLE ONLY {qualified(row['partition'])} IN SHARE MODE NOWAIT")
+            locked = await conn.fetchrow(_INDEX_SQL + " AND idx.relname=$1", index_name)
+            if locked is None or _fingerprint(locked) != _fingerprint(row):
+                raise CompressionRefused("index changed while acquiring the partition lock")
+            # Imports or a concurrent writer can grow an old index between
+            # the catalog preview and the SHARE lock. Recheck both limits
+            # against its locked size before allocating a replacement.
+            locked_reason = _reason(locked, now, limits)
+            if locked_reason:
+                raise CompressionRefused(locked_reason)
+            before = locked["index_bytes"]
+            if free_bytes() < required_headroom(before, limits.reserve_bytes):
+                raise CompressionRefused("insufficient headroom after locking the current index size")
+            wal_start = await conn.fetchval("SELECT pg_current_wal_insert_lsn()::text")
+            await conn.execute(f"ALTER INDEX {qualified(index_name)} SET (fillfactor={limits.fillfactor})")
+            await conn.execute(f"REINDEX INDEX {qualified(index_name)}")
+            after = await conn.fetchrow(_INDEX_SQL + " AND idx.relname=$1", index_name)
+            if after is None or _fingerprint(after) != _fingerprint(row):
+                raise CompressionRefused("index identity, definition, validity or attachment changed")
+            if after["index_bytes"] > before:
+                raise CompressionRefused("replacement is larger; original index restored by rollback")
+            if free_bytes() < limits.reserve_bytes:
+                raise CompressionRefused("reserved free-space floor reached; rebuild rolled back")
+            wal_bytes = await conn.fetchval("SELECT pg_wal_lsn_diff(pg_current_wal_insert_lsn(),$1::text::pg_lsn)::bigint", wal_start)
+            saved = before - after["index_bytes"]
+    return {"status": "packed" if saved else "unchanged", "index": index_name,
+            "partition": row["partition"], "before_bytes": before, "after_bytes": after["index_bytes"],
+            "bytes_saved": saved, "fillfactor": limits.fillfactor,
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+            "wal_bytes_during_operation": wal_bytes,
+            "verification": "index OID, keys, predicates, uniqueness, validity and parent attachment preserved; heap data untouched"}
 
 
 def packing_policy(config):
@@ -217,11 +223,45 @@ def packing_policy(config):
     return enabled, limits, filesystem
 
 
+def _next_packing_candidate(candidates, previous):
+    """Stable round-robin order; index size changes never reset progress."""
+    ordered = sorted(candidates, key=lambda row: row["index"])
+    if not ordered:
+        return None
+    if isinstance(previous, str):
+        for candidate in ordered:
+            if candidate["index"] > previous:
+                return candidate
+    return ordered[0]
+
+
+async def _read_packing_cursor(conn):
+    return await conn.fetchval(
+        "SELECT result->>'last_index' FROM public.storage_maintenance_status "
+        "WHERE operation='compression_cursor'", timeout=3,
+    )
+
+
+async def _save_packing_cursor(conn, index_name):
+    # Exactly one private scheduler row, separate from the compression outcome:
+    # late/manual/busy status writes must not erase or rewind automatic progress.
+    await conn.execute(
+        """INSERT INTO public.storage_maintenance_status (operation, updated_at, result)
+           VALUES ('compression_cursor', clock_timestamp(), $1::jsonb)
+           ON CONFLICT (operation) DO UPDATE
+           SET updated_at=EXCLUDED.updated_at, result=EXCLUDED.result""",
+        json.dumps({"last_index": index_name}), timeout=3,
+    )
+
+
 async def run_index_packing_cycle(connection_or_pool, config):
     """Pack at most one closed leaf index when explicitly configured.
 
     A filesystem location is required to avoid confusing application-host free
     space with PostgreSQL-host free space. Scheduling belongs to the caller.
+    One durable cursor advances before each attempt, including attempts that
+    fail or are interrupted. Candidates rotate by name, with wraparound, so a
+    repeatedly blocked index cannot starve other eligible indexes.
     """
     from pathlib import Path
     import shutil
@@ -233,10 +273,19 @@ async def run_index_packing_cycle(connection_or_pool, config):
     if not filesystem or not Path(filesystem).is_dir():
         return {"status": "blocked", "reason": "Configure the actual database index filesystem before enabling packing"}
     async with _connection(connection_or_pool) as conn:
-        plan = await plan_index_packing(conn, limits=limits)
-        candidates = [row for row in plan["indexes"] if row["eligible"] and row["tablespace"] is None]
-        if not candidates:
-            return {"status": "no_candidates"}
-        selected = candidates[0]
-        return await pack_index(conn, selected["index"], limits=limits,
-                                free_bytes=lambda: shutil.disk_usage(filesystem).free)
+        if conn.is_in_transaction():
+            raise ValueError("automatic packing requires a connection outside a transaction")
+        async with maintenance_lock(conn) as acquired:
+            if not acquired:
+                return {"status": "busy"}
+            plan = await plan_index_packing(conn, limits=limits)
+            candidates = [row for row in plan["indexes"] if row["eligible"] and row["tablespace"] is None]
+            previous = await _read_packing_cursor(conn)
+            selected = _next_packing_candidate(candidates, previous)
+            if selected is None:
+                return {"status": "no_candidates"}
+            # Autocommit before any rebuild. Cancellation or a backend restart
+            # after this point preserves progress without retaining attempt logs.
+            await _save_packing_cursor(conn, selected["index"])
+            return await _pack_index_locked(conn, selected["index"], limits=limits,
+                                            free_bytes=lambda: shutil.disk_usage(filesystem).free)

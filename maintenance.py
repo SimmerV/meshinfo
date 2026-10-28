@@ -28,10 +28,14 @@ _next_backup_attempt_monotonic = 0.0
 async def run_retention(config, storage) -> dict:
     """Run one bounded cycle and retain an operator-visible durable result."""
     from storage.db.maintenance_status import prepare_retention_index, save_status
+    from storage.db.maintenance_connection import maintenance_connection
     from storage.db.retention_executor import enforce_retention
 
     try:
-        async with storage.pool.acquire(timeout=3) as conn:
+        # Index preparation and bounded expiration must not occupy the only
+        # application connection on small VPS installations. The dedicated
+        # session also keeps advisory-lock ownership independent of pool resets.
+        async with maintenance_connection(storage, config, application_name="meshinfo-retention-control") as conn:
             try:
                 await prepare_retention_index(conn, config)
             except Exception:
@@ -68,12 +72,13 @@ async def run_compression(config, storage, *, after=None) -> dict:
     from storage.db.index_maintenance import run_index_packing_cycle
     from storage.db.compression import CompressionRefused
     from storage.db.maintenance_status import save_status
+    from storage.db.maintenance_connection import maintenance_connection
 
     result = {"status": "error"}
     try:
         if after is not None:
             await asyncio.shield(after)
-        async with storage.pool.acquire(timeout=3) as conn:
+        async with maintenance_connection(storage, config, application_name="meshinfo-compression-control") as conn:
             try:
                 result = await run_index_packing_cycle(conn, config)
             except CompressionRefused as exc:

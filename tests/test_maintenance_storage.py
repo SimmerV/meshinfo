@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import maintenance
-from storage.db import maintenance_status, retention_executor
+from storage.db import maintenance_connection, maintenance_status, retention_executor
 
 
 @pytest.mark.parametrize("operation", ["retention", "compression", "backup"])
@@ -106,7 +106,7 @@ def test_public_status_restricts_scope_names_and_status_values():
     assert "private" not in json.dumps(public)
 
 
-class Pool:
+class ControlContext:
     def __init__(self, connection, error=None):
         self.connection = connection
         self.error = error
@@ -125,14 +125,29 @@ class Pool:
 
 def install_runner(monkeypatch, *, outcome=None, execution_error=None, index_error=None, save_error=None):
     connection = object()
-    pool = Pool(connection)
+    control = ControlContext(connection)
+
+    class ForbiddenPool:
+        def acquire(self, **_kwargs):
+            raise AssertionError("Storage maintenance must not borrow the application pool")
+
+    storage = SimpleNamespace(pool=ForbiddenPool(), control=control)
+
+    @asynccontextmanager
+    async def dedicated(actual_storage, config, *, application_name):
+        assert actual_storage is storage
+        assert application_name in {"meshinfo-retention-control", "meshinfo-compression-control"}
+        async with control.acquire(timeout=3) as conn:
+            yield conn
+
+    monkeypatch.setattr(maintenance_connection, "maintenance_connection", dedicated)
     prepare = AsyncMock(side_effect=index_error)
     enforce = AsyncMock(return_value=outcome or {"status": "complete", "scopes": {}}, side_effect=execution_error)
     save = AsyncMock(side_effect=save_error)
     monkeypatch.setattr(maintenance_status, "prepare_retention_index", prepare)
     monkeypatch.setattr(retention_executor, "enforce_retention", enforce)
     monkeypatch.setattr(maintenance_status, "save_status", save)
-    return SimpleNamespace(pool=pool), connection, prepare, enforce, save
+    return storage, connection, prepare, enforce, save
 
 
 def test_scope_partial_progress_is_persisted_and_returned(monkeypatch):
@@ -148,7 +163,7 @@ def test_scope_partial_progress_is_persisted_and_returned(monkeypatch):
     assert result == outcome
     enforce.assert_awaited_once_with(connection, {})
     save.assert_awaited_once_with(connection, "retention", outcome)
-    assert storage.pool.released
+    assert storage.control.released
 
 
 def test_failed_index_preparation_does_not_block_other_history_families(monkeypatch):
@@ -157,7 +172,7 @@ def test_failed_index_preparation_does_not_block_other_history_families(monkeypa
     assert result["status"] == "complete"
     enforce.assert_awaited_once_with(connection, {})
     save.assert_awaited_once()
-    assert storage.pool.released
+    assert storage.control.released
 
 
 def test_unexpected_executor_failure_is_durable_and_sanitized(monkeypatch):
@@ -168,7 +183,7 @@ def test_unexpected_executor_failure_is_durable_and_sanitized(monkeypatch):
     assert save.await_args.args[:2] == (connection, "retention")
     assert save.await_args.args[2]["status"] == "error"
     assert "private" not in json.dumps(save.await_args.args[2])
-    assert storage.pool.released
+    assert storage.control.released
 
 
 def test_status_write_failure_is_not_reported_as_completed_maintenance(monkeypatch):
@@ -176,12 +191,12 @@ def test_status_write_failure_is_not_reported_as_completed_maintenance(monkeypat
     result = asyncio.run(maintenance.run_retention({}, storage))
     assert result["status"] == "error"
     assert result["status_persisted"] is False
-    assert storage.pool.released
+    assert storage.control.released
 
 
-def test_pool_outage_returns_failure_without_executing_retention(monkeypatch):
+def test_dedicated_connection_outage_returns_failure_without_executing_retention(monkeypatch):
     storage, _, _, enforce, save = install_runner(monkeypatch)
-    storage.pool.error = TimeoutError("pool unavailable")
+    storage.control.error = TimeoutError("maintenance connection unavailable")
     result = asyncio.run(maintenance.run_retention({}, storage))
     assert result["status"] == "error"
     assert result["status_persisted"] is False
@@ -194,7 +209,7 @@ def test_cancellation_releases_connection_and_is_not_saved_as_success(monkeypatc
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(maintenance.run_retention({}, storage))
     save.assert_not_awaited()
-    assert storage.pool.released
+    assert storage.control.released
 
 
 def test_scheduler_keeps_each_worker_single_flight_and_awaits_cancellation(monkeypatch):
@@ -243,3 +258,126 @@ def test_scheduler_keeps_each_worker_single_flight_and_awaits_cancellation(monke
         assert all(event.is_set() for event in stopped.values())
 
     asyncio.run(run())
+
+
+class SingleConnectionPool:
+    """A one-slot application pool so regressions deterministically block reads."""
+
+    def __init__(self):
+        self.available = asyncio.Semaphore(1)
+        self.connection = object()
+        self.active = 0
+
+    @asynccontextmanager
+    async def acquire(self, *, timeout=0.1):
+        await asyncio.wait_for(self.available.acquire(), timeout)
+        self.active += 1
+        try:
+            yield self.connection
+        finally:
+            self.active -= 1
+            self.available.release()
+
+
+@pytest.mark.parametrize("stage", ["index_preparation", "expiration"])
+def test_retention_keeps_single_connection_application_pool_available(monkeypatch, stage):
+    async def scenario():
+        storage, connection, _, _, save = install_runner(monkeypatch)
+        storage.pool = SingleConnectionPool()
+        started, finish = asyncio.Event(), asyncio.Event()
+
+        async def controlled(actual, config):
+            assert actual is connection
+            started.set()
+            await finish.wait()
+            return {"status": "complete", "scopes": {}}
+
+        if stage == "index_preparation":
+            monkeypatch.setattr(maintenance_status, "prepare_retention_index", controlled)
+        else:
+            monkeypatch.setattr(retention_executor, "enforce_retention", controlled)
+        task = asyncio.create_task(maintenance.run_retention({}, storage))
+        try:
+            await asyncio.wait_for(started.wait(), 1)
+            assert not task.done() and not storage.control.released
+            # These stand in for concurrent history reads and ingestion. With
+            # the old pool-held maintenance path they time out at this point.
+            for _ in range(3):
+                async with storage.pool.acquire() as application:
+                    assert application is not connection
+                    assert storage.pool.active == 1
+        finally:
+            finish.set()
+        assert (await asyncio.wait_for(task, 1))["status"] == "complete"
+        assert storage.control.released
+        save.assert_awaited_once()
+
+    asyncio.run(scenario())
+
+
+def test_index_packing_keeps_single_connection_application_pool_available(monkeypatch):
+    from storage.db import index_maintenance
+
+    async def scenario():
+        storage, connection, _, _, save = install_runner(monkeypatch)
+        storage.pool = SingleConnectionPool()
+        started, finish = asyncio.Event(), asyncio.Event()
+        preceding = asyncio.get_running_loop().create_future()
+
+        async def controlled(actual, config):
+            assert actual is connection
+            started.set()
+            await finish.wait()
+            return {"status": "packed", "index": "synthetic_history_index"}
+
+        monkeypatch.setattr(index_maintenance, "run_index_packing_cycle", controlled)
+        task = asyncio.create_task(maintenance.run_compression({}, storage, after=preceding))
+        await asyncio.sleep(0)
+        assert not started.is_set()
+        preceding.set_result({"status": "complete"})
+        try:
+            await asyncio.wait_for(started.wait(), 1)
+            assert not task.done() and not storage.control.released
+            for _ in range(3):
+                async with storage.pool.acquire() as application:
+                    assert application is not connection
+        finally:
+            finish.set()
+        result = await asyncio.wait_for(task, 1)
+        assert result == {"status": "packed", "index": "synthetic_history_index"}
+        assert storage.control.released
+        save.assert_awaited_once_with(connection, "compression", result)
+
+    asyncio.run(scenario())
+
+
+def test_cancelled_index_preparation_closes_dedicated_connection(monkeypatch):
+    storage, _, _, enforce, save = install_runner(monkeypatch, index_error=asyncio.CancelledError())
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(maintenance.run_retention({}, storage))
+    assert storage.control.released
+    enforce.assert_not_awaited()
+    save.assert_not_awaited()
+
+
+def test_cancelled_index_packing_closes_dedicated_connection(monkeypatch):
+    from storage.db import index_maintenance
+
+    storage, _, _, _, save = install_runner(monkeypatch)
+    monkeypatch.setattr(index_maintenance, "run_index_packing_cycle", AsyncMock(side_effect=asyncio.CancelledError()))
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(maintenance.run_compression({}, storage))
+    assert storage.control.released
+    save.assert_not_awaited()
+
+
+def test_packing_failure_remains_visible_with_dedicated_connection(monkeypatch):
+    from storage.db import index_maintenance
+    from storage.db.compression import CompressionRefused
+
+    storage, connection, _, _, save = install_runner(monkeypatch)
+    monkeypatch.setattr(index_maintenance, "run_index_packing_cycle", AsyncMock(side_effect=CompressionRefused("insufficient headroom")))
+    result = asyncio.run(maintenance.run_compression({}, storage))
+    assert result == {"status": "blocked", "reason": "insufficient headroom"}
+    save.assert_awaited_once_with(connection, "compression", result)
+    assert storage.control.released

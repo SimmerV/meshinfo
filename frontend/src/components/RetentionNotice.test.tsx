@@ -65,7 +65,36 @@ describe("History retention visibility", () => {
     expect(document.querySelector("summary")?.textContent).toContain("6 calendar months · preview only");
     expect(document.body.textContent).toContain("automatic expiration is off");
     expect(document.body.textContent).toContain("up to one additional month");
-    expect(document.body.textContent).toContain("Only history before April 1, 2026 (UTC) is eligible");
+    expect(document.body.textContent).toContain("Packets first received before April 1, 2026 (UTC) are eligible");
+  });
+
+  it("explains that later reception copies share a finite packet policy's expiration", async () => {
+    const fixture = history({ enforcement_enabled: true, configured_enabled: true });
+    fixture.scopes.packets = {
+      ...forever,
+      months: 6,
+      cutoff: "2026-04-27T12:00:00Z",
+      effective_cutoff: "2026-04-01T00:00:00Z",
+    };
+    stubApi({ history: fixture });
+    await mountAt("/logs", <RetentionNotice scope="packets" />);
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("Packets first received before April 1, 2026 (UTC) are eligible");
+    expect(text).toContain("All reception copies expire with their packet, including copies received after the cutoff");
+    expect(text).toContain("A later copy does not extend the packet’s retention");
+    expect(text).not.toContain("Only history before");
+  });
+
+  it("distinguishes packet groups from individual records in a mixed-policy overview", async () => {
+    const fixture = history({ enforcement_enabled: true, configured_enabled: true });
+    fixture.scopes.packets.months = 3;
+    fixture.scopes.telemetry.months = 6;
+    stubApi({ history: fixture });
+    await mountAt("/stats", <HistoryRetentionPanel />);
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("Packet age starts at its first receipt on this server");
+    expect(text).toContain("All reception copies expire with their packet, including copies received after the cutoff");
+    expect(text).toContain("Other history uses each record’s receipt time");
   });
 
   it("reads the selected scope override and the backend enforcement state", async () => {
