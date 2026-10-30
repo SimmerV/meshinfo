@@ -1,0 +1,372 @@
+{
+  "prototype_only": true,
+  "all_checks_passed": true,
+  "benchmark_all_checks_passed": false,
+  "created_at": "2026-10-30T19:06:06.050935+00:00",
+  "restore_verification": true,
+  "fixture_digest": "441ea6c83fd10efee585b3271cf828b42492d4557d754a9043dc023e3bb2a984",
+  "fixture_rows": {
+    "packets": 15899,
+    "receptions": 102700,
+    "topics": 579
+  },
+  "variants": {
+    "columnar": {
+      "recent_page": {
+        "rows": 200,
+        "has_next_cursor": true,
+        "sha256": "29fc24833b43537ea4ed5e788b4186fbdec31a6bc7356eed40445450ecfc5abb",
+        "elapsed_ms": 13.954
+      },
+      "archive_first_month_page": {
+        "rows": 200,
+        "has_next_cursor": true,
+        "sha256": "e107e31fa4fda8d7f26eef9f8f4360f3c34332dc15c25d763753181403ea41b6",
+        "elapsed_ms": 16.788
+      },
+      "archive_latest_month_page": {
+        "rows": 200,
+        "has_next_cursor": true,
+        "sha256": "191c207c11de7bbec86ef69d8c2f8e7afe2b895f8876f816c0c7cb0309ca4f5b",
+        "elapsed_ms": 34.014
+      },
+      "archive_search_absent": {
+        "rows": 0,
+        "has_next_cursor": false,
+        "sha256": "088a1811df076d2ec57902d725acc9816c77e01b08ca4b42c8009e1410eb99eb",
+        "elapsed_ms": 9519.041
+      },
+      "archive_search_payload": {
+        "rows": 200,
+        "has_next_cursor": true,
+        "sha256": "4f969d451fdfd5285cfe1263b536fe537061692d604f16a6ee77107c7fdbd802",
+        "elapsed_ms": 101.842
+      },
+      "archive_node_or": {
+        "rows": 5,
+        "has_next_cursor": false,
+        "sha256": "339f4d90c4516c2ece10c0f5fdd132a9c57ca7cb3b8caabaaf68f7ea9415971e",
+        "elapsed_ms": 15.609
+      },
+      "archive_literal_topic": {
+        "rows": 8,
+        "has_next_cursor": false,
+        "sha256": "ea850666ea1e31256118428b9d0b5ebaf61731e2af3c286cc116190bc7f0516f",
+        "elapsed_ms": 23.758
+      },
+      "archive_reception_only_search": {
+        "rows": 1,
+        "has_next_cursor": false,
+        "sha256": "28e9e0389a346d3fdd23a321c4c344ed155ffa5ce665f44159c68f573a9a276c",
+        "elapsed_ms": 8269.791
+      },
+      "reported_timestamp_range": {
+        "rows": 200,
+        "has_next_cursor": true,
+        "sha256": "8264299d01d8ed30e39ecbb1dd56f1e98430cc2c990b7cd14d0f81b5930505ae",
+        "elapsed_ms": 26.888
+      },
+      "deep_link_000": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "cf3303db6f9cceccb111afcae9e9291ebfc693b9118566a1b66dff0a64c5b4c8",
+        "elapsed_ms": 7.807
+      },
+      "deep_link_001": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "7414ce41d668790ed08386f607a13052c318468f03d0d5462c59e514903dadb1",
+        "elapsed_ms": 6.189
+      },
+      "deep_link_002": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "b7c955145434373c5898804ea63568520a0b79d8973f1c080679921761e9b03f",
+        "elapsed_ms": 4.606
+      },
+      "deep_link_003": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "618efd23bafc50c94c7cf8bba74e803f5232dfa026bf36dc361d307167ad046d",
+        "elapsed_ms": 3.333
+      },
+      "deep_link_004": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "1bcf083fc1e99ae955dcd08ea38c0aad7cfb49cd226a44e174069f5c2d7bfa29",
+        "elapsed_ms": 3.227
+      },
+      "deep_link_005": {
+        "rows": 1,
+        "receptions": 7,
+        "reconstructed_copies": 7,
+        "sha256": "c7a5b8f7d236ba4803f53dd91ee74bbb170d49925cac6bb919310d922396e2cb",
+        "elapsed_ms": 3.238
+      },
+      "deep_link_006": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "078a48696509991d464579213983ec362e43919c2f015641310511a0ca7c6340",
+        "elapsed_ms": 2.66
+      },
+      "deep_link_007": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "4e97a601800603f1ad52ee248f25387c920e827619bc0d7e870ee0618c2cc51d",
+        "elapsed_ms": 2.486
+      },
+      "deep_link_008": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "b61be912ebf612c1505e16d153b2611cd76b0245fcf90819584864276996bccc",
+        "elapsed_ms": 2.4
+      },
+      "deep_link_009": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "55c57512b8a079de7c3d020b485011c5365375922024db40e083d8a0d5655f79",
+        "elapsed_ms": 2.555
+      },
+      "deep_link_010": {
+        "rows": 1,
+        "receptions": 2,
+        "reconstructed_copies": 2,
+        "sha256": "32b5614807f89f60061af4f71cca619121fc5d969807d5a25b5eb59531a2b0d2",
+        "elapsed_ms": 2.642
+      },
+      "deep_link_011": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "e53e8ca414b6bc42887f0d7c2802d8379d7dec64eea369329d82949ac5bf776c",
+        "elapsed_ms": 2.787
+      },
+      "deep_link_012": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "1d5751955fb98ad70b59acb3d01a0c66a47f9af436ba79aa430cb1b62145db8e",
+        "elapsed_ms": 2.94
+      },
+      "deep_link_013": {
+        "rows": 1,
+        "receptions": 2,
+        "reconstructed_copies": 2,
+        "sha256": "8ccd1475cacbb1bd19071a61a0a818cf902cc7b1bdbd51158ad6eb2bb423fbdf",
+        "elapsed_ms": 5.603
+      },
+      "deep_link_014": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "043cdc2fb4742b3d9a6fe87a06f71c1e19330b01e47fe39e52fee4f4efdb9f88",
+        "elapsed_ms": 5.005
+      },
+      "deep_link_015": {
+        "rows": 1,
+        "receptions": 10,
+        "reconstructed_copies": 10,
+        "sha256": "ba7e5fdf132fd64a21845a2fef3f6f98d77d4f8cfdc631e21484b69e8aed9f2a",
+        "elapsed_ms": 5.212
+      },
+      "deep_link_016": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "b3da001929d918725fa5d15e6754f8ce1ed77f3bc4b02d57292ac364230622df",
+        "elapsed_ms": 5.164
+      },
+      "deep_link_017": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "0032bc555431bf1051332a4689db89dee8a68b328ca7bb7d791f5a4086202160",
+        "elapsed_ms": 5.039
+      },
+      "deep_link_018": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "be57256298ef2df7e16a68de8dd343d261709dcd7e6021ed8589467df160fa66",
+        "elapsed_ms": 4.993
+      },
+      "deep_link_019": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "5c785e0f9f761ae863adcedac01755f248bb580901644203c6cd496936cbd4de",
+        "elapsed_ms": 4.764
+      },
+      "deep_link_020": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "30aae4cb9044c294d71427d05672314487d58c8b1f9c9df3abbc8f8287246fb1",
+        "elapsed_ms": 4.508
+      },
+      "deep_link_021": {
+        "rows": 1,
+        "receptions": 4,
+        "reconstructed_copies": 4,
+        "sha256": "bf81bd861b0dad585b8b5837f5dbedf244f8e27bb1fcda942c53742088102639",
+        "elapsed_ms": 4.68
+      },
+      "deep_link_022": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "e9e77404c098653420d29e0adfe0d5e5534d2abc29b28a19556ad6dcb1d9f713",
+        "elapsed_ms": 4.41
+      },
+      "deep_link_023": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "7413cba9998907db8a849f8c4dad04fc40ee7c0676c99c3f04b92da6a9031ed3",
+        "elapsed_ms": 4.554
+      },
+      "deep_link_024": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "3a6d3c110efa6a397de0f2dbacf3e63be55b07bd39c35aad42b9b20b29b95201",
+        "elapsed_ms": 4.513
+      },
+      "deep_link_025": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "120dc68cd437c1216518431c406dd5167f2941bb1c3baf877a550bcf434d0065",
+        "elapsed_ms": 4.498
+      },
+      "deep_link_026": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "c12eaf63603f71d7866882b79cef4788e0acf329751b060605db04e8815f8ea1",
+        "elapsed_ms": 4.366
+      },
+      "deep_link_027": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "f27a015a19c747e31fac2e55ad0f1b768ab4671ab6b7f87777c01bfb74794b65",
+        "elapsed_ms": 4.53
+      },
+      "deep_link_028": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "a177d4783c0eea5d7d67431ab568fbc12052eb808742c95a6e8bb7d309e038a5",
+        "elapsed_ms": 4.599
+      },
+      "deep_link_029": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "a4c8e06b22e6e4aac2c2ecf89baaaf0809ab6c80f670f39ed04684eb7a7886d4",
+        "elapsed_ms": 4.468
+      },
+      "deep_link_030": {
+        "rows": 1,
+        "receptions": 1,
+        "reconstructed_copies": 1,
+        "sha256": "f7b27f4ca45cbfb4c08e5cdc2b2b5b5b75c09e472e11a4b3d1594fd698b72c76",
+        "elapsed_ms": 4.486
+      },
+      "reused_packet_id_newest": {
+        "rows": 1,
+        "receptions": 0,
+        "reconstructed_copies": 0,
+        "sha256": "7413cba9998907db8a849f8c4dad04fc40ee7c0676c99c3f04b92da6a9031ed3",
+        "elapsed_ms": 6.392
+      },
+      "missing_deep_link": {
+        "rows": 0,
+        "sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "elapsed_ms": 0.995
+      },
+      "boundary_pagination": {
+        "rows": 440,
+        "pages": 3,
+        "sha256": "bb0bb48d9db24f74372be70f391f57e6f73574a9ae9aac8d2a4a5fb55658c11f",
+        "elapsed_ms": 26.351
+      },
+      "tied_timestamp_pagination": {
+        "rows": 2,
+        "pages": 2,
+        "sha256": "5444a8a6f85068d7570633945d8c4b0992a1a54e975cc1b229569e0227e3b1ce",
+        "elapsed_ms": 9.322
+      }
+    }
+  },
+  "cases_per_variant": 44,
+  "query_failures": [],
+  "comparisons": {
+    "columnar": {
+      "matched_cases": [
+        "recent_page",
+        "archive_first_month_page",
+        "archive_latest_month_page",
+        "archive_search_absent",
+        "archive_search_payload",
+        "archive_node_or",
+        "archive_literal_topic",
+        "archive_reception_only_search",
+        "reported_timestamp_range",
+        "deep_link_000",
+        "deep_link_001",
+        "deep_link_002",
+        "deep_link_003",
+        "deep_link_004",
+        "deep_link_005",
+        "deep_link_006",
+        "deep_link_007",
+        "deep_link_008",
+        "deep_link_009",
+        "deep_link_010",
+        "deep_link_011",
+        "deep_link_012",
+        "deep_link_013",
+        "deep_link_014",
+        "deep_link_015",
+        "deep_link_016",
+        "deep_link_017",
+        "deep_link_018",
+        "deep_link_019",
+        "deep_link_020",
+        "deep_link_021",
+        "deep_link_022",
+        "deep_link_023",
+        "deep_link_024",
+        "deep_link_025",
+        "deep_link_026",
+        "deep_link_027",
+        "deep_link_028",
+        "deep_link_029",
+        "deep_link_030",
+        "reused_packet_id_newest",
+        "missing_deep_link",
+        "boundary_pagination",
+        "tied_timestamp_pagination"
+      ],
+      "unverified_cases": []
+    }
+  },
+  "application_warnings_or_errors": 0,
+  "synthetic_packets": 9,
+  "packets_with_receptions_in_fixture": 8566,
+  "limits": [
+    "Actual storage/API reader methods; HTTP routing and live ingestion are not exercised.",
+    "Bounded fixture and warm local caches do not establish production-scale latency."
+  ]
+}

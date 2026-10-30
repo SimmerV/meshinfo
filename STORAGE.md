@@ -461,3 +461,202 @@ also now explicitly describes canonical-packet age and grouped copy expiration.
   and no added deadlocks, conflicts, or temporary database files. Backend and
   PostgreSQL were healthy; approximately **5.4 GiB** remained free. Forever
   retention, disabled automatic packing, and scheduled backups off were preserved.
+
+## Compressed packet-history prototype (2026-10-30)
+
+**Real payload compression is feasible; production conversion is not ready.**
+The earlier index packing does not compress historical packet records. This
+prototype tests PostgreSQL partitions with the standalone Citus Columnar access
+method and Zstandard compression. It adds operator experiments and reports,
+not an archive setting, application migration, or automatic conversion worker.
+The live application, database image, retention policy, and historical rows were
+not changed by this experiment.
+
+The fixture contains **15,890 real canonical packets, 102,698 linked receptions,
+and 577 topic dictionary entries**, sampled across July–October. Nine synthetic
+packets, two receptions, and two topics exercise boundary cases. October remains
+heap storage; the three earlier packet partitions use columnar storage.
+Receptions remain heap storage. Everything uses the same local filesystem;
+the test databases are temporary, isolated copies, not an external archive.
+
+### Size and query results
+
+All sizes below include the applicable indexes, TOAST storage, and compression
+metadata. Shared receptions and topics count once in each hypothetical layout.
+GIN leaf indexes were rebuilt after loading, before measurement: pending-list
+allocation from fixture COPY must not be mistaken for compression savings.
+B-tree definitions, including actual source sort directions and partial
+predicates, are preserved. Raw payload TEXT roundtrips exactly; JSONB extras
+preserve their decoded values. Storage retained by rollback probes is counted.
+
+| Comparison | Heap | Compressed | Reduction |
+| --- | ---: | ---: | ---: |
+| Old packet table data, including columnar metadata | 8.73 MiB | 1.01 MiB | 88.5% |
+| Old packets with the same supported B-tree indexes | 12.23 MiB | 4.52 MiB | 63.1% |
+| Full fixture with equivalent indexes | 41.14 MiB | 33.65 MiB | 18.2% |
+| Full fixture with the original cold GIN indexes on the heap baseline | 42.38 MiB | 33.65 MiB | 20.6% |
+
+The last row includes removing unsupported cold GIN indexes. The **18.2%** row
+separates that index removal from compression. Uncompressed receptions and the
+topic dictionary account for 24.22 MiB, so compressing only old canonical packets
+cannot reduce the entire fixture by the packet-data ratio. The preliminary 30.2%
+figure, measured before normalizing GIN indexes, is superseded by these results.
+
+Warm medians below compare the original indexed heap with the mixed layout;
+the page query fetches 201 rows for a 200-row page plus its continuation marker.
+
+| Existing SQL operation | Heap | Mixed heap/columnar |
+| --- | ---: | ---: |
+| Recent page | 2.95 ms | 3.21 ms |
+| Archived month page | 2.97 ms | 8.66 ms |
+| Packet row-ID lookup | 0.65 ms | 2.12 ms |
+| Archived node OR filter | 0.90 ms | 10.42 ms |
+| Literal topic filter | 2.38 ms | 25.99 ms |
+| Archived common payload search | 9.24 ms | 93.16 ms |
+
+These results preserve practical small-sample browsing, but **do not demonstrate
+equal query speed**. Node, topic, and payload searches have substantial relative
+regressions. The experimental node UNION rewrite was slower on this fixture.
+
+Existing absent-term and reception-only searches are also slow on ordinary
+heap storage. All four such direct-query cases failed a two-second threshold in
+each of the three layouts: the benchmark deliberately reports twelve failures
+and exits with status 2. Longer application-reader checks completed these
+archived searches in roughly eight to ten seconds. This existing search issue
+must not be attributed solely to compression or silently treated as an empty
+successful result.
+
+A separate SQL candidate computes matching reception topic IDs once using
+`ANY(ARRAY(SELECT ... FROM mqtt_topics ...))`, instead of repeating the topic
+search inside the correlated reception join. Its archived absent/receipt-only
+search medians were about 155 ms on compressed data, versus 150 ms on the indexed
+heap. These are experimental queries only; application SQL is unchanged. The
+report explicitly marks original-query parity unavailable where the original
+query exceeded the benchmark timeout; application cases independently check the
+original search results and receipt-only witnesses.
+
+### Correctness and operational checks
+
+- All fixture rows match across all three layouts, including payload text,
+  nullable fields, timestamps, and reception data. Primary keys reject duplicate
+  historical identities; the exact application BEFORE INSERT trigger works on
+  both heap and columnar leaves. Probe transactions roll back logically.
+- **44 application test cases per layout, 132 total**, pass using the actual
+  `PostgresStorage` readers with a ten-second query limit. These cover pagination
+  across the archive boundary and tied timestamps, reported versus ingestion
+  time, newest packet-ID reuse, literal topic characters, null/scalar/malformed
+  payloads, and gateway-copy reconstruction. Independent expected copies check
+  Unicode, null overrides, deleted keys, and cross-month receptions. Logged
+  warnings/errors fail a case, including methods that otherwise swallow errors.
+- A custom-format `pg_dump --no-owner --no-privileges` restores successfully
+  with `pg_restore --exit-on-error --single-transaction` into a second isolated
+  database. Every fixture row and partition access method matches after restore;
+  all 44 application cases pass again against restored compressed history.
+  **Storage tuning is not identical:** `chunk_group_row_limit` resets from the
+  tested 1,000 to 10,000 on every restored cold partition. Restored page timings
+  therefore are not interchangeable with the benchmark timings. The production
+  restore gate fails until table options are preserved and applied before data
+  loading; changing the setting afterward does not rewrite existing chunks.
+- Synthetic lifecycle tests prove lock-timeout refusal leaves the original heap
+  intact, DDL rollback restores heap access and rows, committed conversion keeps
+  rows, and ordinary B-tree REINDEX preserves them. Native conversion holds an
+  exclusive lock that blocks readers until commit; it is not an online migration.
+- An UPDATE against the mixed parent with only an ID predicate fails even when
+  the matching row is hot. Adding the partition date restriction permits the hot
+  UPDATE. This reproduces a real startup-backfill integration blocker.
+
+See the source-free reports in
+[`benchmarks/columnar-2026-10-30`](benchmarks/columnar-2026-10-30/):
+`benchmark.json`, `application.json`, `application-restored.json`,
+`restore-command.json`, and `lifecycle.json`. Query failures remain in the report;
+the prototype does not claim an all-green performance gate.
+
+### Reproducing the bounded experiment
+
+`Dockerfile.columnar-prototype` pins the tested PostgreSQL 18.6 image and verifies
+the Citus 14.1 package checksum. It is an **amd64 prototype image**, not a
+replacement Compose service. Only `citus_columnar` is preloaded; this experiment
+does not enable the distributed Citus extension.
+
+Use a new PostgreSQL container with a new data directory on the local disk and
+no live database volume or application configuration mounted. The measured
+container had one CPU, a 384 MiB memory limit, 32 MiB shared buffers, 4 MiB work
+memory, 32 MiB maintenance work memory, JIT disabled, no parallel workers, and
+normal WAL/fsync durability. It had no published ports and used its own internal
+Docker network. Install `citus_columnar` and `pg_trgm` in a dedicated database
+whose name ends in `_columnar_test`. Keep its DSN in an environment variable;
+never point the write-capable harnesses at the live database.
+
+```sh
+docker build -f Dockerfile.columnar-prototype -t meshinfo-columnar-prototype .
+
+python scripts/sample_columnar_history.py --config config.toml \
+  --host SOURCE_HOST --per-partition 500 --output NEW_PRIVATE_FIXTURE_DIRECTORY
+
+python scripts/benchmark_columnar_history.py --dsn-env COLUMNAR_TEST_DSN \
+  --fixture-dir PRIVATE_FIXTURE_DIRECTORY --output benchmark.json \
+  --keep-schemas --query-timeout-seconds 2 --repeats 3
+
+python scripts/verify_columnar_application.py --dsn-env COLUMNAR_TEST_DSN \
+  --fixture-dir PRIVATE_FIXTURE_DIRECTORY --benchmark-report benchmark.json \
+  --output application.json
+
+python scripts/verify_columnar_lifecycle.py --dsn-env COLUMNAR_TEST_DSN \
+  --output lifecycle.json
+```
+
+After restoring into another dedicated `_columnar_test` database, repeat the
+application verifier with that target DSN, `--restore-report application.json`,
+and a different output file. A nonzero benchmark exit can still produce a valid
+failure report; inspect it before running subsequent checks. The application
+verifier requires exact-data and constraint gates before accepting its schemas.
+It verifies application responses, not storage-option equivalence. Also compare
+`SELECT * FROM columnar.options` with the benchmark settings; the recorded
+restore experiment failed that separate check.
+
+The exporter uses a read-only repeatable-read snapshot, fixed seeds, short
+statement/lock timeouts, a three-minute total budget, private output permissions,
+and strict row/byte limits. It refuses existing output directories and removes
+its partial files on failure. The first larger sample exceeded the reception
+limit and was correctly refused; the measured run reduced packet sampling
+instead of raising the caps. Raw fixtures, dump files, credentials, temporary
+containers, and test databases must be removed after verification. Only aggregate
+reports belong in Git.
+
+### Gates before upstream integration and production conversion
+
+1. Add an independently configured archive age while preserving forever retention
+   by default. Archiving keeps history; finite retention deletes it. Support
+   mixed partitions in startup, reporting, maintenance, and schema upgrades.
+   Parent GIN creation and unpruned startup backfill currently prevent a direct
+   switch. Keep receptions in heap until their cross-month deletion semantics
+   have a separately verified compression design.
+2. Implement a resumable staging/cutover worker with explicit row verification,
+   temporary-space and WAL budgets, bounded locks, cancellation, crash recovery,
+   and coordination with retention and backups. A large native ALTER rewrite
+   can block readers and require substantial free space. This prototype does
+   not solve migration of the existing multi-gigabyte partitions on a nearly
+   full disk. Whole-month partition sizes may need to be reduced first.
+3. Fix and test the existing search-plan issue, preserve indexed topic/node
+   access, and benchmark larger histories under concurrent ingestion and cold
+   caches. Define acceptable absolute and relative latency limits. Investigate
+   query/index changes or separate heap lookup metadata if compressed partitions
+   cannot meet them; do not promise identical performance from this sample.
+4. Preserve per-partition columnar options through dump/restore, applying them
+   before rows are loaded. Validate supported PostgreSQL versions/architectures,
+   extension packaging, upgrades, physical crash recovery, and operational
+   recovery on the upstream project's deployment configurations before rollout.
+
+The sample is approximately balanced by month, not weighted by production byte
+distribution, and it fits in memory. Its largest packet payload is 1,404 bytes;
+large-value behavior is untested. The sampler excludes source payloads over
+1 MiB. No full-history disk-scale forecast, concurrent-load guarantee, automatic
+future/default partition test, or physical crash-recovery claim follows from
+these measurements. The mixed layout's hot heap also used about 232 KiB more
+than the pure heap copies; the full-layout totals include that difference.
+
+The tested engine's
+[versioned columnar documentation](https://github.com/citusdata/citus/blob/v14.1.0/src/backend/columnar/README.md)
+describes mixed partitions, B-tree support, unsupported GIN indexes, append-only
+restrictions, and space retained by aborted writes. These constraints need
+explicit application support; installing the extension alone is insufficient.

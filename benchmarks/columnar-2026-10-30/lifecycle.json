@@ -1,0 +1,28 @@
+{
+  "synthetic_rows": 10000,
+  "prototype_only": true,
+  "busy_reader_conversion": {
+    "sqlstate": "55P03",
+    "elapsed_ms": 251.229
+  },
+  "failed_conversion_preserved_heap_and_rows": true,
+  "conversion_rollback_preserved_heap_and_rows": true,
+  "conversion_ms": 259.197,
+  "reader_during_conversion_transaction_sqlstate": "55P03",
+  "committed_conversion_preserved_rows": true,
+  "relation_bytes": {
+    "heap": 6135808,
+    "columnar": 303104
+  },
+  "conversion_wal_bytes": 281176,
+  "plain_btree_reindex_preserved_rows": true,
+  "unpruned_parent_update_sqlstate": "0A000",
+  "pruned_hot_update": "UPDATE 1",
+  "all_checks_passed": true,
+  "limits": [
+    "Synthetic bounded table, not a large partition cutover benchmark.",
+    "Native conversion blocks readers and writers until transaction commit.",
+    "WAL bytes exclude checkpoint/FPI variation and are not a capacity forecast.",
+    "DDL rollback verified; physical crash recovery and crash-safe migration not tested."
+  ]
+}

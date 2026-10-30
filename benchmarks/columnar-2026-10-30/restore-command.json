@@ -1,0 +1,51 @@
+{
+  "format": "pg_dump custom --no-owner --no-privileges",
+  "restore": "pg_restore --exit-on-error --single-transaction",
+  "dump_bytes": 6151027,
+  "dump_ms": 1624.003,
+  "restore_ms": 2271.156,
+  "restore_command_succeeded": true,
+  "dump_sha256": "cb0bb73605e78b0ff5c1fc668b5a836176325e7e6d540699bff50b38547ce13f",
+  "all_fixture_rows_exact": true,
+  "all_partition_access_methods_exact": true,
+  "verified_variants": [
+    "heap_full",
+    "heap_compatible",
+    "columnar"
+  ],
+  "restored_columnar_options": [
+    {
+      "relation": "benchmark_columnar_e8c5b41e67.mqtt_messages_2026_07",
+      "chunk_group_row_limit": 10000,
+      "stripe_row_limit": 150000,
+      "compression": "zstd",
+      "compression_level": 3
+    },
+    {
+      "relation": "benchmark_columnar_e8c5b41e67.mqtt_messages_2026_08",
+      "chunk_group_row_limit": 10000,
+      "stripe_row_limit": 150000,
+      "compression": "zstd",
+      "compression_level": 3
+    },
+    {
+      "relation": "benchmark_columnar_e8c5b41e67.mqtt_messages_2026_09",
+      "chunk_group_row_limit": 10000,
+      "stripe_row_limit": 150000,
+      "compression": "zstd",
+      "compression_level": 3
+    }
+  ],
+  "application_verification_pending": false,
+  "application_checks_passed": true,
+  "application_cases": 44,
+  "expected_columnar_options": {
+    "chunk_group_row_limit": 1000,
+    "stripe_row_limit": 150000,
+    "compression": "zstd",
+    "compression_level": 3
+  },
+  "columnar_options_preserved": false,
+  "production_restore_gate_passed": false,
+  "restore_settings_failure": "All restored columnar partitions use chunk_group_row_limit=10000 instead of the measured 1000. Data, access methods, and application results match; tuning must be preserved and applied before loading rows."
+}
