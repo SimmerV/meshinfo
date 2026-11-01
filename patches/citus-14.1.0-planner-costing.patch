@@ -1,49 +1,32 @@
 --- a/src/backend/columnar/columnar_customscan.c
 +++ b/src/backend/columnar/columnar_customscan.c
-@@ -71,39 +71,56 @@
- } ColumnarScanState;
- 
- 
-+/*
-+ * Scalar stripe metadata shared by every path costed in one relation-path
-+ * hook invocation. This is neither a session cache nor part of a stored plan.
-+ */
-+typedef struct ColumnarPlannerStats
-+{
-+	uint64 rowCount;
-+	uint64 stripeCount;
-+	uint64 totalStripeSize;
-+	uint32 maxColumnCount;
-+} ColumnarPlannerStats;
-+
-+
- typedef bool (*PathPredicate)(Path *path);
+@@ -75,35 +75,38 @@
  
  
  /* functions to cost paths in-place */
 -static void CostColumnarPaths(PlannerInfo *root, RelOptInfo *rel, Oid relationId);
 +static void CostColumnarPaths(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
-+							  const ColumnarPlannerStats *stats);
++							  const ColumnarStripeStatistics *stats);
  static void CostColumnarIndexPath(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
 -								  IndexPath *indexPath);
 -static void CostColumnarSeqPath(RelOptInfo *rel, Oid relationId, Path *path);
 -static void CostColumnarScan(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
-+								  IndexPath *indexPath, const ColumnarPlannerStats *stats);
++								  IndexPath *indexPath, const ColumnarStripeStatistics *stats);
 +static void CostColumnarSeqPath(RelOptInfo *rel, Oid relationId, Path *path,
-+								const ColumnarPlannerStats *stats);
++								const ColumnarStripeStatistics *stats);
 +static void CostColumnarScan(PlannerInfo *root, RelOptInfo *rel,
  							 CustomPath *cpath, int numberOfColumnsRead,
 -							 int nClauses);
-+							 int nClauses, const ColumnarPlannerStats *stats);
++							 int nClauses, const ColumnarStripeStatistics *stats);
  
  /* functions to add new paths */
  static void AddColumnarScanPaths(PlannerInfo *root, RelOptInfo *rel,
 -								 RangeTblEntry *rte);
-+								 RangeTblEntry *rte, const ColumnarPlannerStats *stats);
++								 RangeTblEntry *rte, const ColumnarStripeStatistics *stats);
  static void AddColumnarScanPath(PlannerInfo *root, RelOptInfo *rel,
 -								RangeTblEntry *rte, Relids required_relids);
 +								RangeTblEntry *rte, Relids required_relids,
-+								const ColumnarPlannerStats *stats);
++								const ColumnarStripeStatistics *stats);
  
  /* helper functions to be used when costing paths or altering them */
  static void RemovePathsByPredicate(RelOptInfo *rel, PathPredicate removePathPredicate);
@@ -51,26 +34,25 @@
  static Cost ColumnarIndexScanAdditionalCost(PlannerInfo *root, RelOptInfo *rel,
 -											Oid relationId, IndexPath *indexPath);
 +											Oid relationId, IndexPath *indexPath,
-+											const ColumnarPlannerStats *stats);
++											const ColumnarStripeStatistics *stats);
  static int RelationIdGetNumberOfAttributes(Oid relationId);
 -static Cost ColumnarPerStripeScanCost(RelOptInfo *rel, Oid relationId,
 -									  int numberOfColumnsRead);
 -static uint64 ColumnarTableStripeCount(Oid relationId);
 +static Cost ColumnarPerStripeScanCost(RelOptInfo *rel, int numberOfColumnsRead,
-+									  const ColumnarPlannerStats *stats);
-+static ColumnarPlannerStats ReadColumnarPlannerStats(Relation relation);
++									  const ColumnarStripeStatistics *stats);
  static Path * CreateColumnarSeqScanPath(PlannerInfo *root, RelOptInfo *rel,
 -										Oid relationId);
-+										Oid relationId, const ColumnarPlannerStats *stats);
++										Oid relationId, const ColumnarStripeStatistics *stats);
  static void AddColumnarScanPathsRec(PlannerInfo *root, RelOptInfo *rel,
  									RangeTblEntry *rte, Relids paramRelids,
  									Relids candidateRelids,
 -									int depthLimit);
-+									int depthLimit, const ColumnarPlannerStats *stats);
++									int depthLimit, const ColumnarStripeStatistics *stats);
  
  /* hooks and callbacks */
  static void ColumnarSetRelPathlistHook(PlannerInfo *root, RelOptInfo *rel, Index rti,
-@@ -321,9 +338,21 @@
+@@ -321,9 +324,21 @@
  		 * Before doing that, we first re-cost all the existing paths so that
  		 * add_path makes correct cost comparisons when appending our SeqPath.
  		 */
@@ -79,14 +61,14 @@
 -		Path *seqPath = CreateColumnarSeqScanPath(root, rel, rte->relid);
 +		/*
 +		 * All paths for this relation use the same transaction snapshot.
-+		 * Read its stripe metadata once, instead of allocating and scanning
-+		 * another full list for each cost component of each candidate path.
++		 * Aggregate its stripe metadata once with bounded scratch memory,
++		 * instead of rescanning it for each component of every candidate cost.
 +		 * When all costed scan types are disabled, no metadata is needed.
 +		 */
-+		ColumnarPlannerStats stats = { 0 };
++		ColumnarStripeStatistics stats = { 0 };
 +		if (enable_indexscan || enable_seqscan || EnableColumnarCustomScan)
 +		{
-+			stats = ReadColumnarPlannerStats(relation);
++			stats = StripeStatisticsForRelfilelocator(relation);
 +		}
 +
 +		CostColumnarPaths(root, rel, rte->relid, &stats);
@@ -95,7 +77,7 @@
  		add_path(rel, seqPath);
  
  		if (EnableColumnarCustomScan)
-@@ -344,7 +373,7 @@
+@@ -344,7 +359,7 @@
  			 * SeqPath thinking that its cost would be equal to ColumnarCustomScan.
  			 */
  			RemovePathsByPredicate(rel, IsNotIndexPath);
@@ -104,13 +86,13 @@
  		}
  	}
  	RelationClose(relation);
-@@ -412,14 +441,15 @@
+@@ -412,14 +427,15 @@
   * table with relationId.
   */
  static Path *
 -CreateColumnarSeqScanPath(PlannerInfo *root, RelOptInfo *rel, Oid relationId)
 +CreateColumnarSeqScanPath(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
-+						 const ColumnarPlannerStats *stats)
++						 const ColumnarStripeStatistics *stats)
  {
  	/* columnar doesn't support parallel scan */
  	int parallelWorkers = 0;
@@ -122,17 +104,17 @@
  	return path;
  }
  
-@@ -429,7 +459,8 @@
+@@ -429,7 +445,8 @@
   * columnar table with relationId.
   */
  static void
 -CostColumnarPaths(PlannerInfo *root, RelOptInfo *rel, Oid relationId)
 +CostColumnarPaths(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
-+				  const ColumnarPlannerStats *stats)
++				  const ColumnarStripeStatistics *stats)
  {
  	Path *path = NULL;
  	foreach_declared_ptr(path, rel->pathlist)
-@@ -443,11 +474,11 @@
+@@ -443,11 +460,11 @@
  			 * TableAmRoutine). For this reason, we only consider IndexPath's
  			 * here.
  			 */
@@ -146,16 +128,16 @@
  		}
  	}
  }
-@@ -459,7 +490,7 @@
+@@ -459,7 +476,7 @@
   */
  static void
  CostColumnarIndexPath(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
 -					  IndexPath *indexPath)
-+					  IndexPath *indexPath, const ColumnarPlannerStats *stats)
++					  IndexPath *indexPath, const ColumnarStripeStatistics *stats)
  {
  	if (!enable_indexscan)
  	{
-@@ -478,7 +509,7 @@
+@@ -478,7 +495,7 @@
  	 * by indexAM since we should consider index traversal related costs too.
  	 */
  	Cost columnarIndexScanCost = ColumnarIndexScanAdditionalCost(root, rel, relationId,
@@ -164,13 +146,13 @@
  	indexPath->path.total_cost += columnarIndexScanCost;
  
  	ereport(DEBUG4, (errmsg("columnar table index scan costs re-estimated "
-@@ -495,10 +526,11 @@
+@@ -495,10 +512,11 @@
   */
  static Cost
  ColumnarIndexScanAdditionalCost(PlannerInfo *root, RelOptInfo *rel,
 -								Oid relationId, IndexPath *indexPath)
 +								Oid relationId, IndexPath *indexPath,
-+								const ColumnarPlannerStats *stats)
++								const ColumnarStripeStatistics *stats)
  {
  	int numberOfColumnsRead = RelationIdGetNumberOfAttributes(relationId);
 -	Cost perStripeCost = ColumnarPerStripeScanCost(rel, relationId, numberOfColumnsRead);
@@ -178,7 +160,7 @@
  
  	/*
  	 * We don't need to pass correct loop count to amcostestimate since we
-@@ -516,14 +548,7 @@
+@@ -516,14 +534,7 @@
  				   &fakeIndexTotalCost, &indexSelectivity,
  				   &indexCorrelation, &fakeIndexPages);
  
@@ -194,7 +176,7 @@
  	double estimatedRows = rowCount * indexSelectivity;
  
  	/*
-@@ -538,7 +563,7 @@
+@@ -538,7 +549,7 @@
  	 * to locality.
  	 */
  	double avgStripeRowCount =
@@ -203,17 +185,17 @@
  	double minStripeReadCount = estimatedRows / avgStripeRowCount;
  
  	/*
-@@ -588,7 +613,8 @@
+@@ -588,7 +599,8 @@
   * relationId.
   */
  static void
 -CostColumnarSeqPath(RelOptInfo *rel, Oid relationId, Path *path)
 +CostColumnarSeqPath(RelOptInfo *rel, Oid relationId, Path *path,
-+					const ColumnarPlannerStats *stats)
++					const ColumnarStripeStatistics *stats)
  {
  	if (!enable_seqscan)
  	{
-@@ -600,12 +626,12 @@
+@@ -600,12 +612,12 @@
  	 * Seq scan doesn't support projection or qual pushdown, so we will read
  	 * all the stripes and all the columns.
  	 */
@@ -228,17 +210,17 @@
  }
  
  
-@@ -1152,7 +1178,8 @@
+@@ -1152,7 +1164,8 @@
   * parameterized paths. See AddColumnarScanPathsRec() for discussion.
   */
  static void
 -AddColumnarScanPaths(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 +AddColumnarScanPaths(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte,
-+					 const ColumnarPlannerStats *stats)
++					 const ColumnarStripeStatistics *stats)
  {
  	List *joinClauses = FindPushdownJoinClauses(root, rel);
  	Relids candidateRelids = FindCandidateRelids(root, rel, joinClauses);
-@@ -1163,7 +1190,7 @@
+@@ -1163,7 +1176,7 @@
  	Relids paramRelids = bms_copy(rel->lateral_relids);
  
  	AddColumnarScanPathsRec(root, rel, rte, paramRelids, candidateRelids,
@@ -247,12 +229,12 @@
  }
  
  
-@@ -1200,13 +1227,13 @@
+@@ -1200,13 +1213,13 @@
  static void
  AddColumnarScanPathsRec(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte,
  						Relids paramRelids, Relids candidateRelids,
 -						int depthLimit)
-+						int depthLimit, const ColumnarPlannerStats *stats)
++						int depthLimit, const ColumnarStripeStatistics *stats)
  {
  	CHECK_FOR_INTERRUPTS();
  	check_stack_depth();
@@ -263,7 +245,7 @@
  
  	/* recurse for all candidateRelids, unless we hit the depth limit */
  	Assert(depthLimit >= 0);
-@@ -1235,7 +1262,7 @@
+@@ -1235,7 +1248,7 @@
  		tmpCandidateRelids = bms_del_member(tmpCandidateRelids, relid);
  
  		AddColumnarScanPathsRec(root, rel, rte, tmpParamRelids,
@@ -272,16 +254,16 @@
  	}
  
  	bms_free(tmpCandidateRelids);
-@@ -1312,7 +1339,7 @@
+@@ -1312,7 +1325,7 @@
   */
  static void
  AddColumnarScanPath(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte,
 -					Relids paramRelids)
-+					Relids paramRelids, const ColumnarPlannerStats *stats)
++					Relids paramRelids, const ColumnarStripeStatistics *stats)
  {
  	/*
  	 * Must return a CustomPath, not a larger structure containing a
-@@ -1423,8 +1450,8 @@
+@@ -1423,8 +1436,8 @@
  
  	int numberOfClausesPushed = list_length(allClauses);
  
@@ -292,7 +274,7 @@
  
  
  	StringInfoData buf;
-@@ -1504,8 +1531,9 @@
+@@ -1504,8 +1517,9 @@
   * columns to read how many pages need to be read.
   */
  static void
@@ -300,11 +282,11 @@
 -				 CustomPath *cpath, int numberOfColumnsRead, int nClauses)
 +CostColumnarScan(PlannerInfo *root, RelOptInfo *rel,
 +				 CustomPath *cpath, int numberOfColumnsRead, int nClauses,
-+				 const ColumnarPlannerStats *stats)
++				 const ColumnarStripeStatistics *stats)
  {
  	Path *path = &cpath->path;
  
-@@ -1518,13 +1546,13 @@
+@@ -1518,13 +1532,13 @@
  	 * misleading, such as inequalities involving an uncorrelated column. So
  	 * we can apply the selectivity directly to the number of stripes.
  	 */
@@ -320,7 +302,7 @@
  }
  
  
-@@ -1534,25 +1562,11 @@
+@@ -1534,25 +1548,11 @@
   * read during scan operation.
   */
  static Cost
@@ -344,14 +326,14 @@
 -		maxColumnCount = Max(maxColumnCount, stripeMetadata->columnCount);
 -	}
 +ColumnarPerStripeScanCost(RelOptInfo *rel, int numberOfColumnsRead,
-+						 const ColumnarPlannerStats *stats)
++						 const ColumnarStripeStatistics *stats)
 +{
 +	uint32 maxColumnCount = stats->maxColumnCount;
 +	uint64 totalStripeSize = stats->totalStripeSize;
  
  	/*
  	 * When no stripes are in the table we don't have a count in maxColumnCount. To
-@@ -1567,7 +1581,7 @@
+@@ -1567,7 +1567,7 @@
  
  	double columnSelectionRatio = numberOfColumnsRead / (double) maxColumnCount;
  	Cost tableScanCost = (double) totalStripeSize / BLCKSZ * columnSelectionRatio;
@@ -360,10 +342,14 @@
  
  	/*
  	 * Finally, multiply the cost of reading a single stripe by seq page read
-@@ -1587,25 +1601,29 @@
+@@ -1583,27 +1583,6 @@
+ 	perStripeScanCost = perStripeScanCost * relSpaceSeqPageCost;
  
- 
- /*
+ 	return perStripeScanCost;
+-}
+-
+-
+-/*
 - * ColumnarTableStripeCount returns the number of stripes that columnar
 - * table with relationId has by using stripe metadata.
 - */
@@ -376,35 +362,258 @@
 -		ereport(ERROR, (errmsg("could not open relation with OID %u", relationId)));
 -	}
 -
-+ * ReadColumnarPlannerStats aggregates the same visible stripe list used by
-+ * the individual cost functions. Keep no metadata pointers in the summary:
-+ * it lives on the hook's stack and is consumed before that hook returns.
-+ */
-+static ColumnarPlannerStats
-+ReadColumnarPlannerStats(Relation relation)
-+{
-+	ColumnarPlannerStats stats = { 0 };
- 	List *stripeList = StripesForRelfilelocator(relation);
+-	List *stripeList = StripesForRelfilelocator(relation);
 -	int stripeCount = list_length(stripeList);
 -	RelationClose(relation);
 -
 -	return stripeCount;
--}
--
-+	stats.stripeCount = list_length(stripeList);
+ }
+ 
+ 
+--- a/src/backend/columnar/columnar_metadata.c
++++ b/src/backend/columnar/columnar_metadata.c
+@@ -60,6 +60,7 @@
+ #include "pg_version_constants.h"
+ 
+ #include "columnar/columnar.h"
++#include "columnar/columnar_metadata.h"
+ #include "columnar/columnar_storage.h"
+ #include "columnar/columnar_version_compat.h"
+ 
+@@ -104,7 +105,12 @@
+ 												uint64 fileOffset, uint64 dataLength,
+ 												uint64 rowCount, uint64 chunkCount);
+ 
++static List * ReadRelationStripeMetadata(Relation rel, ColumnarStripeStatistics *stats);
+ static List * ReadDataFileStripeList(uint64 storageId, Snapshot snapshot);
++static List * ReadDataFileStripeMetadata(uint64 storageId, Snapshot snapshot,
++										ColumnarStripeStatistics *stats);
++static void PopulateStripeMetadata(StripeMetadata *stripeMetadata, HeapTuple heapTuple,
++								   const Datum *datumArray, int firstRowNumberAttrIndex);
+ static StripeMetadata * BuildStripeMetadata(Relation columnarStripes,
+ 											HeapTuple heapTuple);
+ static uint32 * ReadChunkGroupRowCounts(uint64 storageId, uint64 stripe, uint32
+@@ -1036,8 +1042,8 @@
+  *
+  * Checks performed here are just to catch bugs, so it is encouraged to call
+  * this function whenever a StripeMetadata object is built from an heap tuple
+- * of columnar.stripe. Currently, BuildStripeMetadata is the only function
+- * that does this.
++ * of columnar.stripe. PopulateStripeMetadata performs this check for both
++ * the allocating wrapper and the bounded-memory statistics scan.
+  */
+ static void
+ CheckStripeMetadataConsistency(StripeMetadata *stripeMetadata)
+@@ -1271,6 +1277,27 @@
+ List *
+ StripesForRelfilelocator(Relation rel)
+ {
++	return ReadRelationStripeMetadata(rel, NULL);
++}
 +
-+	StripeMetadata *stripeMetadata = NULL;
-+	foreach_declared_ptr(stripeMetadata, stripeList)
-+	{
-+		stats.rowCount += stripeMetadata->rowCount;
-+		stats.totalStripeSize += stripeMetadata->dataLength;
-+		stats.maxColumnCount = Max(stats.maxColumnCount, stripeMetadata->columnCount);
-+	}
 +
-+	/* Also release the empty-table list before any cost function returns. */
-+	list_free_deep(stripeList);
++/*
++ * StripeStatisticsForRelfilelocator returns exact scalar aggregates without
++ * materializing a list proportional to the number of visible stripes.
++ */
++ColumnarStripeStatistics
++StripeStatisticsForRelfilelocator(Relation rel)
++{
++	ColumnarStripeStatistics stats = { 0 };
++	ReadRelationStripeMetadata(rel, &stats);
 +	return stats;
 +}
++
++
++/* Both relation readers use identical storage lookup and snapshot lifetime. */
++static List *
++ReadRelationStripeMetadata(Relation rel, ColumnarStripeStatistics *stats)
++{
+ 	uint64 storageId = LookupStorageId(RelationPrecomputeOid(rel),
+ 									   rel->rd_locator);
  
- static Plan *
- ColumnarScanPath_PlanCustomPath(PlannerInfo *root,
+@@ -1284,7 +1311,7 @@
+ 	 */
+ 	Snapshot snapshot = RegisterSnapshot(GetTransactionSnapshot());
+ 
+-	List *readDataFileStripeList = ReadDataFileStripeList(storageId, snapshot);
++	List *readDataFileStripeList = ReadDataFileStripeMetadata(storageId, snapshot, stats);
+ 
+ 	UnregisterSnapshot(snapshot);
+ 
+@@ -1507,6 +1534,19 @@
+ static List *
+ ReadDataFileStripeList(uint64 storageId, Snapshot snapshot)
+ {
++	return ReadDataFileStripeMetadata(storageId, snapshot, NULL);
++}
++
++
++/*
++ * Keep the catalog scan and its visibility/index-fallback rules common to
++ * list readers and scalar statistics. A non-NULL stats output consumes each
++ * validated tuple immediately, using one set of scratch arrays for the scan.
++ */
++static List *
++ReadDataFileStripeMetadata(uint64 storageId, Snapshot snapshot,
++						  ColumnarStripeStatistics *stats)
++{
+ 	List *stripeMetadataList = NIL;
+ 	ScanKeyData scanKey[1];
+ 	HeapTuple heapTuple;
+@@ -1531,10 +1571,44 @@
+ 		loggedSlowMetadataAccessWarning = true;
+ 	}
+ 
++	/* The AccessShare lock keeps this descriptor stable throughout the scan. */
++	TupleDesc tupleDescriptor = RelationGetDescr(columnarStripes);
++	Datum *datumArray = NULL;
++	bool *isNullArray = NULL;
++	int firstRowNumberAttrIndex = 0;
++	if (stats != NULL)
++	{
++		datumArray = (Datum *) palloc(tupleDescriptor->natts * sizeof(Datum));
++		isNullArray = (bool *) palloc(tupleDescriptor->natts * sizeof(bool));
++		firstRowNumberAttrIndex =
++			GetFirstRowNumberAttrIndexInColumnarStripe(tupleDescriptor);
++	}
++
+ 	while (HeapTupleIsValid(heapTuple = systable_getnext(scanDescriptor)))
+ 	{
+-		StripeMetadata *stripeMetadata = BuildStripeMetadata(columnarStripes, heapTuple);
+-		stripeMetadataList = lappend(stripeMetadataList, stripeMetadata);
++		if (stats != NULL)
++		{
++			CHECK_FOR_INTERRUPTS();
++			StripeMetadata stripeMetadata = { 0 };
++			heap_deform_tuple(heapTuple, tupleDescriptor, datumArray, isNullArray);
++			PopulateStripeMetadata(&stripeMetadata, heapTuple, datumArray,
++								   firstRowNumberAttrIndex);
++			stats->rowCount += stripeMetadata.rowCount;
++			stats->stripeCount++;
++			stats->totalStripeSize += stripeMetadata.dataLength;
++			stats->maxColumnCount = Max(stats->maxColumnCount, stripeMetadata.columnCount);
++		}
++		else
++		{
++			StripeMetadata *stripeMetadata = BuildStripeMetadata(columnarStripes, heapTuple);
++			stripeMetadataList = lappend(stripeMetadataList, stripeMetadata);
++		}
++	}
++
++	if (stats != NULL)
++	{
++		pfree(datumArray);
++		pfree(isNullArray);
+ 	}
+ 
+ 	systable_endscan(scanDescriptor);
+@@ -1562,6 +1636,23 @@
+ 	heap_deform_tuple(heapTuple, tupleDescriptor, datumArray, isNullArray);
+ 
+ 	StripeMetadata *stripeMetadata = palloc0(sizeof(StripeMetadata));
++	PopulateStripeMetadata(stripeMetadata, heapTuple, datumArray,
++						   GetFirstRowNumberAttrIndexInColumnarStripe(tupleDescriptor));
++
++	pfree(datumArray);
++	pfree(isNullArray);
++	return stripeMetadata;
++}
++
++
++/*
++ * Populate caller-owned metadata without allocating. Keep every field,
++ * transaction-state check and consistency error identical for both readers.
++ */
++static void
++PopulateStripeMetadata(StripeMetadata *stripeMetadata, HeapTuple heapTuple,
++					   const Datum *datumArray, int firstRowNumberAttrIndex)
++{
+ 	stripeMetadata->id = DatumGetInt64(datumArray[Anum_columnar_stripe_stripe - 1]);
+ 	stripeMetadata->fileOffset = DatumGetInt64(
+ 		datumArray[Anum_columnar_stripe_file_offset - 1]);
+@@ -1576,10 +1667,7 @@
+ 	stripeMetadata->rowCount = DatumGetInt64(
+ 		datumArray[Anum_columnar_stripe_row_count - 1]);
+ 	stripeMetadata->firstRowNumber = DatumGetUInt64(
+-		datumArray[GetFirstRowNumberAttrIndexInColumnarStripe(tupleDescriptor)]);
+-
+-	pfree(datumArray);
+-	pfree(isNullArray);
++		datumArray[firstRowNumberAttrIndex]);
+ 
+ 	/*
+ 	 * If there is unflushed data in a parent transaction, then we would
+@@ -1595,8 +1683,6 @@
+ 		TransactionIdIsCurrentTransactionId(entryXmin);
+ 
+ 	CheckStripeMetadataConsistency(stripeMetadata);
+-
+-	return stripeMetadata;
+ }
+ 
+ 
+--- a/src/backend/columnar/columnar_reader.c
++++ b/src/backend/columnar/columnar_reader.c
+@@ -34,6 +34,7 @@
+ #include "utils/rel.h"
+ 
+ #include "columnar/columnar.h"
++#include "columnar/columnar_metadata.h"
+ #include "columnar/columnar_storage.h"
+ #include "columnar/columnar_tableam.h"
+ #include "columnar/columnar_version_compat.h"
+@@ -981,21 +982,12 @@
+ }
+ 
+ 
+-/* ColumnarTableRowCount returns the exact row count of a table using skiplists */
++/* ColumnarTableRowCount returns the exact row count from visible stripe metadata. */
+ uint64
+ ColumnarTableRowCount(Relation relation)
+ {
+-	ListCell *stripeMetadataCell = NULL;
+-	uint64 totalRowCount = 0;
+-	List *stripeList = StripesForRelfilelocator(relation);
+-
+-	foreach(stripeMetadataCell, stripeList)
+-	{
+-		StripeMetadata *stripeMetadata = (StripeMetadata *) lfirst(stripeMetadataCell);
+-		totalRowCount += stripeMetadata->rowCount;
+-	}
+-
+-	return totalRowCount;
++	ColumnarStripeStatistics stats = StripeStatisticsForRelfilelocator(relation);
++	return stats.rowCount;
+ }
+ 
+ 
+--- a/src/include/columnar/columnar_metadata.h
++++ b/src/include/columnar/columnar_metadata.h
+@@ -48,6 +48,18 @@
+ } StripeMetadata;
+ 
+ /*
++ * Scalar aggregates over the same visible stripes returned by
++ * StripesForRelfilelocator. No metadata pointers or cached state are retained.
++ */
++typedef struct ColumnarStripeStatistics
++{
++	uint64 rowCount;
++	uint64 stripeCount;
++	uint64 totalStripeSize;
++	uint32 maxColumnCount;
++} ColumnarStripeStatistics;
++
++/*
+  * EmptyStripeReservation represents information for an empty stripe
+  * reservation.
+  */
+@@ -58,6 +70,7 @@
+ } EmptyStripeReservation;
+ 
+ extern List * StripesForRelfilelocator(Relation rel);
++extern ColumnarStripeStatistics StripeStatisticsForRelfilelocator(Relation rel);
+ extern void ColumnarStorageUpdateIfNeeded(Relation rel, bool isUpgrade);
+ extern List * ExtractColumnarRelOptions(List *inOptions, List **outColumnarOptions);
+ extern void SetColumnarRelOptions(RangeVar *rv, List *reloptions);

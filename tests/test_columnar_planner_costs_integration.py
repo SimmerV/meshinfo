@@ -22,4 +22,4 @@ def test_native_costs_paths_and_snapshot_visibility_are_identical():
             "baseline_error":case.get("baseline_error"),"patched_error":case.get("patched_error")}
             for case in report["cases"] if not case["passed"]][:8]}
     assert report["owned_schemas_removed"] == [True, True]
-    assert len(report["cases"]) == 289
+    assert len(report["cases"]) == 292

@@ -30,15 +30,15 @@ RUN cd /src \
     && make -j"$COLUMNAR_BUILD_JOBS" with_llvm=no columnar \
     && make with_llvm=no DESTDIR=/out install-columnar
 
-# Compile the original first, then rebuild only files changed by the patch.
-# --target unpatched remains independent of the patch file and its build.
+# Compile the original first. The patch changes a shared header, so clean all
+# Columnar objects before rebuilding. The configured source and unpatched image
+# remain cached; --target unpatched is independent of the patch file and build.
 FROM build-unpatched AS build-patched
 COPY patches/citus-14.1.0-planner-costing.patch /tmp/planner-costing.patch
-RUN echo 'aed027459fac59a1333ace33d181c3e323bf5917293bfeded1b023fc292ea6b9  /tmp/planner-costing.patch' | sha256sum --check --strict \
+RUN echo '5b4c632429471bb1010c3b710766fb328494ea53ae42b897290c176b1ce044c3  /tmp/planner-costing.patch' | sha256sum --check --strict \
     && cd /src \
     && patch --batch --forward --fuzz=0 -p1 < /tmp/planner-costing.patch \
-    && test -f src/backend/columnar/columnar_customscan.o \
-    && rm -f src/backend/columnar/columnar_customscan.o src/backend/columnar/columnar_customscan.bc \
+    && make -C src/backend/columnar with_llvm=no clean \
     && make -j"$COLUMNAR_BUILD_JOBS" with_llvm=no columnar \
     && make with_llvm=no DESTDIR=/out install-columnar \
     && mkdir -p /out/usr/share/meshinfo-columnar \
@@ -63,5 +63,5 @@ LABEL io.meshinfo.columnar.planner-patch="none"
 
 FROM runtime-base AS final
 COPY --from=build-patched /out/usr/ /usr/
-LABEL io.meshinfo.columnar.planner-patch="planner-costing-v1" \
-      io.meshinfo.columnar.patch-sha256="aed027459fac59a1333ace33d181c3e323bf5917293bfeded1b023fc292ea6b9"
+LABEL io.meshinfo.columnar.planner-patch="planner-costing-v2" \
+      io.meshinfo.columnar.patch-sha256="5b4c632429471bb1010c3b710766fb328494ea53ae42b897290c176b1ce044c3"

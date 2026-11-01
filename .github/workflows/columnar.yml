@@ -97,7 +97,7 @@ jobs:
             --file Dockerfile.postgres-columnar --target unpatched \
             --tag columnar-unpatched-native-ci .
           test "$(docker image inspect --format '{{.Architecture}}' columnar-unpatched-native-ci)" = '${{ matrix.arch }}'
-          test "$(docker image inspect --format '{{index .Config.Labels "io.meshinfo.columnar.planner-patch"}}' columnar-native-ci)" = planner-costing-v1
+          test "$(docker image inspect --format '{{index .Config.Labels "io.meshinfo.columnar.planner-patch"}}' columnar-native-ci)" = planner-costing-v2
           test "$(docker image inspect --format '{{index .Config.Labels "io.meshinfo.columnar.planner-patch"}}' columnar-unpatched-native-ci)" = none
       - name: Start an isolated test cluster without published ports
         run: |

@@ -25,3 +25,7 @@
 /frontend/.yarn/releases/*    binary
 /frontend/.yarn/plugins/**/*  binary
 /frontend/.pnp.*              binary linguist-generated
+
+# Unified diff context requires a marker space before source tabs/blank lines.
+# Validate applied source whitespace when checking the native patch itself.
+/patches/*.patch text eol=lf whitespace=-space-before-tab,-blank-at-eol

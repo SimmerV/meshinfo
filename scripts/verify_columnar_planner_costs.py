@@ -282,6 +282,61 @@ async def subtransactions(connections, schema, report):
             await transaction.rollback()
 
 
+async def repeatable_snapshot(connections, dsns, schema, report):
+    """A separate committed writer must not leak into an established snapshot."""
+    active = []
+    writers = []
+    additions = [fixture_row(i) for i in range(9001, 9065)]
+    sql = "SELECT id,payload FROM many WHERE id>=$1 ORDER BY id"
+    try:
+        for connection in connections:
+            transaction = connection.transaction(isolation="repeatable_read", readonly=True)
+            await transaction.start()
+            active.append(transaction)
+            if await connection.fetchval("SELECT count(*) FROM many") != 6464:
+                raise AssertionError("Unexpected pre-writer fixture count")
+        await compare_case(connections, report, "concurrent_writer_snapshot", sql, (9000,),
+            ("off", "on", "on"), "force_custom_plan", "snapshot_before_writer")
+        for dsn in dsns:
+            writer = await asyncpg.connect(dsn, timeout=5, command_timeout=5, server_settings=SETTINGS)
+            writers.append(writer)
+            await copy_rows(writer, schema, "many", additions)
+            if await writer.fetchval(f'SELECT count(*) FROM "{schema}".many') != 6528:
+                raise AssertionError("Separate writer did not commit all synthetic rows")
+        await compare_case(connections, report, "concurrent_writer_snapshot", sql, (9000,),
+            ("off", "on", "on"), "force_custom_plan", "snapshot_after_writer_commit")
+        for connection in connections:
+            if await connection.fetchval("SELECT count(*) FROM many") != 6464:
+                raise AssertionError("Committed writer leaked into repeatable-read visibility")
+            if await connection.fetch("SELECT id FROM many WHERE id>=9000"):
+                raise AssertionError("Repeatable snapshot exposed newer canonical identities")
+        for transaction in list(active):
+            await transaction.commit()
+            active.remove(transaction)
+        await compare_case(connections, report, "concurrent_writer_snapshot", sql, (9000,),
+            ("off", "on", "on"), "force_custom_plan", "snapshot_released")
+        for connection in connections:
+            actual = [tuple(row) for row in await connection.fetch("SELECT * FROM many WHERE id>=9000 ORDER BY id")]
+            if actual != additions:
+                raise AssertionError("Fresh snapshot failed to expose exact committed writer rows")
+    finally:
+        cleanup_errors = []
+        for transaction in reversed(active):
+            try:
+                await transaction.rollback()
+            except Exception as error:
+                cleanup_errors.append(type(error).__name__)
+        for writer in writers:
+            try:
+                await writer.close(timeout=3)
+            except Exception as error:
+                writer.terminate()
+                cleanup_errors.append(type(error).__name__)
+        if cleanup_errors:
+            report["snapshot_cleanup_errors"] = cleanup_errors
+            raise RuntimeError("Snapshot proof cleanup failed")
+
+
 async def run(args):
     dsns = [os.environ[args.baseline_dsn_env], os.environ[args.patched_dsn_env]]
     databases = [guarded_database(dsn) for dsn in dsns]
@@ -322,6 +377,7 @@ async def run(args):
                 for name, sql, parameters in query_cases():
                     await compare_case(connections, report, name, sql, parameters, flags, mode)
         await subtransactions(connections, schema, report)
+        await repeatable_snapshot(connections, dsns, schema, report)
         report["all_checks_passed"] = bool(report["cases"]) and all(case["passed"] for case in report["cases"])
     except Exception as error:
         report["error"] = {"type": type(error).__name__, "sqlstate": getattr(error, "sqlstate", None)}
