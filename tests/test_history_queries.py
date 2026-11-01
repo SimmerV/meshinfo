@@ -136,6 +136,7 @@ def test_topic_lookup_never_silently_omits_a_key_without_its_canonical_payload()
     transaction.__aenter__ = AsyncMock()
     transaction.__aexit__ = AsyncMock(return_value=False)
     connection = SimpleNamespace(transaction=lambda **kwargs: transaction, execute=AsyncMock(),
+        fetchrow=AsyncMock(return_value={"plan": "force_custom_plan", "scan": "on"}),
         fetchval=AsyncMock(return_value=42), fetch=AsyncMock(side_effect=[
             [{"bounds": "FOR VALUES FROM ('2026-01-01T00:00:00Z') TO ('2026-02-01T00:00:00Z')"}],
             [{"id": 1, "created_at": STAMP}], []]))
@@ -216,7 +217,8 @@ def prefix_connection(payload_rows, fallback_rows=None):
     if fallback_rows is not None:
         effects.append(fallback_rows)
     return SimpleNamespace(transaction=lambda **kwargs: transaction, execute=AsyncMock(),
-        fetchval=AsyncMock(side_effect=[42, "on"]), fetch=AsyncMock(side_effect=effects)), transaction
+        fetchrow=AsyncMock(return_value={"plan": "force_custom_plan", "scan": "on"}),
+        fetchval=AsyncMock(return_value=42), fetch=AsyncMock(side_effect=effects)), transaction
 
 
 def test_ordered_prefix_returns_proven_full_page_even_with_older_candidates():
@@ -238,7 +240,8 @@ def test_incomplete_prefix_restores_scan_mode_and_checks_older_matches():
     assert [row["id"] for row in actual] == [0]
     assert connection.fetch.await_count == 4
     assert "id=ANY" not in connection.fetch.await_args.args[0]
-    assert connection.execute.await_args.args == ("SET LOCAL columnar.enable_custom_scan = on",)
+    assert connection.execute.await_args.args == (
+        "SET LOCAL plan_cache_mode = force_custom_plan; SET LOCAL columnar.enable_custom_scan = on",)
 
 
 def test_multistatement_history_deadline_cancels_read_and_exits_transaction(monkeypatch):
@@ -257,6 +260,7 @@ def test_multistatement_history_deadline_cancels_read_and_exits_transaction(monk
             return [{"id": 1, "created_at": STAMP}]
         await asyncio.Event().wait()
     connection = SimpleNamespace(transaction=lambda **kwargs: transaction,
+        fetchrow=AsyncMock(return_value={"plan": "force_custom_plan", "scan": "on"}),
         fetchval=AsyncMock(return_value=42), execute=AsyncMock(), fetch=fetch)
     with pytest.raises(TimeoutError):
         asyncio.run(fetch_topic_packet_page(connection,

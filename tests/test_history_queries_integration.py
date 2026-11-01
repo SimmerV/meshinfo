@@ -7,6 +7,7 @@ mixed heap/columnar partitions using the actual PostgresStorage reader methods.
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 import os
 from unittest.mock import patch
@@ -19,7 +20,8 @@ import pytest
 from storage.db.history_queries import (
     packet_page_sql, fetch_topic_packet_page, literal_topic_pattern,
     topic_match_cte, TOPIC_MATCH_ARRAY_LIMIT,
-    TOPIC_CANDIDATE_LIMIT,
+    TOPIC_CANDIDATE_LIMIT, fetch_bounded_payload, packet_payload_sql, ordered_packet_rows,
+    HistoryReadError,
 )
 from storage.db.postgres import PostgresStorage
 
@@ -130,6 +132,7 @@ async def exercise_method(connection, method):
         assert await check_readers(connection, storage) == previous
         await check_dictionary_overflow(connection, storage)
         await check_candidate_overflow(connection, storage)
+        await check_bounded_payload_generic_plans(connection, storage, method)
         if method == "columnar":
             await check_topic_lookup_snapshot(connection, storage)
             await check_actual_read_deadline(storage)
@@ -204,6 +207,115 @@ async def check_actual_read_deadline(storage):
             "current_setting('columnar.enable_custom_scan') AS columnar") == before
 
 
+async def check_bounded_payload_generic_plans(writer, storage, method):
+    """One cached plan must serve varying key counts, months and repeated IDs."""
+    await writer.execute("INSERT INTO mqtt_messages(id,created_at,topic,payload,qos,retain) "
+                         "VALUES(2,$1,'reused-id-other-month','{\"text\":\"other version\"}',0,false)",
+                         HOT+timedelta(days=2))
+    await writer.execute("ANALYZE mqtt_messages; ANALYZE packet_receptions")
+    canonical = await writer.fetch("SELECT id,topic,payload,qos,retain,timestamp,created_at "
+                                  "FROM mqtt_messages ORDER BY created_at DESC,id DESC")
+    exact = {(row["id"],row["created_at"]): tuple(row) for row in canonical}
+    groups = [[canonical[0]], canonical[:51],
+              [canonical[index] for index in range(0,len(canonical),len(canonical)//252)][:252],
+              canonical[:4096], [row for row in canonical if row["id"] <= 9],
+              [row for row in canonical if row["id"] == 2]]
+    assert [len(group) for group in groups[:4]] == [1,51,252,4096]
+    async with storage.pool.acquire() as connection:
+        async with connection.transaction(isolation="repeatable_read", readonly=True):
+            await connection.execute("SET LOCAL plan_cache_mode=force_custom_plan")
+            before = await connection.fetchrow("SELECT current_setting('plan_cache_mode') AS plan, "
+                                              "current_setting('columnar.enable_custom_scan') AS scan")
+            statement_name, previous_generic, custom_count = None, 0, None
+            for group in groups:
+                keys = [{"id":row["id"],"created_at":row["created_at"]} for row in group]
+                query, arguments = packet_payload_sql(keys, storage._reception_count_sql)
+                rows = await fetch_bounded_payload(connection, query, *arguments)
+                ordered = ordered_packet_rows(keys, rows)
+                assert [tuple(row)[:7] for row in ordered] == [exact[(key["id"],key["created_at"])] for key in keys]
+                assert await connection.fetchrow("SELECT current_setting('plan_cache_mode') AS plan, "
+                    "current_setting('columnar.enable_custom_scan') AS scan") == before
+                prepared = await connection.fetchrow("SELECT name,generic_plans,custom_plans FROM pg_prepared_statements "
+                    "WHERE statement=$1",query)
+                assert prepared is not None and prepared["generic_plans"] > previous_generic
+                previous_generic = prepared["generic_plans"]
+                if statement_name is None:
+                    statement_name = prepared["name"]
+                    custom_count = prepared["custom_plans"]
+                assert statement_name == prepared["name"]
+                assert prepared["custom_plans"] == custom_count
+                # Explain the actual cached prepared plan, not a freshly planned
+                # EXPLAIN SELECT. Values stay bound until PostgreSQL quotes them.
+                literals = await connection.fetchrow("SELECT quote_literal($1::bigint[]),"
+                    "quote_literal($2::timestamptz[]),quote_literal($3::timestamptz),quote_literal($4::timestamptz)",
+                    *arguments)
+                types = ("bigint[]", "timestamptz[]", "timestamptz", "timestamptz")
+                executable = ','.join(value+'::'+kind for value,kind in zip(literals,types))
+                assert statement_name.replace('_','').isalnum()
+                # Restore the scoped mode manually for EXPLAIN EXECUTE; the
+                # production helper above has already restored its caller.
+                async with connection.transaction():
+                    await connection.execute("SET LOCAL plan_cache_mode=force_generic_plan; "
+                                             "SET LOCAL columnar.enable_custom_scan=off")
+                    plan = json.loads(await connection.fetchval("EXPLAIN (ANALYZE,FORMAT JSON) EXECUTE "
+                        +statement_name+"("+executable+")"))[0]["Plan"]
+                    await connection.execute("SET LOCAL plan_cache_mode=force_custom_plan; "
+                                             "SET LOCAL columnar.enable_custom_scan="+before["scan"])
+                def nodes(node):
+                    yield node
+                    for child in node.get("Plans",[]):
+                        yield from nodes(child)
+                scans = [node for node in nodes(plan) if node.get("Relation Name", "").startswith("packets_")
+                         and node.get("Actual Loops",0)>0]
+                assert scans
+                if method == "columnar":
+                    # Tiny one-row legacy/hot leaves may reasonably scan their
+                    # entire relation. The sizeable archived payload must use
+                    # its canonical index for every bound-array cardinality.
+                    cold_scans = [node for node in scans if node["Relation Name"] == "packets_cold"]
+                    assert all(node["Node Type"] == "Index Scan" for node in cold_scans), [
+                        (node["Relation Name"],node["Node Type"]) for node in scans]
+            # A nonexistent composite identity must remain missing even when
+            # its numeric ID exists in two different months.
+            missing = [{"id":2,"created_at":HOT+timedelta(days=3)}]
+            query, arguments = packet_payload_sql(missing, storage._reception_count_sql)
+            rows = await fetch_bounded_payload(connection, query, *arguments)
+            assert rows == []
+            with pytest.raises(HistoryReadError):
+                ordered_packet_rows(missing,rows)
+            # A failure rolls back the nested planner scope while leaving the
+            # caller transaction usable, without swallowing the actual error.
+            with pytest.raises(asyncpg.DivisionByZeroError):
+                await fetch_bounded_payload(connection,"SELECT 1/0")
+            assert await connection.fetchrow("SELECT current_setting('plan_cache_mode') AS plan, "
+                "current_setting('columnar.enable_custom_scan') AS scan") == before
+            assert await connection.fetchval("SELECT 1") == 1
+            with pytest.raises(TimeoutError):
+                async with asyncio.timeout(.05):
+                    await fetch_bounded_payload(connection,"SELECT pg_sleep(2)")
+            assert await connection.fetchrow("SELECT current_setting('plan_cache_mode') AS plan, "
+                "current_setting('columnar.enable_custom_scan') AS scan") == before
+            reached_payload = asyncio.Event()
+            class ObserveCancellation:
+                def __getattr__(self, name):
+                    return getattr(connection,name)
+
+                async def fetch(self, query, *arguments):
+                    assert await connection.fetchval("SELECT current_setting('plan_cache_mode')") == "force_generic_plan"
+                    assert await connection.fetchval("SELECT current_setting('columnar.enable_custom_scan')") == "off"
+                    reached_payload.set()
+                    return await connection.fetch(query,*arguments)
+
+            pending = asyncio.create_task(fetch_bounded_payload(ObserveCancellation(),"SELECT pg_sleep(2)"))
+            await asyncio.wait_for(reached_payload.wait(),timeout=2)
+            pending.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await pending
+            assert await connection.fetchrow("SELECT current_setting('plan_cache_mode') AS plan, "
+                "current_setting('columnar.enable_custom_scan') AS scan") == before
+            assert await connection.fetchval("SELECT 1") == 1
+
+
 async def check_dictionary_overflow(connection, storage):
     await connection.execute("INSERT INTO mqtt_topics SELECT n,'bounded-overflow-witness-'||n "
                              "FROM generate_series(1000,$1) n", 1000+TOPIC_MATCH_ARRAY_LIMIT+1)
@@ -225,12 +337,18 @@ async def check_dictionary_overflow(connection, storage):
 
 async def check_candidate_overflow(connection, storage):
     topic, needle = "bounded-candidate-overflow", "only beyond candidate prefix"
-    rows = [(100000+number, topic, json.dumps({"text": needle if number == 1 else "ordinary"}),
+    # Realistic payload width keeps the sizable archived relation distinct
+    # from a few-page toy table for which a full scan is legitimately cheaper.
+    rows = [(100000+number, topic, json.dumps({"text": needle if number == 1 else "ordinary",
+             "sample": "".join(hashlib.sha256(f"{number}:{part}".encode()).hexdigest() for part in range(8))}),
              0, False, 9999999999 if number == 1 else 0,
              HOT-timedelta(days=20)+timedelta(microseconds=number), None, None, None)
             for number in range(1, TOPIC_CANDIDATE_LIMIT+3)]
     schema = await connection.fetchval("SELECT current_schema()")
-    await connection.copy_records_to_table("mqtt_messages", schema_name=schema, records=rows)
+    # Match bounded worker geometry; a single 4098-row stripe distorts index
+    # costing and does not represent the archived layout under test.
+    for start in range(0,len(rows),93):
+        await connection.copy_records_to_table("mqtt_messages", schema_name=schema, records=rows[start:start+93])
     await connection.copy_records_to_table("mqtt_archive_topics", schema_name=schema,
         records=[(row[0],row[6],row[1]) for row in rows])
     prefix = await connection.fetch("SELECT id FROM mqtt_archive_topics WHERE topic=$1 "
@@ -249,6 +367,29 @@ async def check_candidate_overflow(connection, storage):
         assert [row["mqtt_row_id"] for row in result["messages"]] == [identity]
         cursor = result["next_cursor"]
         assert cursor is not None
+    class ObserveFallback:
+        def __init__(self, connection):
+            self.connection, self.observed = connection, False
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+        async def fetch(self, query, *parameters):
+            if "SELECT id,topic,payload" in query and "id=ANY(" not in query:
+                self.observed = True
+                assert await self.connection.fetchval("SELECT current_setting('plan_cache_mode')") == "force_custom_plan"
+                assert await self.connection.fetchval("SELECT current_setting('columnar.enable_custom_scan')") == "on"
+            return await self.connection.fetch(query,*parameters)
+
+    if await connection.fetchval("SELECT am.amname FROM pg_class c JOIN pg_am am ON am.oid=c.relam "
+                                  "WHERE c.oid='packets_cold'::regclass") == "columnar":
+        async with storage.pool.acquire() as pooled:
+            observed = ObserveFallback(pooled)
+            rows = await fetch_topic_packet_page(observed,
+                ["topic=$1", "payload LIKE '%' || $2 || '%'"], [topic,needle,2], 3, "0",
+                candidate_conditions=["topic=$1"])
+            assert [row["id"] for row in rows] == [100001]
+            assert observed.observed
 
 
 async def check_readers(connection, storage):

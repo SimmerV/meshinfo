@@ -111,6 +111,30 @@ async def fetch_packet_page(connection, query, *parameters, custom_plan=False):
         return await connection.fetch(query, *parameters)
 
 
+async def fetch_bounded_payload(connection, query, *parameters):
+    """Reuse a plan only after exact packet identities have been bounded.
+
+    Columnar's planner repeatedly enumerates stripe metadata even with its
+    custom scan disabled. A generic prepared plan avoids that work on reuse;
+    key selection and broad predicates still use their custom plans. A nested
+    transaction restores settings on errors/cancellation, while successful
+    reads explicitly restore them before a caller can run a broad fallback.
+    """
+    async with connection.transaction(readonly=True):
+        previous = await connection.fetchrow("SELECT current_setting('plan_cache_mode') AS plan, "
+            "current_setting('columnar.enable_custom_scan',true) AS scan")
+        if (previous["plan"] not in {"auto", "force_custom_plan", "force_generic_plan"}
+                or previous["scan"] not in {"on", "off"}):
+            raise HistoryReadError("bounded_payload_settings")
+        await connection.execute("SET LOCAL plan_cache_mode = force_generic_plan; "
+                                 "SET LOCAL columnar.enable_custom_scan = off")
+        rows = await connection.fetch(query, *parameters)
+        # Values are checked against fixed GUC enums above, never request text.
+        await connection.execute("SET LOCAL plan_cache_mode = " + previous["plan"]
+            + "; SET LOCAL columnar.enable_custom_scan = " + previous["scan"])
+        return rows
+
+
 def topic_coverage_intervals(bounds):
     """Parse only complete UTC monthly bounds emitted by PostgreSQL catalogs."""
     intervals = []
@@ -238,12 +262,6 @@ async def fetch_topic_packet_page(connection, conditions, parameters, limit_para
             keys = keys[:probe_size]
             if not keys:
                 return []
-            previous_scan = None
-            if not complete:
-                previous_scan = await connection.fetchval("SELECT current_setting('columnar.enable_custom_scan',true)")
-                if previous_scan not in {"on", "off"}:
-                    return await connection.fetch(direct, *parameters)
-            await connection.execute("SET LOCAL columnar.enable_custom_scan = off")
             prefix = "WITH " + topic_match_cte(search_parameter) + " " if search_parameter else ""
             ids, stamps = [row["id"] for row in keys], [row["created_at"] for row in keys]
             first = len(parameters)+1
@@ -254,27 +272,23 @@ async def fetch_topic_packet_page(connection, conditions, parameters, limit_para
                 f"FROM unnest(${first}::bigint[],${first+1}::timestamptz[]) AS wanted(id,created_at) "
                 "WHERE wanted.id=mqtt_messages.id AND wanted.created_at=mqtt_messages.created_at) "
                 f"ORDER BY created_at DESC,id DESC LIMIT ${limit_parameter}::integer")
-            rows = await connection.fetch(query, *parameters, ids, stamps, min(stamps), max(stamps))
+            rows = await fetch_bounded_payload(connection, query, *parameters, ids, stamps, min(stamps), max(stamps))
             if not {(row["id"],row["created_at"]) for row in rows}.issubset(
                     {(row["id"],row["created_at"]) for row in keys}):
                 raise HistoryReadError("canonical_topic_lookup")
             if complete or len(rows) >= requested:
                 return rows
-            # This prefix cannot prove a complete page. Restore the caller's
-            # original planner mode before the exact broad-query fallback.
-            await connection.execute("SET LOCAL columnar.enable_custom_scan = " + previous_scan)
+            # The bounded fetch has restored the preceding planner settings;
+            # this exact broad fallback still receives its own custom plan.
             return await connection.fetch(direct, *parameters)
         keys_sql, coverage_parameters = topic_candidate_sql(conditions, limit_parameter, intervals)
         keys = await connection.fetch(keys_sql, *parameters, *coverage_parameters)
         if not keys:
             return []
-        if indexed_payload:
-            # Only this bounded exact-ID projection needs index scans. Keeping
-            # custom scans enabled for broad predicates avoids expensive full
-            # index walks. The local setting disappears on transaction exit.
-            await connection.execute("SET LOCAL columnar.enable_custom_scan = off")
         query, payload_parameters = packet_payload_sql(keys, reception_count_sql)
-        return ordered_packet_rows(keys, await connection.fetch(query, *payload_parameters))
+        rows = (await fetch_bounded_payload(connection, query, *payload_parameters) if indexed_payload
+                else await connection.fetch(query, *payload_parameters))
+        return ordered_packet_rows(keys, rows)
 
 
 def packet_payload_sql(keys, reception_count_sql):
