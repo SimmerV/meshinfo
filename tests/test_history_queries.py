@@ -13,6 +13,7 @@ from storage.db.history_queries import (
     packet_page_sql, fetch_packet_page, topic_coverage_intervals, topic_candidate_sql,
     fetch_topic_packet_page, ordered_packet_rows, packet_payload_sql,
     topic_match_cte, TOPIC_MATCH_ARRAY_LIMIT,
+    remap_conditions,
 )
 from storage.db.postgres import PostgresStorage, _decode_cursor
 
@@ -191,6 +192,72 @@ def test_matching_topic_dictionary_array_has_a_hard_row_bound_and_exact_overflow
     assert "CASE WHEN (SELECT overflow FROM packet_topic_matches) THEN EXISTS" in sql
     assert "matched_topic.id=pr.topic_id" in sql
     assert "matched_topic.topic ILIKE '%' || $1 || '%'" in sql
+
+
+def test_metadata_probe_remaps_parameters_omitted_from_payload_or_reported_time_filters():
+    conditions, arguments = remap_conditions(["topic ILIKE $3", "created_at >= $4", "(created_at,id)<($5,$6)"],
+        [123, "payload search", "literal", STAMP, STAMP, 99, 2])
+    assert conditions == ["topic ILIKE $1", "created_at >= $2", "(created_at,id)<($3,$4)"]
+    assert arguments == ["literal", STAMP, STAMP, 99]
+
+
+def prefix_connection(payload_rows, fallback_rows=None):
+    transaction = MagicMock()
+    transaction.__aenter__ = AsyncMock()
+    transaction.__aexit__ = AsyncMock(return_value=False)
+    keys = [{"id": identity, "created_at": STAMP} for identity in range(129, 0, -1)]
+    effects = [[{"bounds": "FOR VALUES FROM ('2026-01-01T00:00:00Z') TO ('2026-02-01T00:00:00Z')"}],
+               keys, payload_rows]
+    if fallback_rows is not None:
+        effects.append(fallback_rows)
+    return SimpleNamespace(transaction=lambda **kwargs: transaction, execute=AsyncMock(),
+        fetchval=AsyncMock(side_effect=[42, "on"]), fetch=AsyncMock(side_effect=effects)), transaction
+
+
+def test_ordered_prefix_returns_proven_full_page_even_with_older_candidates():
+    expected = [packet(129), packet(128)]
+    connection, transaction = prefix_connection(expected)
+    actual = asyncio.run(fetch_topic_packet_page(connection,
+        ["payload ILIKE $1", "created_at <= $2"], ["needle", STAMP, 2], 3, "0",
+        candidate_conditions=["created_at <= $2"]))
+    assert actual == expected
+    assert connection.fetch.await_count == 3  # coverage, ordered prefix, exact filtered payloads
+    assert transaction.__aexit__.await_args.args[0] is None
+
+
+def test_incomplete_prefix_restores_scan_mode_and_checks_older_matches():
+    connection, _ = prefix_connection([], [packet(0)])
+    actual = asyncio.run(fetch_topic_packet_page(connection,
+        ["payload ILIKE $1", "created_at <= $2"], ["needle", STAMP, 2], 3, "0",
+        candidate_conditions=["created_at <= $2"]))
+    assert [row["id"] for row in actual] == [0]
+    assert connection.fetch.await_count == 4
+    assert "id=ANY" not in connection.fetch.await_args.args[0]
+    assert connection.execute.await_args.args == ("SET LOCAL columnar.enable_custom_scan = on",)
+
+
+def test_multistatement_history_deadline_cancels_read_and_exits_transaction(monkeypatch):
+    import storage.db.history_queries as queries
+    monkeypatch.setattr(queries, "HISTORY_READ_TIMEOUT_SECONDS", .01)
+    transaction = MagicMock()
+    transaction.__aenter__ = AsyncMock()
+    transaction.__aexit__ = AsyncMock(return_value=False)
+    calls = 0
+    async def fetch(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return [{"bounds": "FOR VALUES FROM ('2026-01-01T00:00:00Z') TO ('2026-02-01T00:00:00Z')"}]
+        if calls == 2:
+            return [{"id": 1, "created_at": STAMP}]
+        await asyncio.Event().wait()
+    connection = SimpleNamespace(transaction=lambda **kwargs: transaction,
+        fetchval=AsyncMock(return_value=42), execute=AsyncMock(), fetch=fetch)
+    with pytest.raises(TimeoutError):
+        asyncio.run(fetch_topic_packet_page(connection,
+            ["payload ILIKE $1", "created_at <= $2"], ["needle", STAMP, 2], 3, "0",
+            candidate_conditions=["created_at <= $2"]))
+    assert transaction.__aexit__.await_args.args[0] is asyncio.CancelledError
 
 
 def test_page_preserves_tied_timestamp_cursor_and_malformed_scalar_null_payloads():

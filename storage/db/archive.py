@@ -327,6 +327,19 @@ async def _fingerprint(conn, oid, source_method="heap"):
     if any(not row["indisvalid"] or not row["indisready"] or row["reltablespace"]
            or row["amname"] not in ("btree", "hash", "gin") for row in indexes):
         raise ArchiveBlocked("Source has unsupported, invalid or custom-tablespace indexes")
+    if any(row["amname"] == "gin" for row in indexes):
+        # Only canonical-topic trigram search is replaced by the verified heap
+        # lookup. Silently dropping a user payload/expression/partial GIN would
+        # discard an independent access path that this worker cannot preserve.
+        from storage.db.archive_catalog import (
+            _TOPIC_METADATA_SQL, _TOPIC_JOINS_SQL, supported_parent,
+        )
+        gin_indexes = await conn.fetch("SELECT " + _TOPIC_METADATA_SQL + """
+            FROM pg_index i JOIN pg_class idx ON idx.oid=i.indexrelid
+            JOIN pg_am am ON am.oid=idx.relam """ + _TOPIC_JOINS_SQL + """
+            WHERE i.indrelid=$1 AND am.amname='gin'""", oid)
+        if not all(supported_parent(index) for index in gin_indexes):
+            raise ArchiveBlocked("Only standard canonical-topic pg_trgm GIN indexes can be replaced by the archive lookup")
     constraints = [dict(row) for row in await conn.fetch("""SELECT conname,contype::text,convalidated,condeferrable,condeferred,
         pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid=$1 ORDER BY conname""", oid)]
     if not any(row["contype"] == "p" and row["definition"] == "PRIMARY KEY (id, created_at)" for row in constraints):
@@ -393,12 +406,73 @@ async def _options(conn, name, options):
         f"columnar.chunk_group_row_limit={int(options['chunk_group_rows'])})")
 
 
+def _copy_batch_policy(policy, index_count):
+    """One row/WAL budget for the real writer and its geometry-aware pilot."""
+    if type(index_count) is not int or index_count < 1:
+        raise ArchiveBlocked("Archive copy requires a positive index-count budget")
+    gin_budget = policy.max_wal_bytes//4
+    rows = (policy.max_wal_bytes-2*policy.batch_bytes-gin_budget)//(32768*index_count)
+    if rows < 1:
+        raise ArchiveBlocked("One row's index-write estimate exceeds max_wal_mib; verify headroom before increasing it")
+    return replace(policy,batch_rows=min(policy.batch_rows,rows)),gin_budget
+
+
+async def _fill_columnar_pilot(conn,heap,columnar,policy):
+    """Seal the same bounded write stripes while retaining one outer rollback."""
+    if not conn.is_in_transaction():
+        raise ValueError("Archive pilots require an enclosing transaction")
+    last_id = last_time = None
+    rows = 0
+    while True:
+        selected,_bytes = await _batch(conn,heap,last_id,last_time,policy,build_topic_index=True)
+        if not selected:
+            return rows
+        last = selected[-1]
+        # Citus seals subtransaction write state on RELEASE SAVEPOINT. The
+        # complete pilot still rolls back with its enclosing preflight.
+        async with conn.transaction():
+            command = await conn.execute(f"""INSERT INTO {_q(columnar)} ({_columns()})
+                SELECT {_columns()} FROM {_q(heap)}
+                WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz))
+                  AND (id,created_at)<=($3,$4) ORDER BY id,created_at""",
+                last_id,last_time,last["id"],last["created_at"])
+            if command != f"INSERT 0 {len(selected)}":
+                raise ArchiveBlocked("Compression pilot changed its bounded row cohort")
+        rows += len(selected)
+        last_id,last_time = last["id"],last["created_at"]
+
+
+async def _pilot_metadata(conn,name):
+    """Upper-biased logical metadata cost, independent of reusable catalog pages.
+
+Pinned Citus14.1 catalogs have two stripe indexes and one index each for chunk
+groups/chunks. Allow96B per index entry plus padded fixed heap tuple costs.
+Raw min/max byte lengths cover even externally TOASTed metadata. Sampling and
+the policy multiplier remain estimates; real chunks retain filesystem guards.
+"""
+    return dict(await conn.fetchrow("""SELECT
+        (SELECT coalesce(sum(row_count),0)::bigint FROM columnar.stripe WHERE relation=$1::regclass) AS rows,
+        (SELECT count(*)::bigint FROM columnar.stripe WHERE relation=$1::regclass) AS stripes,
+        (SELECT coalesce(max(row_count),0)::bigint FROM columnar.stripe WHERE relation=$1::regclass) AS max_stripe_rows,
+        (SELECT coalesce(max(row_count),0)::bigint FROM columnar.chunk_group WHERE relation=$1::regclass) AS max_group_rows,
+        ((SELECT count(*)*320 FROM columnar.stripe WHERE relation=$1::regclass)
+         +(SELECT count(*)*192 FROM columnar.chunk_group WHERE relation=$1::regclass)
+         +(SELECT coalesce(sum(256::bigint+coalesce(octet_length(minimum_value),0)
+             +coalesce(octet_length(maximum_value),0)),0) FROM columnar.chunk WHERE relation=$1::regclass))::bigint AS bytes""",_q(name)))
+
+
 async def _estimate(conn, source, policy, *, target_method="columnar", extra_indexes=()):
     """Bounded real pilot; its heap/columnar ratio is conservatively inflated.
 
     The pilot is transactional and is dropped before commit. It is an estimate,
     never a reservation guarantee; every real chunk rechecks actual disk use.
     """
+    if not conn.is_in_transaction():
+        raise ValueError("Archive staging estimates require an enclosing transaction")
+    index_count = sum(row["amname"] != "gin" for row in await _indexes(conn,source["oid"]))
+    index_count += 3 if target_method == "columnar" else len(extra_indexes)
+    batch_policy,_gin_budget = _copy_batch_policy(policy,index_count)
+    sample_limit = min(1000,32*batch_policy.batch_rows)
     token = uuid.uuid4().hex[:16]
     heap, columnar = "meshinfo_archive_pilot_h_"+token, "meshinfo_archive_pilot_c_"+token
     await conn.execute(f"CREATE TABLE {_q(heap)} (LIKE {_q(source['name'])} INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMPRESSION) USING heap")
@@ -410,14 +484,14 @@ async def _estimate(conn, source, policy, *, target_method="columnar", extra_ind
         SELECT id,created_at,128+coalesce(octet_length(payload),0)+coalesce(octet_length(topic),0) AS n,
           1+coalesce(octet_length(topic),0) AS topic_bytes
         FROM {_q(source['name'])} {sample_method}
-        WHERE coalesce(octet_length(payload),0)+coalesce(octet_length(topic),0)<=$1 {sample_order} LIMIT 1000),
+        WHERE coalesce(octet_length(payload),0)+coalesce(octet_length(topic),0)<=$1 {sample_order} LIMIT $4),
         bounded AS (SELECT id,created_at,sum(n) OVER (ORDER BY id,created_at) AS bytes,
           sum(topic_bytes) OVER(ORDER BY id,created_at) AS topic_bytes FROM sample)
         INSERT INTO {_q(heap)} ({_columns()}) SELECT {_columns('s')}
         FROM {_q(source['name'])} s JOIN bounded b USING(id,created_at)
         WHERE b.bytes<=$2 AND b.topic_bytes<=$3 ORDER BY s.id,s.created_at""",
-        min(MIB, policy.batch_bytes), policy.batch_bytes,index_sample_limit)
-    extra_ratio = 0
+        min(MIB, policy.batch_bytes), policy.batch_bytes,index_sample_limit,sample_limit)
+    extra_bytes_per_row = metadata_estimate = 0
     if not await conn.fetchval(f"SELECT EXISTS(SELECT 1 FROM {_q(heap)})"):
         await conn.execute(f"INSERT INTO {_q(heap)} ({_columns()}) SELECT {_columns()} FROM {_q(source['name'])} "
             "WHERE coalesce(octet_length(payload),0)+coalesce(octet_length(topic),0)<=$1 "
@@ -425,24 +499,42 @@ async def _estimate(conn, source, policy, *, target_method="columnar", extra_ind
     if not await conn.fetchval(f"SELECT EXISTS(SELECT 1 FROM {_q(heap)})"):
         if await conn.fetchval(f"SELECT EXISTS(SELECT 1 FROM {_q(source['name'])})"):
             raise ArchiveBlocked("No bounded compression sample is available; increase the batch byte budget")
-        ratio = 1.0
+        table_estimate = 0
     else:
-        await conn.execute(f"CREATE TABLE {_q(columnar)} (LIKE {_q(heap)} INCLUDING ALL) USING columnar")
-        await _options(conn, columnar, {"compression_level": policy.compression_level, "chunk_group_rows": policy.chunk_group_rows})
-        await conn.execute(f"INSERT INTO {_q(columnar)} SELECT * FROM {_q(heap)}")
-        if await conn.fetchval(f"SELECT count(*) FROM {_q(columnar)}") != await conn.fetchval(f"SELECT count(*) FROM {_q(heap)}"):
-            raise ArchiveBlocked("Compression pilot did not round-trip its sample")
         heap_bytes = await _size(conn, heap)
-        ratio = (await _size(conn, columnar)) / max(1, heap_bytes)
-        await conn.execute(f"DROP TABLE {_q(columnar)}")
+        count = await conn.fetchval(f"SELECT count(*) FROM {_q(heap)}")
+        if target_method == "columnar":
+            await conn.execute(f"CREATE TABLE {_q(columnar)} (LIKE {_q(heap)} INCLUDING ALL) USING columnar")
+            await _options(conn, columnar, {"compression_level": policy.compression_level, "chunk_group_rows": policy.chunk_group_rows})
+            written = await _fill_columnar_pilot(conn,heap,columnar,batch_policy)
+            metadata = await _pilot_metadata(conn,columnar)
+            if (written != count or metadata["rows"] != count or
+                    metadata["max_stripe_rows"] > batch_policy.batch_rows or
+                    metadata["max_group_rows"] > min(batch_policy.batch_rows,policy.chunk_group_rows)):
+                raise ArchiveBlocked("Compression pilot did not retain the bounded worker geometry")
+            ratio = max(.05,(await _size(conn,columnar))/max(1,heap_bytes))
+            row_estimate = await conn.fetchval("SELECT reltuples::float8 FROM pg_class WHERE oid=$1",source["oid"])
+            row_estimate = max(count,row_estimate,source["table_bytes"]*count/max(1,heap_bytes))
+            metadata_estimate = metadata["bytes"]*row_estimate/count
+            table_estimate = source["table_bytes"]*ratio
+            await conn.execute(f"DROP TABLE {_q(columnar)}")
+        else:
+            # The source may have different settings/stripe geometry. Its
+            # catalog provides exact row counts, so estimate the expanded heap
+            # directly instead of inverting a mismatched compression ratio.
+            row_estimate = await conn.fetchval("""SELECT coalesce(sum(row_count),0)::bigint
+                FROM columnar.stripe WHERE relation=$1::oid::regclass""",source["oid"])
+            if row_estimate < count:
+                raise ArchiveBlocked("Source columnar row-count metadata is incomplete")
+            table_estimate = heap_bytes*row_estimate/count
         for number, tail in enumerate(extra_indexes):
             await conn.execute(f"CREATE INDEX {quote_identifier(heap+'_g'+str(number))} ON {_q(heap)} USING {tail}")
         if extra_indexes:
-            extra_ratio = await conn.fetchval("SELECT pg_indexes_size($1::regclass)::float8", _q(heap)) / max(1, heap_bytes)
+            extra_bytes_per_row = await conn.fetchval("SELECT pg_indexes_size($1::regclass)::float8", _q(heap))/count
+            table_estimate += extra_bytes_per_row*row_estimate
     await conn.execute(f"DROP TABLE {_q(heap)}")
-    ratio = max(.05, ratio) if target_method == "columnar" else max(1.0, 1/max(.001, ratio))
-    table_estimate = source["table_bytes"] * ratio * policy.estimate_multiplier
-    return math.ceil(table_estimate * (1+extra_ratio) + source["supported_index_bytes"] + 16*MIB)
+    return math.ceil((table_estimate+metadata_estimate)*policy.estimate_multiplier
+                     +source["supported_index_bytes"]+16*MIB)
 
 
 def _index_signature(row):
@@ -697,9 +789,7 @@ async def _copy_chunk(conn, job, policy, free_bytes):
     # Trigram entries add work proportional to topic bytes, independently of
     # the number of row/index-page images. Reserve a quarter of the WAL budget
     # and bound that fanout before reading/copying text or modifying either stage.
-    gin_budget = policy.max_wal_bytes//4
-    rows = max(1, (policy.max_wal_bytes-2*policy.batch_bytes-gin_budget)//(32768*max(1,indexes)))
-    batch_policy = replace(policy, batch_rows=min(policy.batch_rows, rows))
+    batch_policy,gin_budget = _copy_batch_policy(policy,indexes)
     before = await _stage_size(conn,job)
     _free(free_bytes, policy, max(4*policy.batch_bytes+32768*indexes*batch_policy.batch_rows+gin_budget, min(policy.max_wal_bytes,
           max(0, job["estimated_stage_bytes"]-before))))

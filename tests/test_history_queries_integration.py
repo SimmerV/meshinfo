@@ -19,6 +19,7 @@ import pytest
 from storage.db.history_queries import (
     packet_page_sql, fetch_topic_packet_page, literal_topic_pattern,
     topic_match_cte, TOPIC_MATCH_ARRAY_LIMIT,
+    TOPIC_CANDIDATE_LIMIT,
 )
 from storage.db.postgres import PostgresStorage
 
@@ -128,8 +129,10 @@ async def exercise_method(connection, method):
             WHERE created_at>='2020-01-01' AND created_at<'2020-02-01'""")
         assert await check_readers(connection, storage) == previous
         await check_dictionary_overflow(connection, storage)
+        await check_candidate_overflow(connection, storage)
         if method == "columnar":
             await check_topic_lookup_snapshot(connection, storage)
+            await check_actual_read_deadline(storage)
         async with storage.pool.acquire() as pooled:
             assert await pooled.fetchrow("SELECT current_setting('plan_cache_mode') AS plan, "
                 "current_setting('columnar.enable_custom_scan',true) AS columnar") == initial_settings
@@ -172,6 +175,35 @@ async def check_topic_lookup_snapshot(writer, storage):
                              "AND created_at>='2020-02-01' AND created_at<'2020-03-01'", TOPIC)
 
 
+async def check_actual_read_deadline(storage):
+    class SlowPayload:
+        def __init__(self, connection):
+            self.connection, self.reached_payload = connection, False
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+        async def fetch(self, query, *parameters):
+            if "id=ANY" in query:
+                self.reached_payload = True
+                await self.connection.execute("SELECT pg_sleep(2)")
+            return await self.connection.fetch(query, *parameters)
+
+    async with storage.pool.acquire() as connection:
+        before = await connection.fetchrow("SELECT current_setting('plan_cache_mode') AS plan, "
+            "current_setting('columnar.enable_custom_scan') AS columnar")
+        slowed = SlowPayload(connection)
+        with patch("storage.db.history_queries.HISTORY_READ_TIMEOUT_SECONDS", .2):
+            with pytest.raises(TimeoutError):
+                await fetch_topic_packet_page(slowed,
+                    ["topic ILIKE '%' || $1 || '%' ESCAPE '\\'"], [literal_topic_pattern(TOPIC), 51],
+                    2, storage._reception_count_sql)
+        assert slowed.reached_payload
+        assert await connection.fetchval("SELECT 1") == 1
+        assert await connection.fetchrow("SELECT current_setting('plan_cache_mode') AS plan, "
+            "current_setting('columnar.enable_custom_scan') AS columnar") == before
+
+
 async def check_dictionary_overflow(connection, storage):
     await connection.execute("INSERT INTO mqtt_topics SELECT n,'bounded-overflow-witness-'||n "
                              "FROM generate_series(1000,$1) n", 1000+TOPIC_MATCH_ARRAY_LIMIT+1)
@@ -189,6 +221,34 @@ async def check_dictionary_overflow(connection, storage):
             result = await storage.query_mqtt_messages(search=term, topic=topic, limit=1)
             assert [row["mqtt_row_id"] for row in result["messages"]] == [2]
             assert result["next_cursor"] is None
+
+
+async def check_candidate_overflow(connection, storage):
+    topic, needle = "bounded-candidate-overflow", "only beyond candidate prefix"
+    rows = [(100000+number, topic, json.dumps({"text": needle if number == 1 else "ordinary"}),
+             0, False, 9999999999 if number == 1 else 0,
+             HOT-timedelta(days=20)+timedelta(microseconds=number), None, None, None)
+            for number in range(1, TOPIC_CANDIDATE_LIMIT+3)]
+    schema = await connection.fetchval("SELECT current_schema()")
+    await connection.copy_records_to_table("mqtt_messages", schema_name=schema, records=rows)
+    await connection.copy_records_to_table("mqtt_archive_topics", schema_name=schema,
+        records=[(row[0],row[6],row[1]) for row in rows])
+    prefix = await connection.fetch("SELECT id FROM mqtt_archive_topics WHERE topic=$1 "
+        "ORDER BY created_at DESC,id DESC LIMIT $2", topic, TOPIC_CANDIDATE_LIMIT+1)
+    assert len(prefix) == TOPIC_CANDIDATE_LIMIT+1 and 100001 not in {row["id"] for row in prefix}
+    for search, relative in ((needle, None), (None, 1), (needle, 1)):
+        result = await storage.query_mqtt_messages(topic=topic, search=search, range_seconds=relative,
+            start=datetime(2020,1,1,tzinfo=timezone.utc), limit=1)
+        assert [row["mqtt_row_id"] for row in result["messages"]] == [100001]
+        assert result["next_cursor"] is None
+    # A common predicate can finish inside an incomplete metadata prefix, but
+    # page ordering/cursors must still be identical to the complete SQL result.
+    cursor = None
+    for identity in range(100000+TOPIC_CANDIDATE_LIMIT+2, 100000+TOPIC_CANDIDATE_LIMIT-1, -1):
+        result = await storage.query_mqtt_messages(topic=topic, search="ordinary", before=cursor, limit=1)
+        assert [row["mqtt_row_id"] for row in result["messages"]] == [identity]
+        cursor = result["next_cursor"]
+        assert cursor is not None
 
 
 async def check_readers(connection, storage):
@@ -253,5 +313,13 @@ async def check_readers(connection, storage):
             break
     assert ids == [5, 4, 1, 3, 2, 7, 8, 6, 9]
     assert before is None
+    search_ids, before = [], None
+    for _ in range(12):
+        page = await storage.query_mqtt_messages(search="%", limit=1, before=before)
+        search_ids.extend(row["mqtt_row_id"] for row in page["messages"])
+        before = page["next_cursor"]
+        if before is None:
+            break
+    assert search_ids == [5, 4, 1, 3, 2, 7, 8, 9] and before is None
     outcomes.update(literal=literal, node=node, reused=reused, copied=copied, pagination=ids)
     return outcomes

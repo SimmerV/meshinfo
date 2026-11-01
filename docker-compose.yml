@@ -46,6 +46,8 @@ services:
 
   meshinfo:
     image: ghcr.io/meshaddicts/meshinfo:latest
+    # Allow task cancellation and database cleanup before Docker sends SIGKILL.
+    stop_grace_period: 30s
     volumes:
       - ./config.toml:/app/config.toml
       - ./output:/app/output

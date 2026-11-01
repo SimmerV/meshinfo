@@ -1,15 +1,27 @@
 """Packet-history query fragments and explicit read-failure contracts.
 
-The search expression preserves the API's existing ILIKE wildcard behavior.
-Only the topic dictionary lookup is moved out of the per-packet reception
-subquery, so PostgreSQL can evaluate that lookup once for the entire statement.
+Search preserves ILIKE wildcard behavior and canonical/reception topic rules.
+Verified heap metadata narrows cold packet candidates; bounded payload reads
+retain exact identities, snapshot consistency, and ordered keyset pagination.
 """
 
 from datetime import datetime, timezone
+import asyncio
+from functools import wraps
 import re
 
 HISTORY_ACQUIRE_TIMEOUT_SECONDS = 3
 TOPIC_MATCH_ARRAY_LIMIT = 4096
+TOPIC_CANDIDATE_LIMIT = 4096
+HISTORY_READ_TIMEOUT_SECONDS = 10
+
+
+def history_read_deadline(function):
+    @wraps(function)
+    async def bounded(*args, **kwargs):
+        async with asyncio.timeout(HISTORY_READ_TIMEOUT_SECONDS):
+            return await function(*args, **kwargs)
+    return bounded
 
 
 class HistoryReadError(RuntimeError):
@@ -42,7 +54,9 @@ def read_failure(operation: str, cause: Exception) -> HistoryReadError:
 def search_condition(parameter: int, lookback_seconds: int) -> str:
     """Match canonical text or any eligible reception's topic, without row fanout.
 
-    packet_page_sql materializes matching dictionary IDs once. The empty-array
+    packet_page_sql materializes a bounded matching dictionary prefix once.
+    Overflow checks the actual reception topic by ID, preserving every match.
+    The empty-array
     guard skips receipt probes altogether when no dictionary topics match,
     while nonempty indexed lookups retain their canonical ID and time bounds.
     EXISTS keeps a packet unique even when several receipts match. An empty topic
@@ -150,16 +164,34 @@ def topic_candidate_sql(conditions, limit_parameter, intervals, *, bounded=True)
     return sql, values
 
 
+def remap_conditions(conditions, parameters):
+    """Bind standalone metadata predicates without unused parameter ordinals."""
+    positions, values = {}, []
+    def replace(match):
+        original = int(match.group(1))
+        if not 1 <= original <= len(parameters):
+            raise ValueError("Metadata predicate references an unbound parameter")
+        if original not in positions:
+            positions[original] = len(values)+1
+            values.append(parameters[original-1])
+        return "$" + str(positions[original])
+    return [re.sub(r"\$(\d+)", replace, condition) for condition in conditions], values
+
+
+@history_read_deadline
 async def fetch_topic_packet_page(connection, conditions, parameters, limit_parameter, reception_count_sql,
                                   *, candidate_conditions=None, search_parameter=None,
                                   indexed_payload=True, window_start=None, window_end=None):
-    """Read literal-topic pages through complete cold metadata when available.
+    """Read date and literal-topic pages through complete cold metadata.
 
     Existing compressed leaves without a verified helper remain in the native
     fallback. Parent locks protect the coverage/key/payload sequence against
     archive cutover, reverse conversion and retention. Matching keys are bounded
-    before payload fetch; a bound array gives the custom planner real selectivity
-    instead of an unknown materialized-subquery cardinality.
+    before payload fetch; a bound array gives the custom planner real selectivity.
+    Additional payload/reported-time predicates use a bounded ordered prefix.
+    Enough filtered matches prove the newest requested page; a complete key set
+    proves a shorter result. Otherwise the original full query checks all older
+    candidates. The whole sequence has one execution deadline.
     """
     direct = packet_page_sql(conditions, limit_parameter, reception_count_sql, search_parameter=search_parameter)
     helper = await connection.fetchval("SELECT to_regclass('mqtt_archive_topics')::oid")
@@ -184,20 +216,49 @@ async def fetch_topic_packet_page(connection, conditions, parameters, limit_para
         if not intervals:
             return await connection.fetch(direct, *parameters)
         if candidate_conditions is not None and candidate_conditions != conditions:
-            # Keep the helper relation visible to the planner rather than
-            # aggregating an unbounded ID array. A selective literal topic can
-            # use nested PK lookups; broad matches can use a scan/hash join.
-            # Payload and reported-time predicates precede the final LIMIT.
+            requested = parameters[limit_parameter-1]
+            if requested > TOPIC_CANDIDATE_LIMIT:
+                return await connection.fetch(direct, *parameters)
+            # A modest overscan handles nonmatching envelopes without doubling
+            # tuple decompression for common predicates. The stopping proof and
+            # fallback are independent of this performance-only prefix size.
+            probe_size = min(TOPIC_CANDIDATE_LIMIT, max(128, requested+(requested+3)//4))
+            rebound, candidate_parameters = remap_conditions(candidate_conditions, parameters)
+            candidate_limit = len(candidate_parameters)+1
+            candidate_parameters.append(probe_size+1)
             keys_sql, coverage_parameters = topic_candidate_sql(
-                candidate_conditions, limit_parameter, intervals, bounded=False)
+                rebound, candidate_limit, intervals)
+            keys = await connection.fetch(keys_sql, *candidate_parameters, *coverage_parameters)
+            complete = len(keys) <= probe_size
+            keys = keys[:probe_size]
+            if not keys:
+                return []
+            previous_scan = None
+            if not complete:
+                previous_scan = await connection.fetchval("SELECT current_setting('columnar.enable_custom_scan',true)")
+                if previous_scan not in {"on", "off"}:
+                    return await connection.fetch(direct, *parameters)
+            await connection.execute("SET LOCAL columnar.enable_custom_scan = off")
             prefix = "WITH " + topic_match_cte(search_parameter) + " " if search_parameter else ""
-            columns = ",".join("mqtt_messages."+name for name in
-                ("id","topic","payload","qos","retain","timestamp","created_at"))
-            query = (f"{prefix}SELECT {columns},{reception_count_sql} AS reception_count "
-                f"FROM mqtt_messages JOIN ({keys_sql}) topic_candidates USING(id,created_at) "
-                "WHERE " + " AND ".join(conditions) +
-                f" ORDER BY mqtt_messages.created_at DESC,mqtt_messages.id DESC LIMIT ${limit_parameter}::integer")
-            return await connection.fetch(query, *parameters, *coverage_parameters)
+            ids, stamps = [row["id"] for row in keys], [row["created_at"] for row in keys]
+            first = len(parameters)+1
+            query = (f"{prefix}SELECT id,topic,payload,qos,retain,timestamp,created_at,{reception_count_sql} AS reception_count "
+                "FROM mqtt_messages WHERE " + " AND ".join(conditions) +
+                f" AND id=ANY(${first}::bigint[]) AND created_at>=${first+2}::timestamptz "
+                f"AND created_at<=${first+3}::timestamptz AND EXISTS (SELECT 1 "
+                f"FROM unnest(${first}::bigint[],${first+1}::timestamptz[]) AS wanted(id,created_at) "
+                "WHERE wanted.id=mqtt_messages.id AND wanted.created_at=mqtt_messages.created_at) "
+                f"ORDER BY created_at DESC,id DESC LIMIT ${limit_parameter}::integer")
+            rows = await connection.fetch(query, *parameters, ids, stamps, min(stamps), max(stamps))
+            if not {(row["id"],row["created_at"]) for row in rows}.issubset(
+                    {(row["id"],row["created_at"]) for row in keys}):
+                raise HistoryReadError("canonical_topic_lookup")
+            if complete or len(rows) >= requested:
+                return rows
+            # This prefix cannot prove a complete page. Restore the caller's
+            # original planner mode before the exact broad-query fallback.
+            await connection.execute("SET LOCAL columnar.enable_custom_scan = " + previous_scan)
+            return await connection.fetch(direct, *parameters)
         keys_sql, coverage_parameters = topic_candidate_sql(conditions, limit_parameter, intervals)
         keys = await connection.fetch(keys_sql, *parameters, *coverage_parameters)
         if not keys:

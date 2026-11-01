@@ -1,0 +1,40 @@
+{
+  "commit": "dd39d33ef447f44002f818aaa1e2dd5920ba995b",
+  "workflow_url": "https://github.com/SimmerV/meshinfo/actions/runs/41272660081",
+  "architectures": {
+    "PostgreSQL 18.6 / Citus 14.1 (arm64)": {
+      "conclusion": "success",
+      "verification_steps": [
+        {
+          "name": "Verify actual backup, settings before COPY, staging and rollback",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify checkpoint restore, cancellation, queries and startup indexes",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify production history readers on heap and mixed partitions",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "PostgreSQL 18.6 / Citus 14.1 (amd64)": {
+      "conclusion": "success",
+      "verification_steps": [
+        {
+          "name": "Verify actual backup, settings before COPY, staging and rollback",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify checkpoint restore, cancellation, queries and startup indexes",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify production history readers on heap and mixed partitions",
+          "conclusion": "success"
+        }
+      ]
+    }
+  }
+}

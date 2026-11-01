@@ -12,6 +12,34 @@ from scripts import benchmark_history_concurrency as benchmark
 from scripts.benchmark_history_read_plans import RecordedAcquisition
 
 
+def test_only_demonstrated_bounded_indexed_work_earns_indexed_search_criteria():
+    assert benchmark.classify_execution("archive_common_payload", {"bounded_payload": 6}, 6,
+        {"bounded_samples": 6, "unknown_samples": 0, "max_candidates": 252},
+        {"canonical_index_scan": True}) == "bounded indexed search"
+
+
+@pytest.mark.parametrize("paths,count,candidates,evidence", [
+    ({"native_reader": 6}, 6, {"bounded_samples": 0}, {"canonical_index_scan": True}),
+    ({"bounded_payload": 5, "native_reader": 1}, 6,
+     {"bounded_samples": 5, "max_candidates": 252}, {"canonical_index_scan": True}),
+    ({"unknown": 6}, 6, {"bounded_samples": 6, "max_candidates": 252}, {"canonical_index_scan": True}),
+    ({}, 0, {}, {}),
+    ({"bounded_payload": 6}, 6, {"bounded_samples": 5, "unknown_samples": 1, "max_candidates": 252},
+     {"canonical_index_scan": True}),
+    ({"bounded_payload": 6}, 6, {"bounded_samples": 6, "max_candidates": 4097}, {"canonical_index_scan": True}),
+    ({"bounded_payload": 6}, 6, {"bounded_samples": 6, "max_candidates": 252}, {"canonical_index_scan": False}),
+    ({"bounded_payload": 6}, 6, {"bounded_samples": 6, "max_candidates": 252}, {}),
+])
+def test_unknown_mixed_native_or_unproven_paths_do_not_relax_scan_criteria(paths, count, candidates, evidence):
+    assert benchmark.classify_execution("archive_common_payload", paths, count, candidates,
+                                        evidence) == "unindexed text search"
+
+
+def test_unknown_query_cases_fail_closed_even_with_bounded_plan_evidence():
+    assert benchmark.classify_execution("new_case", {"bounded_payload": 6}, 6,
+        {"bounded_samples": 6, "max_candidates": 252}, {"canonical_index_scan": True}) == "unclassified"
+
+
 def test_live_target_rejected_before_connection_or_output(monkeypatch, tmp_path):
     monkeypatch.setenv("CONCURRENCY_TEST_DSN", "postgresql://localhost/meshinfo")
     connector = AsyncMock()

@@ -27,8 +27,9 @@ import asyncpg
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from scripts.benchmark_columnar_history import qi, qualified
+from scripts.benchmark_columnar_history import qi, qualified, plan_summary
 from scripts.benchmark_history_read_plans import open_storage, result_digest, schema_name
+from storage.db.history_queries import TOPIC_CANDIDATE_LIMIT
 
 
 def percentile(samples, fraction):
@@ -39,6 +40,58 @@ def percentile(samples, fraction):
 def summarize(samples):
     return {"count": len(samples), "p50_ms": percentile(samples, .50),
             "p95_ms": percentile(samples, .95), "max_ms": max(samples) if samples else None}
+
+
+def bounded_candidates(captured):
+    match = re.search(r"\bid=ANY\(\$(\d+)::bigint\[\]\)", captured.get("sql", ""))
+    if match is None:
+        return None
+    parameters = captured.get("parameters", ())
+    index = int(match.group(1))-1
+    if index >= len(parameters) or not isinstance(parameters[index], (list, tuple)):
+        return None
+    return len(parameters[index])
+
+
+def classify_execution(case, paths, successful_reads, candidates, evidence):
+    """Only proved bounded execution earns the indexed-work acceptance rule."""
+    indexed_cases = {"archive_page", "archive_node", "archive_literal_topic", "archive_copies",
+                     "archive_topic_payload_common", "archive_topic_payload_absent"}
+    scan_cases = {"archive_common_payload", "archive_absent_payload", "archive_receipt_topic"}
+    if case in indexed_cases:
+        return "indexed lookup"
+    if case not in scan_cases:
+        return "unclassified"
+    if (successful_reads > 0 and paths == {"bounded_payload": successful_reads}
+            and candidates.get("bounded_samples") == successful_reads
+            and candidates.get("unknown_samples", 0) == 0
+            and 0 < (candidates.get("max_candidates") or 0) <= TOPIC_CANDIDATE_LIMIT
+            and evidence.get("canonical_index_scan") is True):
+        return "bounded indexed search"
+    return "unindexed text search"
+
+
+async def plan_evidence(storage):
+    captured = storage.pool.captured
+    sql, parameters = captured.get("sql"), captured.get("parameters", ())
+    if not sql:
+        return {"canonical_index_scan": False}
+    async with storage.pool.pool.acquire(timeout=3) as connection:
+        async with connection.transaction(readonly=True):
+            for name, value in captured.get("statement_settings", {}).items():
+                await connection.execute("SELECT set_config($1,$2,true)", name, value)
+            plan = json.loads(await connection.fetchval("EXPLAIN(FORMAT JSON) " + sql, *parameters))[0]["Plan"]
+    canonical = []
+    def visit(node):
+        if node.get("Relation Name", "").startswith("mqtt_messages"):
+            canonical.append(node.get("Node Type"))
+        for child in node.get("Plans", []):
+            visit(child)
+    visit(plan)
+    return {"canonical_index_scan": bool(canonical) and all(value in {"Index Scan", "Index Only Scan"}
+                                                           for value in canonical),
+            "candidate_count": bounded_candidates(captured),
+            "statement_settings": captured.get("statement_settings", {}), "plan": plan_summary(plan)}
 
 
 def persist_report(path, report, *, create=False):
@@ -124,9 +177,15 @@ async def run(args):
     report = {"all_checks_passed": False, "target_database": database, "packet_schemas": schemas,
               "shared_schema": shared, "duration_seconds": args.duration_seconds,
               "ingest_per_second": args.ingest_per_second, "reader_workers": args.readers,
+              "reader_connections_per_layout": args.readers,
+              "total_read_connections": args.readers*len(schemas), "writer_connections": 1,
               "reads_per_second_per_worker": args.reads_per_second,
               "thresholds": {"read_p95_ms": args.read_p95_ms, "write_p95_ms": args.write_p95_ms,
                              "columnar_to_heap_p95_ratio": args.relative_limit},
+              "operational_thresholds": {"indexed_p95_ms": 250, "indexed_ratio": 3,
+                  "indexed_additional_p95_ms": 100, "unindexed_p95_ms": 10000,
+                  "unindexed_ratio": 3, "writer_p95_ms": 250,
+                  "first_postgres_buffer_reset_page_ms": "1000; verified by separate read-plan report"},
               "limits": ["Bounded isolated fixture; this is not production-scale capacity proof.",
                          "Hot writes use an existing fixture month; archived query windows exclude them.",
                          "PostgreSQL and OS caches may be warm. No host caches are dropped.",
@@ -177,6 +236,7 @@ async def run(args):
              {**cold, "topic": "msh/prototype/%_\\literal", "search": "from"}),
             ("archive_topic_payload_absent", "query_mqtt_messages",
              {**cold, "topic": "msh/prototype/%_\\literal", "search": "meshinfo-topic-payload-absent-2ce9a8"}),
+            ("archive_copies", "query_mqtt_message_by_id", {"row_id": args.copy_row_id, "include_copies": True}),
         ]
         # Each worker owns a single-connection pool for each layout. The writer
         # has a separate connection; no monkeypatching or query overrides occur.
@@ -194,16 +254,22 @@ async def run(args):
                 opened.append(pool)
             readers.append(layouts)
         expected = {}
+        evidence = {label: {} for label in schemas}
         for name, method, arguments in cases:
             for label in schemas:
                 value = await getattr(readers[0][label], method)(**arguments)
                 digest = result_digest(value)
                 if name in expected and expected[name] != digest:
                     raise AssertionError("Baseline reader responses differ before ingestion")
-                if name not in {"archive_absent_payload", "archive_topic_payload_absent"} and not value["messages"]:
+                nonempty = bool(value) if method == "query_mqtt_message_by_id" else bool(value["messages"])
+                if name not in {"archive_absent_payload", "archive_topic_payload_absent"} and not nonempty:
                     raise AssertionError("A required positive archived-query witness is missing")
                 expected[name] = digest
+                evidence[label][name] = await plan_evidence(readers[0][label])
         read_times = {label: {name: [] for name, _, _ in cases} for label in schemas}
+        read_paths = {label: {name: {} for name, _, _ in cases} for label in schemas}
+        candidates_seen = {label: {name: {"bounded_samples": 0, "unknown_samples": 0, "max_candidates": None}
+                                   for name, _, _ in cases} for label in schemas}
         read_errors, write_errors, write_times = [], [], []
         end = time.monotonic() + args.duration_seconds
 
@@ -250,6 +316,17 @@ async def run(args):
                         if result_digest(value) != expected[name]:
                             raise AssertionError("Archived response changed during hot ingestion")
                         read_times[label][name].append(round((time.monotonic()-started)*1000, 3))
+                        sql = layouts[label].pool.captured.get("sql", "")
+                        path = "bounded_payload" if "id=ANY(" in sql else "native_reader"
+                        read_paths[label][name][path] = read_paths[label][name].get(path, 0)+1
+                        if path == "bounded_payload":
+                            candidate_count = bounded_candidates(layouts[label].pool.captured)
+                            observed = candidates_seen[label][name]
+                            if candidate_count is None:
+                                observed["unknown_samples"] += 1
+                            else:
+                                observed["bounded_samples"] += 1
+                                observed["max_candidates"] = max(observed["max_candidates"] or 0, candidate_count)
                     except Exception as exc:
                         read_errors.append({"layout": label, "case": name, "error": type(exc).__name__,
                                             "timed_out": getattr(exc, "timed_out", isinstance(exc, TimeoutError))})
@@ -264,7 +341,10 @@ async def run(args):
         report["read_errors"] = read_errors
         report["read_latency"] = {label: {name: summarize(values) for name, values in cases_.items()}
                                   for label, cases_ in read_times.items()}
-        gates = {}
+        report["read_execution_paths"] = read_paths
+        report["read_candidate_counts"] = candidates_seen
+        report["read_plan_evidence"] = evidence
+        gates, operational = {}, {}
         for name, _, _ in cases:
             heap = report["read_latency"]["heap"][name]
             columnar = report["read_latency"]["columnar"][name]
@@ -277,12 +357,25 @@ async def run(args):
                           "passed": bool(min(heap["count"], columnar["count"]) >= 5 and ratio is not None
                                          and ratio <= args.relative_limit
                                          and max(heap["p95_ms"], columnar["p95_ms"]) <= args.read_p95_ms)}
+            classification = classify_execution(name, read_paths["columnar"][name], columnar["count"],
+                candidates_seen["columnar"][name], evidence["columnar"][name])
+            unindexed = classification == "unindexed text search"
+            enough = min(heap["count"], columnar["count"]) >= 5 and ratio is not None
+            practical = bool(enough and classification != "unclassified" and
+                (columnar["p95_ms"] <= 10000 and ratio <= 3 if unindexed else
+                columnar["p95_ms"] <= 250 and (ratio <= 3 or columnar["p95_ms"]-heap["p95_ms"] <= 100)))
+            operational[name] = {"classification": classification,
+                                 "passed": practical}
         report["read_gates"] = gates
+        report["operational_read_gates"] = operational
         report["response_consistency_passed"] = bool(not read_errors and all(
             summary["count"] > 0 for cases_ in report["read_latency"].values() for summary in cases_.values()))
         report["ingest_checks_passed"] = not write_errors and len(write_times) >= 5
         report["latency_gates_passed"] = bool(report["write_latency"]["p95_ms"] is not None
             and report["write_latency"]["p95_ms"] <= args.write_p95_ms and all(g["passed"] for g in gates.values()))
+        report["operational_acceptance_passed"] = bool(report["response_consistency_passed"]
+            and report["ingest_checks_passed"] and report["write_latency"]["p95_ms"] <= 250
+            and all(g["passed"] for g in operational.values()))
         report["all_checks_passed"] = bool(not read_errors and not write_errors and len(write_times) >= 5
             and report["write_latency"]["p95_ms"] <= args.write_p95_ms and all(g["passed"] for g in gates.values()))
     except BaseException as exc:
@@ -314,6 +407,7 @@ async def run(args):
                     report["cleanup_complete"] = False
                     report["cleanup_error"] = type(exc).__name__
                     report["all_checks_passed"] = False
+                    report["operational_acceptance_passed"] = False
             await connection.close()
         persist_report(args.output, report)
     return report
@@ -334,6 +428,8 @@ def main():
     parser.add_argument("--read-p95-ms", type=float, default=1000)
     parser.add_argument("--write-p95-ms", type=float, default=1000)
     parser.add_argument("--relative-limit", type=float, default=3)
+    parser.add_argument("--copy-row-id", type=int, default=8000000000000009,
+                        help="A known cold fixture packet with reconstructible reception copies")
     args = parser.parse_args()
 
     async def guarded():

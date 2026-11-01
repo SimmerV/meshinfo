@@ -340,9 +340,14 @@ use complete lookup months together with native hot/uncovered months, under one
 repeatable-read snapshot and parent locks that coordinate with conversion and
 expiration. Simple topic/date pages select bounded identities before loading
 payloads; both identity columns are checked and the requested cursor order is
-restored. Combined topic, free-text and device-reported-time filters apply all
-predicates before the final page limit, so selective matches beyond the first
-topic page are not omitted. Node pages use separately indexed sender/recipient
+restored. Free-text and combined filters first inspect a bounded newest-key
+prefix, normally at least 128 identities and at most 4,096, plus one overflow
+sentinel. Indexed payload filtering proves the requested page when it finds
+the requested number of matches plus one; a complete key set also proves a
+shorter result. Otherwise the original full query checks all older candidates.
+Requests above the probe cap use the full query directly. All predicates apply
+before the final page limit, so matches beyond that probe are not omitted.
+Node pages use separately indexed sender/recipient
 branches and exclude only duplicate self-addressed results.
 
 Free-text search retains its existing ILIKE wildcard behavior and includes
@@ -350,7 +355,9 @@ eligible gateway reception topics. Matching dictionary IDs use a bounded array;
 more than 4,096 matches switch to an exact dictionary lookup instead of growing
 that array without limit. This does not truncate search results. Planner changes
 are transaction-local: selective pages use custom plans, and only a bounded
-exact-payload fetch disables Columnar custom scans. Broad payload searches can
+exact-payload fetch disables Columnar custom scans. The full multi-statement
+read has one ten-second execution deadline, in addition to the separately
+bounded pool acquisition. Broad payload searches can
 still scan substantial history. Bounded result pages and statement deadlines do
 not imply identical latency to heap storage or a constant memory limit for
 arbitrarily large payloads.
@@ -437,7 +444,13 @@ installations retain normal missing-index startup repair; mixed storage never
 recreates an incompatible parent GIN.
 
 The smallest eligible month is attempted first. A bounded pilot estimates the
-replacement, retained indexes and WAL budget. The original stays attached and
+replacement, retained indexes and WAL budget. It uses the writer's actual
+row/byte/WAL limits and seals the same small compression groups with savepoints;
+the estimate includes row-scaled Columnar metadata and raw min/max lengths.
+Reverse conversion estimates expanded heap/index bytes using the compressed
+source's exact catalog row count. Sampling still cannot reserve disk or predict
+every later record, so each real batch rechecks the actual filesystem.
+The original stays attached and
 readable while a detached replacement is built and verified in committed chunks.
 Job-specific triggers freeze changes to the old month during conversion; normal
 current-month ingestion continues. Default limits are 1,000 rows/8 MiB per copy
@@ -477,6 +490,11 @@ freeze triggers to bypass a refusal. To discard an unfinished conversion safely:
 ```sh
 dc exec meshinfo python scripts/manage_archive.py cancel --job JOB_UUID --apply
 ```
+
+The container entrypoint replaces its shell with the application process, so
+Docker stop signals reach maintenance cancellation and database cleanup. Both
+Compose deployments allow 30 seconds before forced termination. Checkpointed
+conversion also remains recoverable if that grace period is exhausted.
 
 Setting archive `enabled=false` and restarting the backend cancels an unfinished
 forward conversion on the next maintenance attempt. Completed compressed months
@@ -928,12 +946,18 @@ native CI for the final revision must be accepted before a production rollout.
 | Searchable history | Canonical-topic lookup partitions, indexed node branches, combined filters, cursor ordering and reception reconstruction are verified against real heap/mixed fixtures. A 4,098-topic fixture proved dictionary overflow still finds reception-only matches outside the bounded fast-path array. |
 | Backup and recovery | Snapshot-bound manifests preserve every Columnar relation, including detached stages. Restore applies exact options before COPY and uses bounded savepoint batches inside one atomic transaction to preserve observed physical grouping limits. Local/remote receiver, rollback, large rows and restored checkpoint continuation have real database coverage. |
 
-One full backend regression run recorded **937 passed, 92 skipped**; skipped
+The latest full backend regression run recorded **959 passed, 97 skipped**; skipped
 database suites require explicit isolated test connections and are not counted
-as database passes. A separate execution passed **39 real archive, application,
+as database passes. A separate execution passed **44 real archive, application,
 catalog and legacy-maintenance cases**. Additional focused workload-verifier and
 recycling tests passed. These counts describe individual runs rather than a
 single combined test total.
+
+The final engine cases also prove that pilot stripes respect the actual copy
+budget, wide min/max metadata contributes to space estimates, reverse sizing
+does not invert an unrelated compression ratio, and unsupported independent
+payload/expression/partial GIN indexes refuse conversion before source freezing.
+Process-level entrypoint tests verify direct SIGTERM/SIGINT delivery and cleanup.
 
 The small backup/restore fixture passed with **4,530 rows, two Columnar relations
 and eight chunk groups**, including a payload larger than 2 MiB, a detached
@@ -955,11 +979,24 @@ stripe/chunk row counts. They do not promise identical stripe membership for
 heterogeneous sources. Version 1 manifests remain readable with an explicit
 geometry/latency warning; raw `pg_restore` does not provide these guarantees.
 
-Native amd64 and arm64 image/restore checks passed an earlier implementation
-revision. The expanded workflow now also requires production reader tests on
-both architectures, including an explicitly installed Columnar extension.
-Only a successful run for the final application/image revision establishes its
-native validation; earlier green runs do not cover later code changes.
+Native amd64 and arm64 image, backup/restore, lifecycle and production-reader
+checks passed for implementation revision `dd39d33` in
+[the native CI run](https://github.com/SimmerV/meshinfo/actions/runs/41272660081).
+The workflow requires an explicitly installed Columnar extension so a missing
+extension cannot silently reduce the reader tests to heap-only coverage.
+
+The final load-test acceptance criteria were fixed before the final results:
+exact response agreement; no reader or writer errors; complete fixture cleanup;
+indexed page, node, topic and packet-copy p95 at most 250 ms, with either at most
+three times heap latency or at most 100 ms additional latency; writer p95 at most
+250 ms; and the first archive page after restarting PostgreSQL at most one
+second. Unindexed broad payload/reception-text searches must stay within the
+existing ten-second query budget and three times the equivalent heap latency.
+The original experimental three-times/one-second gates remain in the reports,
+including failures. Both ratios and absolute differences matter: a 2 ms to
+8 ms lookup change and a two-second to eight-second search change need different
+operational treatment. PostgreSQL restart measurements leave the shared host's
+OS cache intact and are labeled accordingly.
 
 Remaining acceptance work at this checkpoint is to compare the final workload's
 forward/restored query timings under the chosen load, inspect the actual

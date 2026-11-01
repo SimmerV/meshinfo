@@ -9,7 +9,7 @@ import pytest
 
 from storage.db.archive import (
     ArchiveBlocked, ArchivePolicy, _batch, _exact_equal, _free, _guarded,
-    _recover_inflight, archive_policy,
+    _recover_inflight, archive_policy, _copy_batch_policy,
 )
 
 
@@ -78,6 +78,16 @@ def test_topic_index_budget_bounds_prefix_and_refuses_one_oversized_topic():
     conn.large = True
     with pytest.raises(ArchiveBlocked,match="GIN/WAL budget"):
         asyncio.run(_batch(conn,"example",None,None,policy,build_topic_index=True))
+
+
+def test_pilot_and_worker_share_the_measured_row_budget():
+    bounded,gin_budget = _copy_batch_policy(ArchivePolicy(),11)
+    assert bounded.batch_rows == 93  # independently observed in the full workload
+    assert gin_budget == 16*1024**2
+    tiny,_ = _copy_batch_policy(ArchivePolicy(batch_rows=3),11)
+    assert tiny.batch_rows == 3
+    with pytest.raises(ArchiveBlocked,match="index-write estimate"):
+        _copy_batch_policy(ArchivePolicy(),1000000)
 
 
 def test_exact_comparison_includes_all_columns_and_uses_binary_text_equality():

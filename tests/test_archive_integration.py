@@ -503,14 +503,86 @@ def test_oversized_imported_topic_pauses_before_gin_write_then_resumes_with_budg
             expected = [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")]
             result = await archive.run_archive_cycle(conn,POLICY,free_bytes=FREE)
             assert result["status"] == "blocked" and "GIN/WAL budget" in result["reason"]
-            job = await archive._job(conn,uuid.UUID(result["job_id"]))
-            assert job["rows_copied"] == 0
-            assert await conn.fetchval(f"SELECT count(*) FROM {archive._q(job['topic_stage_name'])}") == 0
+            if result["job_id"] is not None:
+                job = await archive._job(conn,uuid.UUID(result["job_id"]))
+                assert job["rows_copied"] == 0
+                assert await conn.fetchval(f"SELECT count(*) FROM {archive._q(job['topic_stage_name'])}") == 0
+            else:
+                # A geometry-aware pilot may catch this before freezing source.
+                assert not await conn.fetchval("SELECT EXISTS(SELECT 1 FROM public.storage_archive_jobs WHERE phase IN ('copying','verifying','ready'))")
             assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
             larger = {"storage":{"archive":{**POLICY["storage"]["archive"],"max_wal_mib":128}}}
             await until_done(conn,larger)
             assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
             assert await conn.fetchval("SELECT octet_length(topic) FROM public.mqtt_archive_topics WHERE id=1") == 150017
+    asyncio.run(scenario())
+
+
+def test_compression_pilot_seals_worker_sized_stripes_and_counts_wide_metadata():
+    async def scenario():
+        async with fixture() as (conn,_expected):
+            transaction = conn.transaction()
+            await transaction.start()
+            try:
+                policy = archive.ArchivePolicy(batch_rows=7,batch_mib=1)
+                await archive._settings(conn,policy)
+                await conn.execute("""CREATE TABLE public.archive_pilot_input
+                    (LIKE public.mqtt_messages INCLUDING DEFAULTS INCLUDING STORAGE INCLUDING COMPRESSION) USING heap;
+                    CREATE TABLE public.archive_pilot_small(LIKE public.archive_pilot_input INCLUDING ALL) USING columnar;
+                    CREATE TABLE public.archive_pilot_wide(LIKE public.archive_pilot_input INCLUDING ALL) USING columnar;
+                    INSERT INTO public.archive_pilot_input(id,created_at,topic,payload)
+                    SELECT g,'1901-01-02'::timestamptz,'msh/pilot/'||(g%31),'payload-'||g FROM generate_series(1,1000)g""")
+                for name in ("archive_pilot_small","archive_pilot_wide"):
+                    await archive._options(conn,name,{"compression_level":3,"chunk_group_rows":1000})
+                bounded,_ = archive._copy_batch_policy(policy,11)
+                assert await archive._fill_columnar_pilot(conn,"archive_pilot_input","archive_pilot_small",bounded) == 1000
+                small = await archive._pilot_metadata(conn,"archive_pilot_small")
+                assert small["rows"] == 1000 and small["stripes"] == 143
+                assert small["max_stripe_rows"] == small["max_group_rows"] == 7
+                assert await conn.fetchval("SELECT count(*) FROM public.archive_pilot_small") == 1000
+                await conn.execute("UPDATE public.archive_pilot_input SET payload=repeat('x',8192)||id")
+                assert await archive._fill_columnar_pilot(conn,"archive_pilot_input","archive_pilot_wide",bounded) == 1000
+                wide = await archive._pilot_metadata(conn,"archive_pilot_wide")
+                assert wide["rows"] == 1000 and wide["stripes"] == 143
+                assert wide["bytes"] > small["bytes"]+100000
+            finally:
+                await transaction.rollback()
+            assert await conn.fetchval("SELECT to_regclass('public.archive_pilot_small') IS NULL")
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("definition", [
+    "gin(payload gin_trgm_ops)",
+    "gin(lower(topic) gin_trgm_ops)",
+    "gin(topic gin_trgm_ops) WHERE qos=1",
+])
+def test_custom_leaf_gin_refuses_conversion_without_discarding_access_path(definition):
+    async def scenario():
+        async with fixture() as (conn,expected):
+            await conn.execute("CREATE INDEX custom_history_gin ON public.mqtt_messages_1901_01 USING " + definition)
+            result = await archive.run_archive_cycle(conn,POLICY,free_bytes=FREE)
+            assert result["status"] == "blocked" and "canonical-topic pg_trgm GIN" in result["reason"]
+            assert not await conn.fetchval("SELECT EXISTS(SELECT 1 FROM public.storage_archive_jobs)")
+            assert await conn.fetchval("SELECT to_regclass('public.custom_history_gin') IS NOT NULL")
+            assert await conn.fetchval("SELECT a.amname FROM pg_class c JOIN pg_am a ON a.oid=c.relam "
+                                       "WHERE c.oid='public.mqtt_messages_1901_01'::regclass") == "heap"
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+    asyncio.run(scenario())
+
+
+def test_reverse_estimate_does_not_invert_a_different_compression_geometry(monkeypatch):
+    async def scenario():
+        async with fixture() as (conn,_expected):
+            await until_done(conn)
+            source = await conn.fetchrow(archive._LEAVES_SQL+" AND c.relname='mqtt_messages_1901_01'")
+            async def forbidden(*args,**kwargs):
+                raise AssertionError("Reverse estimate must derive heap size directly, not create a compression pilot")
+            monkeypatch.setattr(archive,"_fill_columnar_pilot",forbidden)
+            async with conn.transaction():
+                await archive._settings(conn,archive.ArchivePolicy())
+                estimated = await archive._estimate(conn,source,archive.ArchivePolicy(),target_method="heap",
+                                                     extra_indexes=["gin (topic gin_trgm_ops)"])
+            assert estimated > source["supported_index_bytes"]+16*1024**2
     asyncio.run(scenario())
 
 

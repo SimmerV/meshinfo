@@ -2096,7 +2096,7 @@ class PostgresStorage:
 
                 params.append(limit + 1)  # +1 row tells us whether another page exists
 
-                if topic or (not search and range_seconds is None and (end is not None or before is not None)):
+                if topic or search or range_seconds is not None or end is not None or before is not None:
                     rows = await fetch_topic_packet_page(conn, conditions, params, idx, self._reception_count_sql,
                         candidate_conditions=candidate_conditions, search_parameter=search_parameter,
                         window_start=start, window_end=end)

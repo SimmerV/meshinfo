@@ -22,5 +22,5 @@ async def init_schema():
 asyncio.run(init_schema())
 "
 
-# Start the main application
-python main.py
+# Replace the entrypoint shell so Docker's stop signal reaches application cleanup.
+exec python main.py
