@@ -135,8 +135,41 @@ jobs:
             columnar-native-ci python3 -m pytest -q -p no:cacheprovider \
             tests/test_history_queries.py tests/test_history_queries_integration.py \
             tests/test_history_candidates_integration.py
+      - name: Verify packet details on PostgreSQL without Columnar loaded or installed
+        run: |
+          # Reuse the built image but override its preload default. No extension
+          # is created in this separate database; the tests assert both facts.
+          docker run -d --name columnar-plain-native-ci --network columnar-native-ci \
+            --label io.meshinfo.archive-test=true --memory 128m --cpus 0.5 --shm-size 16m \
+            -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=native_plain_reader_test \
+            columnar-native-ci postgres -c shared_preload_libraries= \
+            -c shared_buffers=8MB -c work_mem=1MB -c maintenance_work_mem=8MB \
+            -c max_connections=10 -c max_parallel_workers=0 -c wal_buffers=1MB \
+            -c max_wal_size=64MB -c min_wal_size=32MB
+          ready=false
+          for attempt in $(seq 1 60); do
+            if docker exec columnar-plain-native-ci pg_isready -h 127.0.0.1 -U postgres -q; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = true
+          # Python dependencies already exist in the first test container.
+          docker exec -i columnar-native-ci python3 - <<'PYCODE'
+          import json, os
+          path = '/tmp/plain-history-connection.json'
+          fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          with os.fdopen(fd, 'w') as stream:
+              json.dump({'host': 'columnar-plain-native-ci', 'user': 'postgres',
+                         'database': 'native_plain_reader_test'}, stream)
+          PYCODE
+          docker exec -w /work \
+            -e MESHINFO_PLAIN_HISTORY_TEST_CONNECTION=/tmp/plain-history-connection.json \
+            columnar-native-ci python3 -m pytest -q -p no:cacheprovider \
+            tests/test_history_queries_plain_integration.py
       - name: Remove the isolated cluster and anonymous data volume
         if: always()
         run: |
-          docker rm -fv columnar-native-ci || true
+          docker rm -fv columnar-plain-native-ci columnar-native-ci || true
           docker network rm columnar-native-ci || true

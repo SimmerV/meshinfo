@@ -27,6 +27,7 @@ from storage.db.history_queries import (
     HistoryReadError,
     HistoryUnavailableError,
     fetch_packet_page,
+    fetch_packet_detail,
     fetch_topic_packet_page,
     literal_topic_pattern,
     packet_page_sql,
@@ -2210,21 +2211,18 @@ class PostgresStorage:
         if not self._ready("query_mqtt_message_by_packet"):
             raise HistoryUnavailableError("query_mqtt_message_by_packet")
         try:
-            async with self.pool.acquire(timeout=HISTORY_ACQUIRE_TIMEOUT_SECONDS) as conn:
-                row_id = await conn.fetchval(
-                    """SELECT id FROM mqtt_messages
-                       WHERE from_node_id = $1 AND packet_id = $2
-                       ORDER BY created_at DESC, id DESC LIMIT 1""",
-                    from_id, mesh_packet_id,
-                )
+            return await self._query_packet_detail(
+                """SELECT id,topic,payload,qos,retain,timestamp,created_at FROM mqtt_messages
+                   WHERE from_node_id=$1 AND packet_id=$2
+                   ORDER BY created_at DESC,id DESC LIMIT 1""", (from_id,mesh_packet_id), include_copies)
+        except HistoryReadError:
+            raise
         except Exception as e:
             raise read_failure("query_mqtt_message_by_packet", e) from e
-        if row_id is None:
-            return None
-        return await self.query_mqtt_message_by_id(row_id, include_copies=include_copies)
 
     async def query_mqtt_message_by_id(self, row_id: int, include_copies: bool = False) -> Optional[dict]:
         """Fetch one mqtt_messages row by its DB id — backs per-packet deeplinks.
+        The newest created_at wins if a numeric ID occurs in multiple months.
         Returns the parsed message dict (with mqtt_row_id and, for deduped
         packets, the per-gateway `receptions` list), or None if not found.
         include_copies additionally rebuilds each reception into the exact
@@ -2232,16 +2230,18 @@ class PostgresStorage:
         if not self._ready("query_mqtt_message_by_id"):
             raise HistoryUnavailableError("query_mqtt_message_by_id")
         try:
-            async with self.pool.acquire(timeout=HISTORY_ACQUIRE_TIMEOUT_SECONDS) as conn:
-                row = await conn.fetchrow(
-                    """SELECT id, topic, payload, qos, retain, timestamp, created_at
-                       FROM mqtt_messages WHERE id = $1""",
-                    row_id,
-                )
-                if row is None:
-                    return None
-                receptions = await conn.fetch(
-                    f"""SELECT pr.gateway, t.topic, pr.rx_rssi, pr.rx_snr, pr.rx_time,
+            return await self._query_packet_detail(
+                """SELECT id,topic,payload,qos,retain,timestamp,created_at FROM mqtt_messages
+                   WHERE id=$1 ORDER BY created_at DESC,id DESC LIMIT 1""", (row_id,), include_copies)
+        except HistoryReadError:
+            raise
+        except Exception as e:
+            raise read_failure("query_mqtt_message_by_id", e) from e
+
+    async def _query_packet_detail(self, query, parameters, include_copies):
+        async with self.pool.acquire(timeout=HISTORY_ACQUIRE_TIMEOUT_SECONDS) as conn:
+            row, receptions = await fetch_packet_detail(conn, query, parameters,
+                f"""SELECT pr.gateway, t.topic, pr.rx_rssi, pr.rx_snr, pr.rx_time,
                               pr.hop_limit, pr.hops_away, pr.relay_node, pr.transport,
                               pr.extras, pr.created_at
                        FROM packet_receptions pr
@@ -2249,21 +2249,17 @@ class PostgresStorage:
                        WHERE pr.mqtt_row_id = $1
                          AND pr.created_at >= $2
                          AND pr.created_at < $2 + interval '{self._reception_lookback} seconds'
-                       ORDER BY pr.created_at, pr.gateway""",
-                    row_id, row["created_at"],
-                )
-            page = self._build_mqtt_message_page([row], 1)
-            msg = page["messages"][0] if page["messages"] else None
-            if msg is not None and receptions:
-                msg["reception_count"] = len(receptions)
-                msg["receptions"] = [self._reception_to_dict(r) for r in receptions]
-                if include_copies:
-                    self._attach_reconstructed_copies(row["payload"], msg["receptions"])
-            return msg
-        except HistoryReadError:
-            raise
-        except Exception as e:
-            raise read_failure("query_mqtt_message_by_id", e) from e
+                       ORDER BY pr.created_at, pr.gateway""")
+        if row is None:
+            return None
+        page = self._build_mqtt_message_page([row], 1)
+        msg = page["messages"][0] if page["messages"] else None
+        if msg is not None and receptions:
+            msg["reception_count"] = len(receptions)
+            msg["receptions"] = [self._reception_to_dict(r) for r in receptions]
+            if include_copies:
+                self._attach_reconstructed_copies(row["payload"], msg["receptions"])
+        return msg
 
     @staticmethod
     def _attach_reconstructed_copies(payload_text: Optional[str], receptions: List[dict]) -> None:

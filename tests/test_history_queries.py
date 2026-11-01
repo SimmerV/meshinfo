@@ -37,6 +37,8 @@ def storage_with_connection(connection):
         connection.execute = AsyncMock()
     if not hasattr(connection, "fetchval"):
         connection.fetchval = AsyncMock(return_value=None)
+    if not hasattr(connection, "fetchrow"):
+        connection.fetchrow = AsyncMock(return_value={"plan":"auto","scan":None})
     class Acquisition:
         def __init__(self, **kwargs):
             assert kwargs.get("timeout") == 3
@@ -56,8 +58,8 @@ def storage_with_connection(connection):
 @pytest.mark.parametrize("method,args,driver_method", [
     ("query_mqtt_messages", {}, "fetch"),
     ("query_node_mqtt_messages", {"node_id": "00000001"}, "fetch"),
-    ("query_mqtt_message_by_id", {"row_id": 1}, "fetchrow"),
-    ("query_mqtt_message_by_packet", {"from_id": "00000001", "mesh_packet_id": 1}, "fetchval"),
+    ("query_mqtt_message_by_id", {"row_id": 1}, "fetch"),
+    ("query_mqtt_message_by_packet", {"from_id": "00000001", "mesh_packet_id": 1}, "fetch"),
 ])
 @pytest.mark.parametrize("failure", [TimeoutError(), asyncpg.QueryCanceledError(),
                                      asyncpg.UndefinedTableError("private SQL details")])
@@ -286,10 +288,10 @@ def test_page_preserves_tied_timestamp_cursor_and_malformed_scalar_null_payloads
 
 
 def test_reused_packet_lookup_has_a_deterministic_timestamp_tiebreaker():
-    connection = SimpleNamespace(fetchval=AsyncMock(return_value=None))
+    connection = SimpleNamespace(fetch=AsyncMock(return_value=[]))
     storage = storage_with_connection(connection)
     assert asyncio.run(storage.query_mqtt_message_by_packet("00000001", 99)) is None
-    assert "ORDER BY created_at DESC, id DESC" in connection.fetchval.await_args.args[0]
+    assert "ORDER BY created_at DESC,id DESC LIMIT 1" in connection.fetch.await_args.args[0]
 
 
 def test_requested_copy_reconstruction_does_not_return_partial_success():
@@ -297,8 +299,7 @@ def test_requested_copy_reconstruction_does_not_return_partial_success():
                  "rx_snr": None, "rx_time": None, "hop_limit": None, "hops_away": None,
                  "relay_node": None, "transport": None, "extras": '["invalid patch"]',
                  "created_at": STAMP}
-    connection = SimpleNamespace(fetchrow=AsyncMock(return_value=packet(1)),
-                                 fetch=AsyncMock(return_value=[reception]))
+    connection = SimpleNamespace(fetch=AsyncMock(side_effect=[[packet(1)], [reception]]))
     storage = storage_with_connection(connection)
     with pytest.raises(HistoryReadError) as caught:
         asyncio.run(storage.query_mqtt_message_by_id(1, include_copies=True))

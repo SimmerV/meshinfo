@@ -111,7 +111,7 @@ async def fetch_packet_page(connection, query, *parameters, custom_plan=False):
         return await connection.fetch(query, *parameters)
 
 
-async def fetch_bounded_payload(connection, query, *parameters):
+async def fetch_bounded_payload(connection, query, *parameters, columnar_optional=False):
     """Reuse a plan only after exact packet identities have been bounded.
 
     Columnar's planner repeatedly enumerates stripe metadata even with its
@@ -123,16 +123,35 @@ async def fetch_bounded_payload(connection, query, *parameters):
     async with connection.transaction(readonly=True):
         previous = await connection.fetchrow("SELECT current_setting('plan_cache_mode') AS plan, "
             "current_setting('columnar.enable_custom_scan',true) AS scan")
+        has_columnar = previous["scan"] in {"on", "off"}
         if (previous["plan"] not in {"auto", "force_custom_plan", "force_generic_plan"}
-                or previous["scan"] not in {"on", "off"}):
+                or not has_columnar and not (columnar_optional and previous["scan"] is None)):
             raise HistoryReadError("bounded_payload_settings")
-        await connection.execute("SET LOCAL plan_cache_mode = force_generic_plan; "
-                                 "SET LOCAL columnar.enable_custom_scan = off")
+        setting = "SET LOCAL plan_cache_mode = force_generic_plan"
+        if has_columnar:
+            setting += "; SET LOCAL columnar.enable_custom_scan = off"
+        await connection.execute(setting)
         rows = await connection.fetch(query, *parameters)
         # Values are checked against fixed GUC enums above, never request text.
-        await connection.execute("SET LOCAL plan_cache_mode = " + previous["plan"]
-            + "; SET LOCAL columnar.enable_custom_scan = " + previous["scan"])
+        setting = "SET LOCAL plan_cache_mode = " + previous["plan"]
+        if has_columnar:
+            setting += "; SET LOCAL columnar.enable_custom_scan = " + previous["scan"]
+        await connection.execute(setting)
         return rows
+
+
+@history_read_deadline
+async def fetch_packet_detail(connection, query, parameters, reception_query):
+    """Select one canonical identity and its receipts in the same snapshot."""
+    async with connection.transaction(isolation="repeatable_read", readonly=True):
+        rows = await fetch_bounded_payload(connection, query, *parameters, columnar_optional=True)
+        if not rows:
+            return None, []
+        if len(rows) != 1:
+            raise HistoryReadError("packet_detail_identity")
+        row = rows[0]
+        receptions = await connection.fetch(reception_query, row["id"], row["created_at"])
+        return row, receptions
 
 
 def topic_coverage_intervals(bounds):

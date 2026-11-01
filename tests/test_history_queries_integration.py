@@ -133,6 +133,7 @@ async def exercise_method(connection, method):
         await check_dictionary_overflow(connection, storage)
         await check_candidate_overflow(connection, storage)
         await check_bounded_payload_generic_plans(connection, storage, method)
+        await check_point_detail_identity_snapshot(connection, storage)
         if method == "columnar":
             await check_topic_lookup_snapshot(connection, storage)
             await check_actual_read_deadline(storage)
@@ -333,6 +334,122 @@ async def check_dictionary_overflow(connection, storage):
             result = await storage.query_mqtt_messages(search=term, topic=topic, limit=1)
             assert [row["mqtt_row_id"] for row in result["messages"]] == [2]
             assert result["next_cursor"] is None
+
+
+async def check_point_detail_identity_snapshot(writer, storage):
+    """Detail and chat lookup must retain exact identity through receipt reads."""
+    old_stamp, new_stamp = HOT-timedelta(days=7), HOT+timedelta(days=7)
+    identity = 9_000_100
+    await writer.execute("INSERT INTO mqtt_topics VALUES(9000100,'old-copy'),(9000101,'new-copy')")
+    schema = await writer.fetchval("SELECT current_schema()")
+    rows = [(identity,"old-canonical",'{"from":1,"id":424243,"text":"old"}',0,False,1,old_stamp,NODE,None,424243),
+            (identity,"new-canonical",'{"from":3,"id":987,"text":"new"}',0,False,2,new_stamp,"00000003",None,987),
+            (identity+1,"tie-low",'{"text":"tie-low"}',0,False,3,old_stamp,NODE,None,424244),
+            (identity+2,"tie-high",'{"text":"tie-high"}',0,False,4,old_stamp,NODE,None,424244)]
+    await writer.copy_records_to_table("mqtt_messages",schema_name=schema,records=rows)
+    await writer.copy_records_to_table("mqtt_archive_topics",schema_name=schema,
+        records=[(row[0],row[6],row[1]) for row in rows if row[6]<HOT])
+    await writer.execute("INSERT INTO packet_receptions(mqtt_row_id,created_at,gateway,topic_id) "
+        "VALUES($1,$2,'00000002',9000100),($1,$3,'00000004',9000101)",
+        identity,old_stamp+timedelta(seconds=1),new_stamp+timedelta(seconds=1))
+    old = await storage.query_mqtt_message_by_packet(NODE,424243,include_copies=True)
+    newest = await storage.query_mqtt_message_by_id(identity,include_copies=True)
+    assert old["text"] == old["receptions"][0]["reconstructed"]["text"] == "old"
+    assert old["reception_count"] == 1 and old["receptions"][0]["gateway"] == "00000002"
+    assert newest["text"] == newest["receptions"][0]["reconstructed"]["text"] == "new"
+    assert newest["reception_count"] == 1 and newest["receptions"][0]["gateway"] == "00000004"
+    assert (await storage.query_mqtt_message_by_packet(NODE,424244))["mqtt_row_id"] == identity+2
+    assert await storage.query_mqtt_message_by_id(9223372036854775807) is None
+    assert await storage.query_mqtt_message_by_packet(NODE,9223372036854775807) is None
+
+    pool = storage.pool
+    class WrappedPool:
+        def __init__(self, hook):
+            self.hook = hook
+
+        def acquire(self, **options):
+            outer = self
+            class Acquisition:
+                async def __aenter__(self):
+                    self.context = pool.acquire(**options)
+                    self.connection = await self.context.__aenter__()
+                    return outer.hook(self.connection)
+
+                async def __aexit__(self, *error):
+                    return await self.context.__aexit__(*error)
+            return Acquisition()
+
+    class ConcurrentReceiptChange:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def __getattr__(self, name):
+            return getattr(self.connection,name)
+
+        async def fetch(self, query, *parameters):
+            result = await self.connection.fetch(query,*parameters)
+            if "FROM mqtt_messages" in query:
+                # Retention/cutover cannot acquire their parent exclusive lock
+                # while the canonical selection's transaction remains open.
+                with pytest.raises(asyncpg.LockNotAvailableError):
+                    async with writer.transaction():
+                        await writer.execute("LOCK TABLE ONLY mqtt_messages IN ACCESS EXCLUSIVE MODE NOWAIT")
+                async with writer.transaction():
+                    await writer.execute("DELETE FROM packet_receptions WHERE mqtt_row_id=$1 AND created_at=$2",
+                        identity,old_stamp+timedelta(seconds=1))
+                    await writer.execute("INSERT INTO packet_receptions(mqtt_row_id,created_at,gateway,topic_id) "
+                        "VALUES($1,$2,'00000003',9000101)",identity,old_stamp+timedelta(seconds=2))
+            return result
+
+    try:
+        storage.pool = WrappedPool(ConcurrentReceiptChange)
+        snapshot = await storage.query_mqtt_message_by_packet(NODE,424243,include_copies=True)
+        assert snapshot == old
+    finally:
+        storage.pool = pool
+    changed = await storage.query_mqtt_message_by_packet(NODE,424243,include_copies=True)
+    assert changed["receptions"][0]["gateway"] == "00000003"
+    assert changed["receptions"][0]["reconstructed"]["text"] == "old"
+    async with pool.acquire() as conn:
+        settings = await conn.fetchrow("SELECT current_setting('plan_cache_mode') AS plan, "
+            "current_setting('columnar.enable_custom_scan') AS scan")
+    for mode in ("failure", "timeout", "cancel"):
+        reached = asyncio.Event()
+        class InterruptedReceipts:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def __getattr__(self, name):
+                return getattr(self.connection,name)
+
+            async def fetch(self, query, *parameters):
+                if "FROM packet_receptions pr" in query:
+                    reached.set()
+                    if mode == "failure":
+                        raise asyncpg.UndefinedTableError("isolated receipt read failure")
+                    await self.connection.execute("SELECT pg_sleep(2)")
+                return await self.connection.fetch(query,*parameters)
+
+        try:
+            storage.pool = WrappedPool(InterruptedReceipts)
+            if mode == "cancel":
+                pending = asyncio.create_task(storage.query_mqtt_message_by_id(identity,include_copies=True))
+                await asyncio.wait_for(reached.wait(),timeout=2)
+                pending.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await pending
+            else:
+                with patch("storage.db.history_queries.HISTORY_READ_TIMEOUT_SECONDS",.1 if mode=="timeout" else 10):
+                    with pytest.raises(HistoryReadError) as failure:
+                        await storage.query_mqtt_message_by_id(identity,include_copies=True)
+                assert failure.value.timed_out == (mode == "timeout")
+            assert reached.is_set()
+        finally:
+            storage.pool = pool
+        async with pool.acquire() as conn:
+            assert await conn.fetchval("SELECT 1") == 1
+            assert await conn.fetchrow("SELECT current_setting('plan_cache_mode') AS plan, "
+                "current_setting('columnar.enable_custom_scan') AS scan") == settings
 
 
 async def check_candidate_overflow(connection, storage):
