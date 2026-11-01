@@ -157,7 +157,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "reserve_mib": 1024, "max_wal_mib": 64,
             "estimate_multiplier": 1.5, "compression_level": 3,
             "chunk_group_rows": 1000, "index_build_seconds": 300,
-            "analyze_seconds": 8,
+            "analyze_seconds": 300,
             "database_filesystem": "",
         },
         # Uplink dedup (#526): store one canonical mqtt_messages row per mesh

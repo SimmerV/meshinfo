@@ -204,6 +204,37 @@ def file_identity(fd):
     return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
 
 
+def reset_archive_analysis_sql():
+    """Invalidate copied statistics checkpoints without relying on changed OIDs.
+
+    Logical dumps preserve application flags, not the planner statistics those
+    flags describe. Fresh clusters may coincidentally reuse every recorded OID.
+    Older journals have only ``analyzed``; unrelated legacy heap dumps may have
+    no journal at all. Reset only existing boolean flags on active MeshInfo jobs.
+    """
+    return """DO $meshinfo_archive_statistics$
+    DECLARE journal regclass := to_regclass('public.storage_archive_jobs');
+            assignments text;
+    BEGIN
+      IF journal IS NULL OR NOT EXISTS (
+          SELECT 1 FROM pg_class WHERE oid=journal AND relkind='r') THEN RETURN; END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid=journal
+          AND attname='job_id' AND atttypid='uuid'::regtype AND attnum>0 AND NOT attisdropped)
+         OR NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid=journal
+          AND attname='phase' AND atttypid IN ('text'::regtype,'varchar'::regtype)
+          AND attnum>0 AND NOT attisdropped) THEN RETURN; END IF;
+      SELECT string_agg(format('%I = false',attname),', ' ORDER BY attname)
+        INTO assignments FROM pg_attribute WHERE attrelid=journal
+          AND attname IN ('analyzed','stage_analyzed','topic_analyzed')
+          AND atttypid='bool'::regtype AND attnum>0 AND NOT attisdropped
+          AND attgenerated='' AND attidentity='';
+      IF assignments IS NOT NULL THEN
+        EXECUTE 'UPDATE public.storage_archive_jobs SET ' || assignments ||
+          ' WHERE phase IN (''copying'',''verifying'',''ready'')';
+      END IF;
+    END $meshinfo_archive_statistics$;\n"""
+
+
 async def apply_archive(fd, pg, environment, metadata, identity):
     # A metadata-less legacy heap dump still gets an empty Columnar inventory
     # assertion before COPY. Detection never relies solely on SQL text matching.
@@ -234,6 +265,7 @@ async def apply_archive(fd, pg, environment, metadata, identity):
         await send_sql(proc, inventory_assertion_sql(effective))
         await send_sql(proc, options_assertion_sql(effective))
         await send_sql(proc, geometry_assertion_sql(effective))
+        await send_sql(proc, reset_archive_analysis_sql())
         if file_identity(fd) != identity:
             raise RestoreRefused("backup archive changed during restore; transaction was not committed")
         await _close_stdin(proc)

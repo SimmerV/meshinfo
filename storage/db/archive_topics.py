@@ -195,10 +195,15 @@ async def estimate(conn, source, policy):
     await validate_parent(conn)
     await conn.execute(f"CREATE TABLE {q(name)} (LIKE public.mqtt_archive_topics INCLUDING ALL) USING heap")
     sampling = "TABLESAMPLE SYSTEM (1) REPEATABLE (731)" if source["method"] == "heap" else ""
+    # Stop the heap sample before sorting: ORDER BY inside this CTE would read
+    # and sort the entire sampled percent of a potentially enormous partition.
+    # Only bounded key/length metadata is materialized; the window below orders
+    # those keys before the exact primary-key join fetches budgeted topic text.
+    sample_order = "" if source["method"] == "heap" else "ORDER BY id,created_at"
     await conn.execute(f"""WITH sample AS MATERIALIZED (
         SELECT id,created_at,128+coalesce(octet_length(topic),0) AS n,
           128*(1+coalesce(octet_length(topic),0)::bigint) AS index_work FROM {q(source['name'])} {sampling}
-        WHERE coalesce(octet_length(topic),0)<=$1 ORDER BY id,created_at LIMIT 1000),
+        WHERE coalesce(octet_length(topic),0)<=$1 {sample_order} LIMIT 1000),
         bounded AS (SELECT id,created_at,sum(n) OVER(ORDER BY id,created_at) AS bytes,
           sum(index_work) OVER(ORDER BY id,created_at) AS index_work FROM sample)
         INSERT INTO {q(name)} SELECT s.id,s.created_at,s.topic FROM {q(source['name'])} s
@@ -208,7 +213,7 @@ async def estimate(conn, source, policy):
     if not count:
         await conn.execute(f"INSERT INTO {q(name)} SELECT id,created_at,topic FROM {q(source['name'])} "
                            "WHERE coalesce(octet_length(topic),0)<=$1 ORDER BY id,created_at LIMIT 1",
-                           min(policy.batch_bytes,policy.max_wal_bytes//(4*128)-1))
+                           min(policy.batch_bytes-128,policy.max_wal_bytes//(4*128)-1))
         count = await conn.fetchval(f"SELECT count(*) FROM {q(name)}")
         if not count and await conn.fetchval(f"SELECT EXISTS(SELECT 1 FROM {q(source['name'])})"):
             raise engine().ArchiveBlocked("No canonical topic fits the bounded archive GIN/WAL pilot budget")
@@ -232,7 +237,7 @@ async def copy_chunk(conn, job, last, count):
 async def verify_chunk(conn, job, selected):
     if not selected:
         extra = await conn.fetchval(f"SELECT EXISTS(SELECT 1 FROM {q(job['topic_stage_name'])} "
-            "WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)))",
+            "WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) ORDER BY id,created_at LIMIT 1)",
             job["verify_id"],job["verify_created_at"])
         if extra:
             raise engine().ArchiveBlocked("Topic lookup cardinality verification failed")
@@ -240,9 +245,11 @@ async def verify_chunk(conn, job, selected):
     last = selected[-1]
     good = await conn.fetchval(f"""WITH s AS MATERIALIZED (
         SELECT id,created_at,topic FROM {q(job['source_name'])}
-        WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) AND (id,created_at)<=($3,$4)),
+        WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) AND (id,created_at)<=($3,$4)
+        ORDER BY id,created_at),
         t AS MATERIALIZED (SELECT id,created_at,topic FROM {q(job['topic_stage_name'])}
-        WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) AND (id,created_at)<=($3,$4) LIMIT $5)
+        WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) AND (id,created_at)<=($3,$4)
+        ORDER BY id,created_at LIMIT $5)
         SELECT count(*)=$6 AND coalesce(bool_and(s.id IS NOT NULL AND t.id IS NOT NULL
           AND convert_to(s.topic,'UTF8') IS NOT DISTINCT FROM convert_to(t.topic,'UTF8')),false)
         FROM s FULL JOIN t USING(id,created_at)""", job["verify_id"],job["verify_created_at"],

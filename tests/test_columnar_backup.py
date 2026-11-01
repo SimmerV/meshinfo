@@ -154,6 +154,8 @@ def test_options_are_applied_before_first_copy_in_single_restore_transaction(tmp
     assert text.index('CREATE TABLE') < text.index('ALTER TABLE "archive_stage"') < text.index('COPY ')
     assert text.index("Columnar options do not match") < text.index('COPY ')
     assert 'columnar.compression_level=7' in text
+    assert text.index('CREATE INDEX sample_index') < text.index('DO $meshinfo_archive_statistics$')
+    assert text.index('DO $meshinfo_archive_statistics$') < text.rindex('END $meshinfo_archive_statistics$')
     assert (tmp_path / "events").read_text() == "committed"
     assert result["status"] == "restored"
 
@@ -220,3 +222,13 @@ def test_sql_error_rolls_back_entire_restore(tmp_path, clients, monkeypatch):
     with pytest.raises(restore.RestoreRefused, match="rolled back"):
         asyncio.run(restore.run(args))
     assert (tmp_path / "events").read_text() == "rolled_back"
+
+
+def test_statistics_checkpoint_reset_failure_rolls_back_loaded_data(tmp_path, clients, monkeypatch):
+    args, _, _ = clients
+    args.apply = True
+    monkeypatch.setenv("RESTORE_TEST_FAIL_SQL", "DO $meshinfo_archive_statistics$")
+    with pytest.raises(restore.RestoreRefused, match="rolled back"):
+        asyncio.run(restore.run(args))
+    assert (tmp_path / "events").read_text() == "rolled_back"
+    assert 'COPY ' in (tmp_path / "received.sql").read_text()

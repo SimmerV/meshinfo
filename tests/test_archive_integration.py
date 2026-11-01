@@ -137,6 +137,135 @@ async def finish_verifying(conn,job,config=POLICY):
     raise AssertionError("Small archive fixture did not reach verification")
 
 
+async def copy_fixture_to_verification(conn):
+    job = await create_paused_job(conn)
+    policy = archive.ArchivePolicy(batch_rows=1000,batch_mib=1)
+    async with archive.maintenance_lock(conn) as acquired:
+        assert acquired
+        for _ in range(100):
+            if job["phase"] != "copying":
+                assert job["phase"] == "verifying"
+                return job,policy
+            await archive._copy_chunk(conn,job,policy,FREE)
+            job = await archive._job(conn,job["job_id"])
+    raise AssertionError("Small archive fixture did not finish copying")
+
+
+def test_unanalyzed_verification_uses_primary_key_ranges_at_first_middle_end_and_tail():
+    async def scenario():
+        async with fixture() as (conn,_expected):
+            await conn.execute("""INSERT INTO public.mqtt_messages(id,created_at,topic,payload)
+                SELECT i,'1901-01-02'::timestamptz,'verification-plan','payload-'||i
+                FROM generate_series(1000,6999) i""")
+            job,policy = await copy_fixture_to_verification(conn)
+            assert await conn.fetchval("SELECT reltuples FROM pg_class WHERE oid=$1",job["stage_oid"]) == -1
+            before = await conn.fetchrow("SELECT current_setting('columnar.enable_custom_scan'),"
+                "current_setting('enable_seqscan'),current_setting('enable_indexscan'),current_setting('plan_cache_mode')")
+            plans = []
+
+            class ExplainVerification:
+                def __getattr__(self,name):
+                    return getattr(conn,name)
+
+                async def fetchval(self,sql,*args,**kwargs):
+                    if archive._q(job["stage_name"]) in sql and ("FULL JOIN t USING" in sql or sql.startswith("SELECT EXISTS")):
+                        plans.append(json.loads(await conn.fetchval("EXPLAIN (FORMAT JSON) "+sql,*args)))
+                    return await conn.fetchval(sql,*args,**kwargs)
+
+            def nodes(value):
+                if isinstance(value,dict):
+                    yield value
+                    for item in value.values():
+                        yield from nodes(item)
+                elif isinstance(value,list):
+                    for item in value:
+                        yield from nodes(item)
+
+            for boundary in (None,3999,6990,6999):
+                probe_job = {**job,"verify_id":boundary,"verify_created_at":STAMP if boundary is not None else None,
+                             "rows_verified":job["rows_copied"] if boundary == 6999 else 0}
+                await archive._verify_chunk(ExplainVerification(),probe_job,policy)
+                target_scans = [node for node in nodes(plans[-1]) if node.get("Relation Name") == job["stage_name"]]
+                assert target_scans and all(node["Node Type"] in ("Index Scan","Index Only Scan")
+                                            and "Index Cond" in node for node in target_scans), plans[-1]
+                assert await conn.fetchrow("SELECT current_setting('columnar.enable_custom_scan'),"
+                    "current_setting('enable_seqscan'),current_setting('enable_indexscan'),current_setting('plan_cache_mode')") == before
+            assert len(plans) == 4
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("interruption", [TimeoutError,asyncio.CancelledError])
+def test_verification_failure_restores_planner_settings_and_checkpoint(interruption):
+    async def scenario():
+        async with fixture() as (conn,_expected):
+            job,policy = await copy_fixture_to_verification(conn)
+            before = await conn.fetchrow("SELECT current_setting('columnar.enable_custom_scan'),"
+                "current_setting('enable_seqscan'),current_setting('enable_indexscan'),current_setting('plan_cache_mode')")
+
+            class InterruptedVerification:
+                def __getattr__(self,name):
+                    return getattr(conn,name)
+
+                async def fetchval(self,sql,*args,**kwargs):
+                    if "FULL JOIN t USING" in sql and archive._q(job["stage_name"]) in sql:
+                        raise interruption()
+                    return await conn.fetchval(sql,*args,**kwargs)
+
+            with pytest.raises(interruption):
+                await archive._verify_chunk(InterruptedVerification(),job,policy)
+            assert await conn.fetchrow("SELECT current_setting('columnar.enable_custom_scan'),"
+                "current_setting('enable_seqscan'),current_setting('enable_indexscan'),current_setting('plan_cache_mode')") == before
+            state = await archive._job(conn,job["job_id"])
+            assert state["verify_id"] is None and state["rows_verified"] == 0 and state["phase"] == "verifying"
+            await until_done(conn)
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("corruption", ["missing","extra_before","extra_same_id","extra_tail"])
+def test_indexed_verification_detects_missing_and_extra_payload_identities(corruption):
+    async def scenario():
+        async with fixture() as (conn,expected):
+            job,policy = await copy_fixture_to_verification(conn)
+            async with conn.transaction():
+                await conn.execute("UPDATE public.storage_archive_jobs SET phase='copying' WHERE job_id=$1",job["job_id"])
+                await conn.execute("SELECT set_config('meshinfo.archive_job',$1,true)",str(job["job_id"]))
+                await conn.execute(f"TRUNCATE {archive._q(job['stage_name'])}")
+                predicate = " WHERE id<>16" if corruption == "missing" else ""
+                await conn.execute(f"INSERT INTO {archive._q(job['stage_name'])} ({archive._columns()}) "
+                                   f"SELECT {archive._columns()} FROM public.mqtt_messages_1901_01{predicate}")
+                if corruption != "missing":
+                    identity = 0 if corruption == "extra_before" else 16 if corruption == "extra_same_id" else 999
+                    await conn.execute(f"INSERT INTO {archive._q(job['stage_name'])}(id,created_at,payload) "
+                                       "VALUES($1,$2::timestamptz+($3::integer*interval '1 second'),'extra')",
+                                       identity,STAMP,int(corruption == "extra_same_id"))
+                await conn.execute("UPDATE public.storage_archive_jobs SET phase='verifying' WHERE job_id=$1",job["job_id"])
+            with pytest.raises(archive.ArchiveBlocked,match="row-by-row|cardinality"):
+                await archive._verify_chunk(conn,job,policy)
+                await archive._verify_chunk(conn,await archive._job(conn,job["job_id"]),policy)
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+            await archive.cancel_archive(conn,job["job_id"],config=POLICY)
+    asyncio.run(scenario())
+
+
+def test_indexed_verification_preserves_reused_id_across_cohort_boundary():
+    async def scenario():
+        async with fixture() as (conn,_expected):
+            await conn.execute("""INSERT INTO public.mqtt_messages(id,created_at,topic,payload)
+                VALUES(16,'1901-01-02 00:00:01+00','same-id-later-time','distinct payload')""")
+            expected = [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")]
+            job,_policy = await copy_fixture_to_verification(conn)
+            policy = archive.ArchivePolicy(batch_rows=16,batch_mib=1)
+            await archive._verify_chunk(conn,job,policy)
+            job = await archive._job(conn,job["job_id"])
+            assert (job["verify_id"],job["verify_created_at"]) == (16,STAMP)
+            for _ in range(3):
+                await archive._verify_chunk(conn,job,policy)
+                job = await archive._job(conn,job["job_id"])
+            assert job["phase"] == "ready" and job["rows_verified"] == job["rows_copied"] == len(expected)
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("interruption", [TimeoutError,asyncio.CancelledError])
 def test_analyze_checkpoints_each_relation_and_resumes_after_second_interruption(interruption):
     async def scenario():

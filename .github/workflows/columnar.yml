@@ -98,7 +98,9 @@ jobs:
             columnar-native-ci postgres -c shared_preload_libraries=citus_columnar \
             -c shared_buffers=64MB -c max_connections=20
           for attempt in $(seq 1 60); do
-            if docker exec columnar-native-ci pg_isready -U postgres -q; then exit 0; fi
+            # The entrypoint's temporary init server accepts socket connections
+            # before restarting; TCP readiness selects the final server.
+            if docker exec columnar-native-ci pg_isready -h 127.0.0.1 -U postgres -q; then exit 0; fi
             sleep 1
           done
           exit 1
@@ -117,6 +119,8 @@ jobs:
             -e MESHINFO_ARCHIVE_TEST_DSN=postgresql://postgres@127.0.0.1:5432/native_archive_test \
             columnar-native-ci python3 -m pytest -q -p no:cacheprovider \
             tests/test_archive_integration.py tests/test_archive_application_integration.py \
+            tests/test_archive_analysis.py tests/test_archive_analysis_integration.py \
+            tests/test_archive_topics_estimate_integration.py \
             tests/test_archive_catalog_integration.py tests/test_archive.py \
             tests/test_archive_catalog.py tests/test_columnar_backup.py tests/test_columnar_copy.py \
             tests/test_legacy_storage_guards.py tests/test_legacy_storage_integration.py

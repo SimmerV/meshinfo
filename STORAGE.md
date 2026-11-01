@@ -459,6 +459,24 @@ budget and at least 1 GiB free reserve. The executor checks actual free space an
 physical staging growth as it advances. It never drops the original to manufacture
 space for its replacement.
 
+Statistics collection has a separate per-relation budget: `analyze_seconds`
+defaults to **300 seconds**, with a maximum of **1,800 seconds** and a two-second
+transaction/status margin. The pinned [Citus 14.1 ANALYZE callback](https://github.com/citusdata/citus/blob/v14.1.0/src/backend/columnar/columnar_tableam.c#L1417-L1439)
+scans every row; lowering the statistics target does not turn it into a bounded
+block sample. One archive invocation analyzes at most one physical stage and
+commits its checkpoint before returning. The ordinary copy/verification cycle
+and statement budgets remain 10 and three seconds by default.
+
+A job can therefore remain `ready` while statistics run for minutes on a large
+month. Current ingestion and history reads continue, but other storage
+maintenance waits for the shared maintenance lock. Shutdown still cancels the
+operation; a timeout preserves copy/verification progress and any other stage's
+completed statistics checkpoint. The unfinished relation's ANALYZE retries from
+the beginning. If an older local configuration explicitly sets
+`analyze_seconds=8`, raise that value before migrating a large month; changing
+the default does not override explicit operator settings. Observe CPU/query
+latency and allow enough time for this full scan instead of bypassing its gate.
+
 Small copy batches bound memory, locks and WAL per transaction; they do not bound
 the complete replacement's disk footprint. Before the switch, free space must
 cover the estimated compressed month, its retained indexes, the canonical-topic
@@ -564,6 +582,11 @@ inside that transaction so short source stripes do not silently become large
 ones; failure still rolls back the whole restore. Version 1 manifests remain
 compatible but explicitly report that physical geometry and latency can change.
 Missing or mismatched metadata refuses the restore.
+Normal dumps do not preserve planner statistics. Run the single-worker ANALYZE
+step in the restore procedure before serving queries from the restored database.
+Restore also clears active jobs' analysis checkpoints, even if the new cluster
+coincidentally assigns the same object OIDs; the worker reanalyzes its stages
+before cutover while preserving copied rows and verification progress.
 Restored jobs resolve new object OIDs only after validating names, schema and
 job-specific guards; a logical restore cannot blindly reuse old OIDs. Preserve
 the original database role for an in-progress job; an ownership change requires

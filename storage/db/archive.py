@@ -44,7 +44,7 @@ class ArchivePolicy:
     chunk_group_rows: int = 1000
     database_filesystem: str = ""
     index_build_seconds: float = 300
-    analyze_seconds: float = 8
+    analyze_seconds: float = 300
 
     def __post_init__(self):
         if type(self.enabled) is not bool or not isinstance(self.database_filesystem, str):
@@ -58,12 +58,12 @@ class ArchivePolicy:
                 raise ValueError(f"archive {name} must be an integer from {lower} to {upper}")
         for name, lower, upper in (("cycle_seconds", 1, 12), ("statement_seconds", .1, 5),
                                    ("estimate_multiplier", 1.1, 4), ("index_build_seconds", 1, 1800),
-                                   ("analyze_seconds", .1, 10)):
+                                   ("analyze_seconds", .1, 1800)):
             value = getattr(self, name)
             if type(value) not in (int, float) or not math.isfinite(value) or not lower <= value <= upper:
                 raise ValueError(f"archive {name} must be between {lower} and {upper}")
-        if self.statement_seconds > self.cycle_seconds:
-            raise ValueError("archive statement_seconds must not exceed cycle_seconds")
+        if self.statement_seconds >= self.cycle_seconds:
+            raise ValueError("archive statement_seconds must be shorter than cycle_seconds")
         if self.max_wal_mib < 4*self.batch_mib:
             raise ValueError("archive max_wal_mib must cover at least four batch_mib")
 
@@ -847,13 +847,19 @@ def _exact_equal():
 async def _verify_chunk(conn, job, policy):
     async with conn.transaction():
         await _settings(conn, policy)
+        # A detached stage has no statistics yet. The Columnar planner can
+        # otherwise rescan its entire growing payload for every small cohort.
+        # Both source and stage have validated (id,created_at) primary keys;
+        # use those ordered ranges only within this verification transaction.
+        await conn.execute("SET LOCAL columnar.enable_custom_scan=off; "
+                           "SET LOCAL enable_seqscan=off; SET LOCAL enable_indexscan=on")
         selected, _size_bytes = await _batch(conn, job["source_name"], job["verify_id"], job["verify_created_at"], policy,
                                              topics_only=job.get("target_method") == "topics")
         if job.get("topic_stage_name"):
             await archive_topics.verify_chunk(conn,job,selected)
         if not selected:
             extra = await conn.fetchval(f"SELECT EXISTS(SELECT 1 FROM {_q(job['stage_name'])} "
-                "WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) LIMIT 1)",
+                "WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) ORDER BY id,created_at LIMIT 1)",
                 job["verify_id"], job["verify_created_at"])
             if extra or job["rows_verified"] != job["rows_copied"]:
                 raise ArchiveBlocked("Archive cardinality verification failed")
@@ -869,10 +875,11 @@ async def _verify_chunk(conn, job, policy):
         # checks exact even under a case-insensitive database collation.
         good = await conn.fetchval(f"""WITH s AS MATERIALIZED (
             SELECT {_columns()} FROM {_q(job['source_name'])}
-            WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) AND (id,created_at)<=($3,$4)),
+            WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) AND (id,created_at)<=($3,$4)
+            ORDER BY id,created_at),
             t AS MATERIALIZED (SELECT {_columns()} FROM {_q(job['stage_name'])}
             WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) AND (id,created_at)<=($3,$4)
-            LIMIT $5)
+            ORDER BY id,created_at LIMIT $5)
             SELECT count(*)=$6 AND coalesce(bool_and(s.id IS NOT NULL AND t.id IS NOT NULL AND ({_exact_equal()})),false)
             FROM s FULL JOIN t USING(id,created_at)""", job["verify_id"], job["verify_created_at"],
             last["id"], last["created_at"], len(selected)+1, len(selected))
@@ -981,12 +988,15 @@ async def _analyze_stage(conn, job, policy):
     relation = job["stage_name"] if not stage_done else job.get("topic_stage_name") if not topic_done else None
     async with conn.transaction():
         await _settings(conn, policy)
-        seconds = min(policy.analyze_seconds, policy.cycle_seconds-.5)
+        # Citus 14.1 ANALYZE scans every row. Its independent budget must not
+        # inherit the short copy-cycle limit; the caller bounds the full step.
+        seconds = policy.analyze_seconds
         await conn.execute(f"SET LOCAL statement_timeout='{math.ceil(seconds*1000)}ms'")
         if not stage_done and job.get("target_method", "columnar") == "heap":
             for index in await conn.fetch("""SELECT c.oid FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid
                     JOIN pg_am a ON a.oid=c.relam WHERE i.indrelid=$1 AND a.amname='gin'""", job["stage_oid"]):
-                await conn.fetchval("SELECT gin_clean_pending_list($1::oid::regclass)", index["oid"])
+                await conn.fetchval("SELECT gin_clean_pending_list($1::oid::regclass)", index["oid"],
+                                    timeout=seconds+.25)
         if relation is not None:
             await conn.execute(f"ANALYZE {_q(relation)}",timeout=seconds+.25)
             if not stage_done:
@@ -1055,7 +1065,7 @@ async def run_archive_cycle(conn, config, *, free_bytes: Callable[[], int] | Non
         job_id = None
         started = time.monotonic()
         try:
-            async with asyncio.timeout(policy.cycle_seconds):
+            async with asyncio.timeout(policy.cycle_seconds) as cycle_deadline:
                 await _environment(conn)
                 _free(free_bytes, policy, 4*policy.batch_bytes)
                 job_id = await conn.fetchval("SELECT job_id FROM public.storage_archive_jobs WHERE phase IN ('copying','verifying','ready') LIMIT 1")
@@ -1094,11 +1104,14 @@ async def run_archive_cycle(conn, config, *, free_bytes: Callable[[], int] | Non
                         await _verify_chunk(conn, job, policy)
                     elif job["phase"] == "ready":
                         if not job["analyzed"]:
-                            # Start this independent read-only statistics step
-                            # in a fresh cycle when little wall time remains.
-                            if time.monotonic()-started > max(.5, policy.cycle_seconds-policy.analyze_seconds):
-                                break
+                            # The native Columnar ANALYZE callback scans every
+                            # row. Give exactly one relation its own bounded
+                            # statistics budget, plus a short commit/status
+                            # margin, while retaining normal cancellation.
+                            cycle_deadline.reschedule(asyncio.get_running_loop().time()
+                                                      + policy.analyze_seconds + 2)
                             await _analyze_stage(conn, job, policy)
+                            break
                         else:
                             await _cutover(conn, job, policy, free_bytes)
                     else:

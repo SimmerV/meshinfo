@@ -78,7 +78,8 @@ estimate_multiplier = 1.5
 compression_level = 3
 chunk_group_rows = 1000
 index_build_seconds = 300
-analyze_seconds = 8
+# Full-table statistics use a separate per-relation budget (maximum 1800s).
+analyze_seconds = 300
 # Directory on the actual PostgreSQL data filesystem, not an inferred app path.
 database_filesystem = ""
 

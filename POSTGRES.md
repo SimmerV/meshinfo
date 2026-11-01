@@ -531,8 +531,28 @@ transaction in this order:
    savepoints. Releasing a savepoint flushes a Citus stripe without committing
    the outer restore transaction; splitting COPY statements alone does not.
 4. Recheck inventory/options, exact Columnar row totals and the recorded physical
-   upper bounds, then commit. Any SQL, producer, parser or verification failure
-   rolls back everything, including already released savepoints.
+   upper bounds. Clear copied ANALYZE checkpoints for active archive jobs, then
+   commit. Any SQL, producer, parser or verification failure rolls back
+   everything, including already released savepoints.
+
+These normal dumps use PostgreSQL 18's [default exclusion of planner statistics](https://www.postgresql.org/docs/18/app-pgdump.html).
+After the restore succeeds, keep application traffic disconnected and collect statistics for the
+restored tables, including completed archive months and their topic lookups:
+
+```bash
+vacuumdb --analyze-only --jobs=1 --host replacement-postgres \
+  --username postgres --dbname meshinfo_restored
+```
+
+Use the same restore role and a password prompt or private libpq credentials;
+replace the example role when appropriate. This command runs ANALYZE only, with
+one worker. Check representative historical queries and current ingestion before
+switching application traffic to the restored database. An active archive job
+will also collect fresh statistics for each completed stage before its cutover.
+Citus 14.1 performs a full row scan for Columnar ANALYZE, so this step can take
+minutes on a large restored archive. The archive worker uses its separate
+`analyze_seconds` budget (300 seconds by default, at most 1,800) for one stage
+per invocation, independent of short copy cycles.
 
 The exact extension version must be available; the destination PostgreSQL major
 must match backups that carry restore metadata. Missing, mismatched or incomplete
@@ -552,7 +572,12 @@ payload copies or credentials.
 For resumable archive jobs, ordinary dump/restore also preserves staging rows,
 application job state and source-freeze triggers. The archive executor must
 re-resolve object names and validate its durable markers after restore: numeric
-PostgreSQL OIDs are not stable across logical restoration. The integration gate
+PostgreSQL OIDs are not stable across logical restoration. Numeric values can
+also coincide across clusters, so restore invalidates active jobs' ANALYZE flags
+regardless of whether their saved OIDs changed. Older journals with only the
+original `analyzed` flag and legacy dumps without a journal remain compatible.
+This reset preserves copy/verification checkpoints and completed-job history.
+The integration gate
 `scripts/verify_columnar_backup_restore.py` uses disposable databases to verify
 local/remote-receiver backup, exact restored data, settings **before COPY** via
 physical chunk geometry, staged rows/job state, restored guards, and full

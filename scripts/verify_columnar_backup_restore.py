@@ -45,6 +45,46 @@ def require(value, label):
         raise AssertionError(label)
 
 
+def verify_analysis_checkpoints(database):
+    """Cover active/done jobs, coincident OIDs and older/no-journal schemas."""
+    expected = [[phase, phase not in ('copying','verifying','ready')]
+                for phase in sorted(('copying','verifying','ready','complete','cancelled','failed'))]
+    flags_sql = """SELECT json_agg(row_to_json(s) ORDER BY phase) FROM (
+        SELECT phase,analyzed,stage_analyzed,topic_analyzed FROM public.storage_archive_jobs) s"""
+    for row, (phase, finished) in zip(json.loads(sql(database, flags_sql)), expected, strict=True):
+        require(row == {'phase': phase, 'analyzed': finished,
+                        'stage_analyzed': finished, 'topic_analyzed': finished},
+                'logical restore trusted copied statistics checkpoints')
+    # Simulate the important edge directly: every recorded OID already equals
+    # its destination relation OID. Invalidation must not depend on a mismatch.
+    sql(database, """UPDATE public.storage_archive_jobs SET
+        source_oid='public.cold'::regclass,stage_oid='archive_stage.copy'::regclass,
+        topic_stage_oid='public.hot'::regclass,
+        analyzed=true,stage_analyzed=true,topic_analyzed=true
+        WHERE phase IN ('copying','verifying','ready');""")
+    require(sql(database, """SELECT bool_and(source_oid='public.cold'::regclass
+        AND stage_oid='archive_stage.copy'::regclass AND topic_stage_oid='public.hot'::regclass)
+        FROM public.storage_archive_jobs WHERE phase IN ('copying','verifying','ready')""") == 't',
+        'coincident-OID witness is incomplete')
+    sql(database, restore.reset_archive_analysis_sql())
+    require(sql(database, """SELECT bool_and(NOT analyzed AND NOT stage_analyzed AND NOT topic_analyzed)
+        FROM public.storage_archive_jobs WHERE phase IN ('copying','verifying','ready')""") == 't',
+        'coincident OIDs retained stale statistics checkpoints')
+    # The original journal had only analyzed. A heap-only legacy dump can lack
+    # all checkpoint columns or the journal itself. None requires new metadata.
+    for alteration, verification in (
+        ("ALTER TABLE public.storage_archive_jobs DROP COLUMN stage_analyzed,DROP COLUMN topic_analyzed; "
+         "UPDATE public.storage_archive_jobs SET analyzed=true;",
+         "SELECT bool_and(analyzed=(phase NOT IN ('copying','verifying','ready'))) FROM public.storage_archive_jobs;"),
+        ("ALTER TABLE public.storage_archive_jobs DROP COLUMN analyzed,DROP COLUMN stage_analyzed,DROP COLUMN topic_analyzed;",
+         "SELECT count(*)=6 FROM public.storage_archive_jobs;"),
+        ("ALTER TABLE public.storage_archive_jobs RENAME TO hidden_archive_jobs;",
+         "SELECT count(*)=6 FROM public.hidden_archive_jobs;"),
+    ):
+        require(sql(database, 'BEGIN; '+alteration+restore.reset_archive_analysis_sql()+verification+' ROLLBACK;') == 't',
+                'legacy journal compatibility failed')
+
+
 async def run():
     suffix = uuid.uuid4().hex[:10]
     source = "backup_" + suffix + "_columnar_test"
@@ -55,6 +95,7 @@ async def run():
     lock = None
     original_ssh = backup.ssh_command
     original_stream = restore.stream_section
+    original_reset = restore.reset_archive_analysis_sql
     pg = {"host": os.environ.get("PGHOST", "/var/run/postgresql"),
           "port": int(os.environ.get("PGPORT", "5432")),
           "username": os.environ.get("PGUSER", "postgres"),
@@ -85,7 +126,17 @@ async def run():
                 $$BEGIN RAISE EXCEPTION 'historical source is frozen'; END$$;
             CREATE TRIGGER frozen_source BEFORE INSERT ON cold FOR EACH ROW EXECUTE FUNCTION reject_frozen();
             CREATE TABLE archive_job_state(schema_name text,table_name text,marker uuid,state text);
-            INSERT INTO archive_job_state VALUES('archive_stage','copy','12345678-1234-1234-1234-123456789abc','copying');""")
+            INSERT INTO archive_job_state VALUES('archive_stage','copy','12345678-1234-1234-1234-123456789abc','copying');
+            CREATE TABLE storage_archive_jobs(job_id uuid PRIMARY KEY,phase text,source_oid oid,
+                stage_oid oid,topic_stage_oid oid,analyzed boolean,stage_analyzed boolean,topic_analyzed boolean,
+                rows_copied bigint,guard_token uuid);
+            INSERT INTO storage_archive_jobs SELECT md5(phase)::uuid,phase,'public.cold'::regclass,
+                'archive_stage.copy'::regclass,'public.hot'::regclass,true,true,true,17,
+                '12345678-1234-1234-1234-123456789abc'::uuid
+                FROM unnest(ARRAY['copying','verifying','ready','complete','cancelled','failed']) AS phase;""")
+        journal_sql = """SELECT json_agg(row_to_json(j) ORDER BY phase) FROM (
+            SELECT job_id,phase,source_oid,stage_oid,topic_stage_oid,rows_copied,guard_token FROM storage_archive_jobs) j"""
+        expected_journal = sql(source, journal_sql)
         expected_rows = sql(source, "SELECT count(*),md5(string_agg(id::text||':'||day::text||':'||payload,'|' ORDER BY day,id)) FROM history")
         expected_stage = sql(source, "SELECT count(*),md5(string_agg(row_to_json(copy)::text,'|' ORDER BY id)) FROM archive_stage.copy")
         require(int(sql(source, "SELECT max(octet_length(payload)) FROM archive_stage.copy")) > 2*1024*1024,
@@ -125,6 +176,8 @@ async def run():
             require(json.loads(sql(target, OPTIONS_SQL)) == expected_options, "restored options changed")
             require(sql(target, "SELECT sum(chunk_group_count),sum(row_count) FROM columnar.stripe") == expected_groups, "physical chunk geometry proves options were not applied before COPY")
             require(sql(target, "SELECT state FROM archive_job_state") == "copying", "resume state was lost")
+            require(sql(target, journal_sql) == expected_journal, "statistics reset changed job identities or copy checkpoints")
+            verify_analysis_checkpoints(target)
             sql(target, "INSERT INTO history VALUES(9000,'2025-01-20','must reject')", expect_failure=True)
             args.database = rejected
             # A missing metadata manifest must fail before data loading.
@@ -167,6 +220,19 @@ async def run():
             finally:
                 restore.stream_section = original_stream
             require(sql(rejected, restore.EMPTY_QUERY) == "0", "producer failure left restored objects")
+            # Reset is inside the same transaction as COPY and post-data. A
+            # failure here must still remove all restored schema/data.
+            restore.reset_archive_analysis_sql = lambda: original_reset() + (
+                "DO $$ BEGIN RAISE EXCEPTION 'injected statistics reset failure'; END $$;\n")
+            try:
+                await restore.run(args)
+            except restore.RestoreRefused:
+                pass
+            else:
+                raise AssertionError("restore committed after statistics reset failure")
+            finally:
+                restore.reset_archive_analysis_sql = original_reset
+            require(sql(rejected, restore.EMPTY_QUERY) == "0", "statistics reset failure left restored objects")
             # Exercise actual receiver framing/decoding/publication locally;
             # this validates transport payload, not an SSH server/network.
             backup.ssh_command = lambda policy, filename, owner_id: (
@@ -182,10 +248,13 @@ async def run():
                     "physical_geometry_preserved": restored["physical_geometry_preserved"],
                     "multi_megabyte_copy_row_verified": True,
                     "local_and_remote_receiver": True, "single_transaction_rollback": True,
+                    "active_archive_statistics_invalidated": True, "coincident_oids_handled": True,
+                    "legacy_analysis_checkpoints_supported": True, "statistics_reset_rollback": True,
                     "stage_state_and_guards_preserved": True}
     finally:
         backup.ssh_command = original_ssh
         restore.stream_section = original_stream
+        restore.reset_archive_analysis_sql = original_reset
         if lock is not None:
             lock.stdin.close()
             await backup._stop(lock, drain_stdout=True)
