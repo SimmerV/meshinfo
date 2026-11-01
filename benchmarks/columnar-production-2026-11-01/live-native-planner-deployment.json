@@ -1,0 +1,123 @@
+{
+  "started_utc": "2026-11-01T08:58:21.303408+00:00",
+  "first_page_limit_ms": 1000,
+  "cache_note": "PostgreSQL recreated on the same volume with patched binary; shared buffers reset, host page cache untouched. Backend startup and health ran before the first measured historical request. No historical inventory or EXPLAIN ran after recreation before that request.",
+  "steps": [
+    {
+      "name": "graceful_backend_stop",
+      "elapsed_ms": 716.573
+    },
+    {
+      "name": "postgres_recreate_same_volume",
+      "elapsed_ms": 6322.057
+    },
+    {
+      "name": "backend_start",
+      "elapsed_ms": 892.009
+    }
+  ],
+  "all_checks_passed": true,
+  "before": {
+    "postgres": {
+      "id": "b1200e70384cef2f61dc72be35944e198fe43c52ed1d353c5ba48e6121a42b51",
+      "image_id": "sha256:9110413970ad4b277973703d1c4f52d572af39714bdfce717ea82c62c31853a4",
+      "running": true,
+      "health": "healthy",
+      "exit_code": 0,
+      "oom_killed": false,
+      "mounts": [
+        {
+          "name": "meshinfo_meshinfo_pgdata",
+          "destination": "/var/lib/postgresql"
+        }
+      ]
+    },
+    "backend": {
+      "id": "b0615cc8d73a8c34aa6c1bbf98d0078ec274037d9c7f12f8b643422084764525",
+      "image_id": "sha256:2efdf6ff83b36dc430a94c4216bb331f3bc29e46aef9be670fe0ec0f4d7d523d",
+      "running": true,
+      "health": "healthy",
+      "exit_code": 0,
+      "oom_killed": false,
+      "mounts": [
+        {
+          "name": "meshinfo_meshinfo_pgdata",
+          "destination": "/var/lib/meshinfo-postgres-space"
+        }
+      ]
+    }
+  },
+  "candidate_image_id": "sha256:dc7616e6ebe4f91c86cd7e85dd9e5182d321507600b9404f13a9a9aad31819c6",
+  "patch_sha256": "aed027459fac59a1333ace33d181c3e323bf5917293bfeded1b023fc292ea6b9",
+  "postgres_started_before": "2026-11-01 08:36:13.959374+00",
+  "extension_version_before": "14.1-1",
+  "backend_stopped": {
+    "id": "b0615cc8d73a8c34aa6c1bbf98d0078ec274037d9c7f12f8b643422084764525",
+    "image_id": "sha256:2efdf6ff83b36dc430a94c4216bb331f3bc29e46aef9be670fe0ec0f4d7d523d",
+    "running": false,
+    "health": "unhealthy",
+    "exit_code": 0,
+    "oom_killed": false,
+    "mounts": [
+      {
+        "name": "meshinfo_meshinfo_pgdata",
+        "destination": "/var/lib/meshinfo-postgres-space"
+      }
+    ]
+  },
+  "page_samples": [
+    {
+      "elapsed_ms": 245.396,
+      "status": 200,
+      "matches_baseline": true,
+      "response_sha256": "7950f9fab4171603ecf240cf2ff2aad7048c4418f47002c4eb0086c3a9a02864"
+    },
+    {
+      "elapsed_ms": 15.126,
+      "status": 200,
+      "matches_baseline": true,
+      "response_sha256": "7950f9fab4171603ecf240cf2ff2aad7048c4418f47002c4eb0086c3a9a02864"
+    },
+    {
+      "elapsed_ms": 13.984,
+      "status": 200,
+      "matches_baseline": true,
+      "response_sha256": "7950f9fab4171603ecf240cf2ff2aad7048c4418f47002c4eb0086c3a9a02864"
+    }
+  ],
+  "postgres_started_after": "2026-11-01 08:58:24.272168+00",
+  "extension_version_after": "14.1-1",
+  "after": {
+    "postgres": {
+      "id": "9f549fcaab3665002d4e03882882bf1917aed243ae3d2ec76a9964e00ca72f97",
+      "image_id": "sha256:dc7616e6ebe4f91c86cd7e85dd9e5182d321507600b9404f13a9a9aad31819c6",
+      "running": true,
+      "health": "healthy",
+      "exit_code": 0,
+      "oom_killed": false,
+      "mounts": [
+        {
+          "name": "meshinfo_meshinfo_pgdata",
+          "destination": "/var/lib/postgresql"
+        }
+      ]
+    },
+    "backend": {
+      "id": "b0615cc8d73a8c34aa6c1bbf98d0078ec274037d9c7f12f8b643422084764525",
+      "image_id": "sha256:2efdf6ff83b36dc430a94c4216bb331f3bc29e46aef9be670fe0ec0f4d7d523d",
+      "running": true,
+      "health": "healthy",
+      "exit_code": 0,
+      "oom_killed": false,
+      "mounts": [
+        {
+          "name": "meshinfo_meshinfo_pgdata",
+          "destination": "/var/lib/meshinfo-postgres-space"
+        }
+      ]
+    }
+  },
+  "all_response_checks_passed": true,
+  "first_page_latency_passed": true,
+  "finished_utc": "2026-11-01T08:58:36.398326+00:00"
+}

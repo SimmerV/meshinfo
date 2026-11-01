@@ -1,0 +1,307 @@
+{
+  "runtime_commit_reported_by_deployment_owner": "55c2ec3",
+  "read_only": true,
+  "baseline_report": "live-august-first-reuse-planning-corrected.json",
+  "patched_report": "live-august-native-planner-fixed.json",
+  "all_response_hashes_match_heap_baseline": true,
+  "same_archived_geometry": true,
+  "geometry": {
+    "stripes": 156390,
+    "rows": 14544219,
+    "min_stripe_rows": 42,
+    "max_stripe_rows": 93
+  },
+  "experimental_scan_flags_used": false,
+  "settings": {
+    "statement_seconds": 5,
+    "lock_ms": 100,
+    "work_mem": "1MB",
+    "parallel_workers": 0,
+    "jit": "off",
+    "default_transaction_read_only": "on"
+  },
+  "cases": [
+    {
+      "name": "month_08_page",
+      "response_equal": true,
+      "response_sha256": "7950f9fab4171603ecf240cf2ff2aad7048c4418f47002c4eb0086c3a9a02864",
+      "before": {
+        "first_planning_ms": 886.018,
+        "first_execution_ms": 4.694,
+        "first_planner_used_kib": 193173,
+        "first_planner_allocated_kib": 200474,
+        "warm_planning_ms": 0.081,
+        "warm_execution_ms": 1.983,
+        "warm_planner_used_kib": 13,
+        "warm_planner_allocated_kib": 32,
+        "warm_fetch_ms": [
+          33.83,
+          4.713,
+          7.395
+        ],
+        "warm_fetch_median_ms": 7.395,
+        "instrumented_whole_reader_ms": 971.395,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        },
+        "canonical_scans": [
+          {
+            "type": "Index Scan",
+            "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+            "rows": 51.0,
+            "loops": 1
+          }
+        ]
+      },
+      "patched": {
+        "first_planning_ms": 156.97,
+        "first_execution_ms": 2.531,
+        "first_planner_used_kib": 16632,
+        "first_planner_allocated_kib": 35161,
+        "warm_planning_ms": 0.081,
+        "warm_execution_ms": 2.296,
+        "warm_planner_used_kib": 13,
+        "warm_planner_allocated_kib": 32,
+        "warm_fetch_ms": [
+          6.266,
+          2.854,
+          2.449
+        ],
+        "warm_fetch_median_ms": 2.854,
+        "instrumented_whole_reader_ms": 209.885,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        },
+        "canonical_scans": [
+          {
+            "type": "Index Scan",
+            "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+            "rows": 51.0,
+            "loops": 1
+          }
+        ]
+      },
+      "first_planning_reduction_percent": 82.28,
+      "first_allocated_memory_reduction_percent": 82.46
+    },
+    {
+      "name": "month_08_node",
+      "response_equal": true,
+      "response_sha256": "5a739df81ebaec0608a1f1a13ee254c3f192e627c52fe30fc3378fb2f1b73a56",
+      "before": {
+        "first_planning_ms": 1494.128,
+        "first_execution_ms": 14.423,
+        "first_planner_used_kib": 335876,
+        "first_planner_allocated_kib": 336923,
+        "warm_planning_ms": 0.025,
+        "warm_execution_ms": 11.939,
+        "warm_planner_used_kib": 9,
+        "warm_planner_allocated_kib": 24,
+        "warm_fetch_ms": [
+          29.585,
+          12.659,
+          12.068
+        ],
+        "warm_fetch_median_ms": 12.659,
+        "instrumented_whole_reader_ms": 1587.258,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        },
+        "canonical_scans": [
+          {
+            "type": "Index Scan",
+            "index": "meshinfo_archive_stage_acda41a224f4_from_node_id_created_at_idx",
+            "rows": 52.0,
+            "loops": 1
+          },
+          {
+            "type": "Index Scan",
+            "index": "meshinfo_archive_stage_acda41a224f445_to_node_id_created_at_idx",
+            "rows": 12.0,
+            "loops": 1
+          }
+        ]
+      },
+      "patched": {
+        "first_planning_ms": 270.875,
+        "first_execution_ms": 121.478,
+        "first_planner_used_kib": 32921,
+        "first_planner_allocated_kib": 45721,
+        "warm_planning_ms": 0.027,
+        "warm_execution_ms": 11.658,
+        "warm_planner_used_kib": 9,
+        "warm_planner_allocated_kib": 24,
+        "warm_fetch_ms": [
+          17.649,
+          12.149,
+          14.136
+        ],
+        "warm_fetch_median_ms": 14.136,
+        "instrumented_whole_reader_ms": 460.917,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        },
+        "canonical_scans": [
+          {
+            "type": "Index Scan",
+            "index": "meshinfo_archive_stage_acda41a224f4_from_node_id_created_at_idx",
+            "rows": 52.0,
+            "loops": 1
+          },
+          {
+            "type": "Index Scan",
+            "index": "meshinfo_archive_stage_acda41a224f445_to_node_id_created_at_idx",
+            "rows": 12.0,
+            "loops": 1
+          }
+        ]
+      },
+      "first_planning_reduction_percent": 81.87,
+      "first_allocated_memory_reduction_percent": 86.43
+    },
+    {
+      "name": "month_08_topic",
+      "response_equal": true,
+      "response_sha256": "fd6855708243d0b0f9bce5547ee02da033a8944b8b8258a84b76b6f64a5f9c6e",
+      "before": {
+        "first_planning_ms": 623.032,
+        "first_execution_ms": 11.124,
+        "first_planner_used_kib": 193157,
+        "first_planner_allocated_kib": 200474,
+        "warm_planning_ms": 0.074,
+        "warm_execution_ms": 10.038,
+        "warm_planner_used_kib": 13,
+        "warm_planner_allocated_kib": 32,
+        "warm_fetch_ms": [
+          10.63,
+          10.49,
+          11.576
+        ],
+        "warm_fetch_median_ms": 10.63,
+        "instrumented_whole_reader_ms": 781.93,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        },
+        "canonical_scans": [
+          {
+            "type": "Index Scan",
+            "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+            "rows": 51.0,
+            "loops": 1
+          }
+        ]
+      },
+      "patched": {
+        "first_planning_ms": 137.595,
+        "first_execution_ms": 54.176,
+        "first_planner_used_kib": 16616,
+        "first_planner_allocated_kib": 35161,
+        "warm_planning_ms": 0.072,
+        "warm_execution_ms": 10.039,
+        "warm_planner_used_kib": 13,
+        "warm_planner_allocated_kib": 32,
+        "warm_fetch_ms": [
+          12.323,
+          10.428,
+          10.689
+        ],
+        "warm_fetch_median_ms": 10.689,
+        "instrumented_whole_reader_ms": 1018.807,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        },
+        "canonical_scans": [
+          {
+            "type": "Index Scan",
+            "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+            "rows": 51.0,
+            "loops": 1
+          }
+        ]
+      },
+      "first_planning_reduction_percent": 77.92,
+      "first_allocated_memory_reduction_percent": 82.46
+    },
+    {
+      "name": "month_08_topic_search",
+      "response_equal": true,
+      "response_sha256": "fd6855708243d0b0f9bce5547ee02da033a8944b8b8258a84b76b6f64a5f9c6e",
+      "before": {
+        "first_planning_ms": 731.525,
+        "first_execution_ms": 27.796,
+        "first_planner_used_kib": 225754,
+        "first_planner_allocated_kib": 229794,
+        "warm_planning_ms": 0.136,
+        "warm_execution_ms": 24.395,
+        "warm_planner_used_kib": 28,
+        "warm_planner_allocated_kib": 56,
+        "warm_fetch_ms": [
+          27.544,
+          25.911,
+          25.348
+        ],
+        "warm_fetch_median_ms": 25.911,
+        "instrumented_whole_reader_ms": 968.407,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        },
+        "canonical_scans": [
+          {
+            "type": "Index Scan",
+            "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+            "rows": 128.0,
+            "loops": 1
+          }
+        ]
+      },
+      "patched": {
+        "first_planning_ms": 124.869,
+        "first_execution_ms": 115.35,
+        "first_planner_used_kib": 17115,
+        "first_planner_allocated_kib": 35169,
+        "warm_planning_ms": 0.156,
+        "warm_execution_ms": 25.453,
+        "warm_planner_used_kib": 28,
+        "warm_planner_allocated_kib": 56,
+        "warm_fetch_ms": [
+          27.919,
+          26.105,
+          26.331
+        ],
+        "warm_fetch_median_ms": 26.331,
+        "instrumented_whole_reader_ms": 441.221,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        },
+        "canonical_scans": [
+          {
+            "type": "Index Scan",
+            "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+            "rows": 128.0,
+            "loops": 1
+          }
+        ]
+      },
+      "first_planning_reduction_percent": 82.93,
+      "first_allocated_memory_reduction_percent": 84.7
+    }
+  ],
+  "qualifications": [
+    "Same four reviewed August request cases and unchanged production reader SQL; first means a newly prepared statement on one fresh session, not cold disk or cold OS caches.",
+    "The full PostgreSQL server restarted for deployment before this probe, but parent first-page HTTP validation preceded it. This measurement does not independently claim cold shared buffers.",
+    "Each case includes a first EXPLAIN, three repeated fetches and a warm EXPLAIN. Instrumented whole-reader latency is not ordinary HTTP latency; the preserved topic whole-call time exceeded1second.",
+    "First node/topic/topic-search execution remained slower than repeated execution. First planning also retains measurable metadata traversal cost; no identical-speed or constant-memory claim is made.",
+    "Planner memory units are KiB from PostgreSQL Memory Used/Allocated, not process RSS. work_mem does not bound this planner context.",
+    "Three warm fetches per case are descriptive, not a p95 sample. Separate HTTP/concurrent testing supplies operational acceptance.",
+    "Generic-plan caching is per connection/statement and invalidations require rebuilding. Concurrent fresh-plan memory was not measured by this single-session probe.",
+    "JIT was off in both before/after probes. The native patch preserves cost formulas; the separate289-case paired isolated gate verified exact rendered plans/costs and results."
+  ]
+}

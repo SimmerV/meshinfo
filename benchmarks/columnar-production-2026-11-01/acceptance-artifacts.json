@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "description": "Source-free benchmark and validation artifacts; original diagnostic reports preserved byte-for-byte. Source fixtures, query arguments and credentials excluded.",
+  "description": "Source-free benchmark and validation artifacts; original diagnostic reports preserved byte-for-byte. Source packets, production query arguments and credentials excluded. Synthetic native-planner proofs retain generated test predicates and plan expressions.",
   "artifacts": {
     "read-source-first.json": {
       "bytes": 9143,
@@ -213,6 +213,66 @@
     "live-final-restart-validation.json": {
       "bytes": 3679,
       "sha256": "74a35a3c2df624e28450838786a45b3d1bc716d4d7f09a97c109618166551f56"
+    },
+    "live-august-first-reuse-planning.json": {
+      "bytes": 69485,
+      "sha256": "d281d4737c94c7d9b8fd4d919206682641767b9219496cb25abb656ca77b1cb4"
+    },
+    "live-august-first-reuse-planning-corrected.json": {
+      "bytes": 163573,
+      "sha256": "78dc24acaded31d2caff15ae9644877eb3ebf2c6b80c4201b0bce0bc960f4afd"
+    },
+    "live-august-first-reuse-planning-summary.json": {
+      "bytes": 6159,
+      "sha256": "b90cea593a1da8335cefd2549b296fb9f929c2555ba7e0a72cc02c4a5ff73484"
+    },
+    "live-august-planner-seq-off.json": {
+      "bytes": 172999,
+      "sha256": "bf14698363962d5dfd6f0f08bc2477dc15b48fbc7fb4f29a9e290aab5a2189a4"
+    },
+    "live-august-planner-seq-index-off.json": {
+      "bytes": 236793,
+      "sha256": "fa5cc5a2fc64e7d154545fe760dd5ef118f44f24b20242ed1c4ea270a71baf72"
+    },
+    "live-august-planner-variants-summary.json": {
+      "bytes": 13060,
+      "sha256": "2321719b8d97a51ee808d30a0d79165ace0b11a7c7773e9d54512c4d52744494"
+    },
+    "planner-native-parity-v3.json": {
+      "bytes": 1279974,
+      "sha256": "e5876969a611e7aa395482b1627d416b79fdd1bfb9a7c8c91c9d0c6f28e46008"
+    },
+    "isolated-patched-native-regressions.txt": {
+      "bytes": 352,
+      "sha256": "4ce14bb97d829d80ba6792ac388fcbcc156e428ed1fb46949ab1f267d44629a1"
+    },
+    "patched-native-backup-restore.json": {
+      "bytes": 486,
+      "sha256": "535368f96c47afeee2a5115ab28430bb82e4950b807627991592d434216c2f8b"
+    },
+    "live-native-planner-deployment.json": {
+      "bytes": 3989,
+      "sha256": "6eb90fd48d347b8da48c4d50b2a8d1d68b30c8935d2329505cd00e1feab96c9b"
+    },
+    "native-planner-patch-provenance.json": {
+      "bytes": 10813,
+      "sha256": "14c0c4e16ea5ae6e9fe17887abc0e76f045083002d2080ba07081ada940e22a8"
+    },
+    "live-august-native-planner-fixed.json": {
+      "bytes": 163624,
+      "sha256": "9d4a8b71ce54713aa43fcfe5a033f596efcc957d316f086b3489bbddba182c75"
+    },
+    "live-august-native-planner-fixed-summary.json": {
+      "bytes": 10336,
+      "sha256": "9838a7d456c429b4a018b9b19c45671dfcc87fb7a263898f6b8badbe5c8edfe0"
+    },
+    "native-ci-55c2ec3.json": {
+      "bytes": 10093,
+      "sha256": "d39008e98e71f72f885624790375ae8c05e7c56428d1ea17e99fe4ef943afa69"
+    },
+    "live-native-final-concurrent-reads.json": {
+      "bytes": 35252,
+      "sha256": "2f536b46d06645dfcee93e99953a9de8eb311835b45f59cdb8ae8bf286508832"
     }
   }
 }

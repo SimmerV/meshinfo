@@ -1,0 +1,291 @@
+{
+  "observed_utc": "2026-11-01T09:05:03.162835+00:00",
+  "head_sha": "55c2ec3835f679292cc91555eea3d1a434001477",
+  "timestamp_note": "Remote API timestamps are internally inconsistent: run created_at is later than updated_at and some timestamps are approximately one hour ahead of the local clock. Preserved verbatim; exact SHA and completed job/step conclusions establish status. Do not infer local deployment chronology or elapsed time from these remote timestamps.",
+  "run": {
+    "id": 41291043803,
+    "name": "Columnar native restore",
+    "html_url": "https://github.com/SimmerV/meshinfo/actions/runs/41291043803",
+    "status": "completed",
+    "conclusion": "success",
+    "created_at": "2026-11-01T09:58:12Z",
+    "updated_at": "2026-11-01T09:00:17Z",
+    "head_branch": "feature/storage-management"
+  },
+  "jobs": [
+    {
+      "id": 124802190574,
+      "name": "PostgreSQL 18.6 / Citus 14.1 (amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-01T09:58:15Z",
+      "completed_at": "2026-11-01T09:00:16Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-01T08:58:15Z",
+          "completed_at": "2026-11-01T08:58:16Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-01T08:58:16Z",
+          "completed_at": "2026-11-01T08:58:17Z"
+        },
+        {
+          "name": "Build the production image on its native architecture",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-01T08:58:17Z",
+          "completed_at": "2026-11-01T08:58:50Z"
+        },
+        {
+          "name": "Build the unpatched baseline from the same compiled source stage",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-01T08:58:50Z",
+          "completed_at": "2026-11-01T08:58:51Z"
+        },
+        {
+          "name": "Start an isolated test cluster without published ports",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-01T08:58:51Z",
+          "completed_at": "2026-11-01T08:58:52Z"
+        },
+        {
+          "name": "Add minimal test dependencies to the disposable container",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-01T08:58:52Z",
+          "completed_at": "2026-11-01T08:59:01Z"
+        },
+        {
+          "name": "Compare native planner costs and results with the unpatched release",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-01T08:59:01Z",
+          "completed_at": "2026-11-01T08:59:10Z"
+        },
+        {
+          "name": "Preserve the source-free native planner comparison",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-01T08:59:10Z",
+          "completed_at": "2026-11-01T08:59:11Z"
+        },
+        {
+          "name": "Verify actual backup, settings before COPY, staging and rollback",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-01T08:59:11Z",
+          "completed_at": "2026-11-01T08:59:15Z"
+        },
+        {
+          "name": "Verify checkpoint restore, cancellation, queries and startup indexes",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-01T08:59:15Z",
+          "completed_at": "2026-11-01T09:00:00Z"
+        },
+        {
+          "name": "Verify production history readers on heap and mixed partitions",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-01T09:00:00Z",
+          "completed_at": "2026-11-01T09:00:08Z"
+        },
+        {
+          "name": "Verify packet details and node pages without Columnar loaded or installed",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-01T09:00:08Z",
+          "completed_at": "2026-11-01T09:00:14Z"
+        },
+        {
+          "name": "Remove the isolated cluster and anonymous data volume",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-01T09:00:14Z",
+          "completed_at": "2026-11-01T09:00:15Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 26,
+          "started_at": "2026-11-01T09:00:15Z",
+          "completed_at": "2026-11-01T09:00:15Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 27,
+          "started_at": "2026-11-01T09:00:15Z",
+          "completed_at": "2026-11-01T09:00:15Z"
+        }
+      ]
+    },
+    {
+      "id": 124802190717,
+      "name": "PostgreSQL 18.6 / Citus 14.1 (arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-01T09:58:17Z",
+      "completed_at": "2026-11-01T09:00:16Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-01T08:58:17Z",
+          "completed_at": "2026-11-01T08:58:18Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-01T08:58:18Z",
+          "completed_at": "2026-11-01T08:58:19Z"
+        },
+        {
+          "name": "Build the production image on its native architecture",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-01T08:58:19Z",
+          "completed_at": "2026-11-01T08:58:56Z"
+        },
+        {
+          "name": "Build the unpatched baseline from the same compiled source stage",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-01T08:58:56Z",
+          "completed_at": "2026-11-01T08:58:57Z"
+        },
+        {
+          "name": "Start an isolated test cluster without published ports",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-01T08:58:57Z",
+          "completed_at": "2026-11-01T08:58:58Z"
+        },
+        {
+          "name": "Add minimal test dependencies to the disposable container",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-01T08:58:58Z",
+          "completed_at": "2026-11-01T08:59:06Z"
+        },
+        {
+          "name": "Compare native planner costs and results with the unpatched release",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-01T08:59:06Z",
+          "completed_at": "2026-11-01T08:59:14Z"
+        },
+        {
+          "name": "Preserve the source-free native planner comparison",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-01T08:59:14Z",
+          "completed_at": "2026-11-01T08:59:15Z"
+        },
+        {
+          "name": "Verify actual backup, settings before COPY, staging and rollback",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-01T08:59:15Z",
+          "completed_at": "2026-11-01T08:59:19Z"
+        },
+        {
+          "name": "Verify checkpoint restore, cancellation, queries and startup indexes",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-01T08:59:19Z",
+          "completed_at": "2026-11-01T09:00:01Z"
+        },
+        {
+          "name": "Verify production history readers on heap and mixed partitions",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-01T09:00:01Z",
+          "completed_at": "2026-11-01T09:00:08Z"
+        },
+        {
+          "name": "Verify packet details and node pages without Columnar loaded or installed",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-01T09:00:08Z",
+          "completed_at": "2026-11-01T09:00:14Z"
+        },
+        {
+          "name": "Remove the isolated cluster and anonymous data volume",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-01T09:00:14Z",
+          "completed_at": "2026-11-01T09:00:14Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 26,
+          "started_at": "2026-11-01T09:00:14Z",
+          "completed_at": "2026-11-01T09:00:15Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 27,
+          "started_at": "2026-11-01T09:00:15Z",
+          "completed_at": "2026-11-01T09:00:15Z"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 13076942875,
+      "name": "columnar-planner-cost-parity-arm64",
+      "size_in_bytes": 73179,
+      "expired": false
+    },
+    {
+      "id": 13076854539,
+      "name": "columnar-planner-cost-parity-amd64",
+      "size_in_bytes": 73278,
+      "expired": false
+    }
+  ]
+}

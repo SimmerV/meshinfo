@@ -1,0 +1,168 @@
+{
+  "runtime_commit_reported_by_deployment_owner": "61d44bd",
+  "read_only": true,
+  "source_report": "live-august-first-reuse-planning-corrected.json",
+  "preserved_failed_report": "live-august-first-reuse-planning.json",
+  "initial_failure": "The initial measurement compared the node storage messages envelope with the HTTP packets envelope. It stopped after recording page and node; no SQL error or timeout occurred. The corrected runner applies the actual API ID normalization and response envelope; all four baseline hashes now match. The initial report was not overwritten.",
+  "baseline": "live-query-after-point-fix.json",
+  "all_response_hashes_match": true,
+  "geometry": {
+    "stripes": 156390,
+    "rows": 14544219,
+    "min_stripe_rows": 42,
+    "max_stripe_rows": 93
+  },
+  "settings": {
+    "statement_seconds": 5,
+    "lock_ms": 100,
+    "work_mem": "1MB",
+    "parallel_workers": 0,
+    "jit": "off",
+    "default_transaction_read_only": "on"
+  },
+  "cases": [
+    {
+      "name": "month_08_page",
+      "matches_baseline": true,
+      "response_sha256": "7950f9fab4171603ecf240cf2ff2aad7048c4418f47002c4eb0086c3a9a02864",
+      "output_rows_including_sentinel": 51,
+      "first_planning_ms": 886.018,
+      "first_execution_ms": 4.694,
+      "first_planner_used_kib": 193173,
+      "first_planner_allocated_kib": 200474,
+      "warm_planning_ms": 0.081,
+      "warm_execution_ms": 1.983,
+      "warm_planner_used_kib": 13,
+      "warm_planner_allocated_kib": 32,
+      "warm_fetch_ms": [
+        33.83,
+        4.713,
+        7.395
+      ],
+      "warm_fetch_median_ms": 7.395,
+      "prepared_counts": {
+        "generic_plans": 5,
+        "custom_plans": 0
+      },
+      "canonical_scans": [
+        {
+          "node_type": "Index Scan",
+          "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+          "rows": 51.0,
+          "loops": 1
+        }
+      ]
+    },
+    {
+      "name": "month_08_node",
+      "matches_baseline": true,
+      "response_sha256": "5a739df81ebaec0608a1f1a13ee254c3f192e627c52fe30fc3378fb2f1b73a56",
+      "output_rows_including_sentinel": 51,
+      "first_planning_ms": 1494.128,
+      "first_execution_ms": 14.423,
+      "first_planner_used_kib": 335876,
+      "first_planner_allocated_kib": 336923,
+      "warm_planning_ms": 0.025,
+      "warm_execution_ms": 11.939,
+      "warm_planner_used_kib": 9,
+      "warm_planner_allocated_kib": 24,
+      "warm_fetch_ms": [
+        29.585,
+        12.659,
+        12.068
+      ],
+      "warm_fetch_median_ms": 12.659,
+      "prepared_counts": {
+        "generic_plans": 5,
+        "custom_plans": 0
+      },
+      "canonical_scans": [
+        {
+          "node_type": "Index Scan",
+          "index": "meshinfo_archive_stage_acda41a224f4_from_node_id_created_at_idx",
+          "rows": 52.0,
+          "loops": 1
+        },
+        {
+          "node_type": "Index Scan",
+          "index": "meshinfo_archive_stage_acda41a224f445_to_node_id_created_at_idx",
+          "rows": 12.0,
+          "loops": 1
+        }
+      ]
+    },
+    {
+      "name": "month_08_topic",
+      "matches_baseline": true,
+      "response_sha256": "fd6855708243d0b0f9bce5547ee02da033a8944b8b8258a84b76b6f64a5f9c6e",
+      "output_rows_including_sentinel": 51,
+      "first_planning_ms": 623.032,
+      "first_execution_ms": 11.124,
+      "first_planner_used_kib": 193157,
+      "first_planner_allocated_kib": 200474,
+      "warm_planning_ms": 0.074,
+      "warm_execution_ms": 10.038,
+      "warm_planner_used_kib": 13,
+      "warm_planner_allocated_kib": 32,
+      "warm_fetch_ms": [
+        10.63,
+        10.49,
+        11.576
+      ],
+      "warm_fetch_median_ms": 10.63,
+      "prepared_counts": {
+        "generic_plans": 5,
+        "custom_plans": 0
+      },
+      "canonical_scans": [
+        {
+          "node_type": "Index Scan",
+          "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+          "rows": 51.0,
+          "loops": 1
+        }
+      ]
+    },
+    {
+      "name": "month_08_topic_search",
+      "matches_baseline": true,
+      "response_sha256": "fd6855708243d0b0f9bce5547ee02da033a8944b8b8258a84b76b6f64a5f9c6e",
+      "output_rows_including_sentinel": 51,
+      "first_planning_ms": 731.525,
+      "first_execution_ms": 27.796,
+      "first_planner_used_kib": 225754,
+      "first_planner_allocated_kib": 229794,
+      "warm_planning_ms": 0.136,
+      "warm_execution_ms": 24.395,
+      "warm_planner_used_kib": 28,
+      "warm_planner_allocated_kib": 56,
+      "warm_fetch_ms": [
+        27.544,
+        25.911,
+        25.348
+      ],
+      "warm_fetch_median_ms": 25.911,
+      "prepared_counts": {
+        "generic_plans": 5,
+        "custom_plans": 0
+      },
+      "canonical_scans": [
+        {
+          "node_type": "Index Scan",
+          "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+          "rows": 128.0,
+          "loops": 1
+        }
+      ]
+    }
+  ],
+  "qualifications": [
+    "One fresh database connection; every intercepted statement was explicitly prepared anew with zero prior executions. Data caches were not flushed and normal ingestion continued.",
+    "First/reused figures are EXPLAIN planning and execution components, not total ordinary HTTP response latency. Whole instrumented reader timing includes extra EXPLAIN and repeated executions and is unsuitable as an HTTP latency measurement.",
+    "Three repeated payload fetches and two EXPLAIN executions per case; this is a small targeted measurement, not a p95 estimate.",
+    "Planner Memory Used/Allocated is PostgreSQL planner-context KiB, not peak process RSS. Executor work_mem does not bound planner-context memory.",
+    "JIT was disabled before all measurements. Disabling JIT cannot remove these measured first-use planner costs.",
+    "Prepared-plan reuse amortizes planning only within each connection and statement; invalidation can require a new plan. Concurrent fresh planner memory pressure was not measured.",
+    "The node first-plan cost is about1.5s despite indexed bounded execution. Warm indexed execution does not establish identical latency to heap or constant planning memory as archives grow."
+  ]
+}

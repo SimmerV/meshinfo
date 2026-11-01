@@ -1408,3 +1408,42 @@ response hashes without an OOM. The first page took **1,013.425 ms**, so it
 **15.167/14.194 ms**. PostgreSQL's shared buffers were reset, while the host page
 cache remained intact. The [restart report](benchmarks/columnar-production-2026-11-01/live-final-restart-validation.json)
 preserves this failed gate separately from its passing data/identity checks.
+
+### Native planner patch v1 checkpoint, 2026-11-01
+
+Revision `55c2ec3835f679292cc91555eea3d1a434001477` replaced repeated stripe-list
+loading during path costing with one temporary summary per planner-hook call,
+preserving the original cost formulas. Both architectures build the same pinned
+Citus source and checksum-verified patch. The isolated comparison passed **289
+paired cases** with identical estimated plans/costs, results, fixture geometry
+and statistics; both test schemas were removed. A separate **260-test suite**
+and the **4,530-row backup/restore proof** passed on the patched binary. Exact-head
+amd64/arm64 [native CI](https://github.com/SimmerV/meshinfo/actions/runs/41291043803)
+also passed, including the paired comparison, lifecycle and reader gates.
+
+On August's unchanged **156,390 stripes**, with JIT already off, the first-plan
+diagnostic changed as follows. Memory is allocated planner-context KiB, not peak
+RSS or a `work_mem` limit:
+
+| Read | First planning before → v1 | Allocated KiB before → v1 |
+| --- | ---: | ---: |
+| Page | 886.018 → 156.970 ms | 200,474 → 35,161 |
+| Node | 1,494.128 → 270.875 ms | 336,923 → 45,721 |
+| Literal topic | 623.032 → 137.595 ms | 200,474 → 35,161 |
+| Topic/text | 731.525 → 124.869 ms | 229,794 → 35,169 |
+
+All four hashes and indexed row bounds matched. First execution remained slower
+than warm execution in several cases, and the instrumented topic call exceeded
+one second; that instrumented call includes extra EXPLAIN/repeated work and is
+not ordinary HTTP latency. Experimental scan-disable flags were rejected because
+they reduced planning memory by increasing node work and execution time.
+
+Deployment on the same data volume passed the declared restart-page gate:
+**245.396 ms** first request, then **15.126/13.984 ms**, with matching hashes and
+healthy services. The subsequent declared 60-second, two-worker load check still
+**failed**: all **240 responses matched**, but August node/topic p95 values were
+**308.461/263.389 ms**, above 250 ms. The earlier failed restart and load reports
+remain unchanged. [The v1 provenance](benchmarks/columnar-production-2026-11-01/native-planner-patch-provenance.json)
+records those distinct results, source/image identities and corrected harness
+failures. A further native change is being evaluated; v1 does not establish final
+performance acceptance or production readiness.

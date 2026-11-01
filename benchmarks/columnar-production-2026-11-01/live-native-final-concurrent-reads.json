@@ -1,0 +1,1665 @@
+{
+  "workers": 2,
+  "duration_seconds": 60,
+  "maximum_requests_per_second_per_worker": 2,
+  "warm_cache_note": "Each fixed case warmed before concurrency; no OS/PostgreSQL cache flush. New-plan probes are separate. Normal live ingestion continued.",
+  "all_responses_match": true,
+  "indexed_250ms_p95_gate": false,
+  "request_count": 240,
+  "cases": [
+    {
+      "name": "month_07_page",
+      "count": 16,
+      "median_ms": 22.9205,
+      "p95_ms": 26.56,
+      "max_ms": 26.56,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_07_copies",
+      "count": 16,
+      "median_ms": 8.471499999999999,
+      "p95_ms": 129.9,
+      "max_ms": 129.9,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_07_node",
+      "count": 16,
+      "median_ms": 27.9645,
+      "p95_ms": 36.533,
+      "max_ms": 36.533,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_07_topic",
+      "count": 16,
+      "median_ms": 44.419,
+      "p95_ms": 52.006,
+      "max_ms": 52.006,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_07_topic_search",
+      "count": 16,
+      "median_ms": 87.093,
+      "p95_ms": 105.071,
+      "max_ms": 105.071,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_08_page",
+      "count": 16,
+      "median_ms": 23.5325,
+      "p95_ms": 31.504,
+      "max_ms": 31.504,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_08_copies",
+      "count": 16,
+      "median_ms": 9.285499999999999,
+      "p95_ms": 168.587,
+      "max_ms": 168.587,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_08_node",
+      "count": 16,
+      "median_ms": 32.3375,
+      "p95_ms": 308.461,
+      "max_ms": 308.461,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_08_topic",
+      "count": 16,
+      "median_ms": 109.8065,
+      "p95_ms": 263.389,
+      "max_ms": 263.389,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_08_topic_search",
+      "count": 16,
+      "median_ms": 123.356,
+      "p95_ms": 241.813,
+      "max_ms": 241.813,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_09_page",
+      "count": 16,
+      "median_ms": 25.9035,
+      "p95_ms": 31.526,
+      "max_ms": 31.526,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_09_copies",
+      "count": 16,
+      "median_ms": 8.5115,
+      "p95_ms": 14.544,
+      "max_ms": 14.544,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_09_node",
+      "count": 16,
+      "median_ms": 27.608,
+      "p95_ms": 44.011,
+      "max_ms": 44.011,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_09_topic",
+      "count": 16,
+      "median_ms": 24.886,
+      "p95_ms": 29.772,
+      "max_ms": 29.772,
+      "response_checks_passed": true
+    },
+    {
+      "name": "month_09_topic_search",
+      "count": 16,
+      "median_ms": 36.2485,
+      "p95_ms": 194.37,
+      "max_ms": 194.37,
+      "response_checks_passed": true
+    }
+  ],
+  "warmup": [
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 238.236
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 6.275
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 378.095
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 106.477
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 357.296
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 15.673
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.828
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 27.881
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 112.881
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 118.541
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 25.468
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 180.276
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 392.148
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 201.789
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 193.708
+    }
+  ],
+  "observations": [
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 26.56
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 8.24
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 23.613
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 42.321
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 83.829
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 25.449
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 8.783
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 37.361
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 114.071
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 122.331
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 27.202
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.177
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 27.759
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.837
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 39.072
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 21.395
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 8.703
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 29.837
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 41.609
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 84.584
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.351
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 10.265
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 27.937
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 112.949
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 121.999
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 25.524
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.026
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 38.156
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 28.554
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 37.247
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 25.821
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 8.998
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 27.926
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 40.855
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 82.366
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.465
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 8.347
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 28.2
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 101.41
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 121.27
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.982
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 9.553
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 29.512
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.935
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 194.37
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 25.68
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 129.9
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 21.335
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 42.554
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 88.134
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 31.504
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.706
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 27.958
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 107.975
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 125.769
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 31.083
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 10.467
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 32.004
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.535
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 42.547
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.402
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 9.607
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 35.972
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 50.229
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 86.235
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 30.888
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 13.103
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 36.432
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 110.338
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 123.296
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 27.324
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 11.456
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 28.23
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 29.772
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 34.695
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 22.631
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 10.919
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 23.163
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 49.871
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 86.313
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 21.524
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 10.275
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 33.62
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 109.099
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 121.55
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 18.65
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.7
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 30.193
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 27.088
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 33.53
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 18.527
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 6.518
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 35.856
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 42.785
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 82.247
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 17.314
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.68
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 32.311
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 107.464
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 120.944
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 27.373
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.431
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 32.362
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 23.118
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 34.025
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 16.957
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 5.73
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 35.361
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 42.024
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 91.998
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 22.714
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.705
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 27.089
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 103.866
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 123.359
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 31.526
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.945
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.487
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 21.715
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 37.166
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 21.552
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 168.587
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 308.461
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 263.389
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 241.813
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 20.235
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 9.776
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 44.011
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 25.932
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 34.406
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 19.457
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 6.564
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.412
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 48.001
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 91.009
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 17.157
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 9.788
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 42.226
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 106.771
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 123.353
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 21.694
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 10.4
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 21.389
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 23.254
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 37.48
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 22.357
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.228
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 36.533
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 52.006
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 89.83
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 20.82
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 10.796
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 38.577
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 110.475
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 121.618
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 20.94
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 8.263
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 22.671
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.785
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 36.844
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 21.586
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 10.397
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 26.38
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 43.444
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 105.071
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 22.177
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.327
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 278.808
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 108.597
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 131.253
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 27.544
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.806
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 22.997
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 23.94
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 34.868
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 25.842
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 9.258
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 28.003
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 46.79
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 91.283
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 19.547
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 10.435
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 32.364
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 119.374
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 124.022
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 26.283
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 14.544
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 27.457
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 26.52
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 35.385
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 22.227
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 10.707
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 23.886
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 50.017
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 89.09
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 30.127
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 10.646
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 32.138
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 126.655
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 126.395
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 28.31
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 9.757
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 26.997
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 28.193
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 35.871
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.88
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.157
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 26.104
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 45.144
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 82.334
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 26.738
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.421
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 29.866
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 109.275
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 124.012
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.145
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 8.302
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 25.688
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 26.409
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 36.626
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 23.21
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 8.175
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 31.698
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 43.694
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 85.364
+    },
+    {
+      "case": "month_08_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 25.811
+    },
+    {
+      "case": "month_08_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 6.854
+    },
+    {
+      "case": "month_08_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 31.503
+    },
+    {
+      "case": "month_08_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 111.273
+    },
+    {
+      "case": "month_08_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 133.761
+    },
+    {
+      "case": "month_09_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 17.457
+    },
+    {
+      "case": "month_09_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 8.721
+    },
+    {
+      "case": "month_09_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 21.82
+    },
+    {
+      "case": "month_09_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 23.067
+    },
+    {
+      "case": "month_09_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 34.58
+    },
+    {
+      "case": "month_07_page",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 24.212
+    },
+    {
+      "case": "month_07_copies",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 7.117
+    },
+    {
+      "case": "month_07_node",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 32.8
+    },
+    {
+      "case": "month_07_topic",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 45.727
+    },
+    {
+      "case": "month_07_topic_search",
+      "status": 200,
+      "matches_baseline": true,
+      "elapsed_ms": 87.873
+    }
+  ]
+}

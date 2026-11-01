@@ -440,3 +440,91 @@ Opaque infrastructure identities and fixed in-container mount destinations are
 retained to substantiate continuity; no source messages or credentials are
 included. This additional failed result does not replace or relax either prior
 latency gate.
+
+## Native planner patch v1 and retained failed load gate (2026-11-01)
+
+The August diagnostic explains why JIT and prepared-plan reuse alone did not
+finish the live acceptance work. On 156,390 stripes and 14,544,219 rows, a fresh
+page/node plan allocated 200,474/336,923 KiB and took 886.018/1,494.128 ms even
+with JIT off. These are PostgreSQL planner-context allocations, not RSS; executor
+`work_mem` does not bound them. Generic reuse amortizes cost within a connection
+and statement, but new connections and invalidation still need fresh plans.
+
+`live-august-first-reuse-planning-summary.json` and the corrected full report
+preserve all four matching response hashes. The earlier valid but partial
+`live-august-first-reuse-planning.json` remains unchanged: the initial runner
+compared the storage node result's `messages` envelope with the HTTP `packets`
+envelope, then stopped. Correct API normalization and envelope handling resolved
+that harness mismatch; it was not a SQL/data failure.
+
+The rejected scan-flag experiments are preserved in
+`live-august-planner-seq-off.json`, `live-august-planner-seq-index-off.json` and
+their summary. All eight response hashes matched, and connection settings were
+restored. The seq-off report still has `all_checks_passed=false` because its
+structural checker did not understand varchar-to-text casts; it was not rewritten.
+The later cast-aware both-off check passed, but that variant increased executed
+sender rows from 52 to 912 and warm node execution from 12.263 to 150.430 ms.
+Lower planner allocation did not justify changing the chosen execution strategy,
+so those flags were not deployed.
+
+Revision `55c2ec3835f679292cc91555eea3d1a434001477` instead patches the pinned
+Citus 14.1.0 native code to reuse a temporary hook-local stripe summary while
+preserving cost formulas. `planner-native-parity-v3.json` records **289 passing
+paired comparisons**: 17 shapes across eight scan-flag combinations and two plan
+modes, plus 17 transaction-visibility cases. Initial Columnar fixtures contain
+8,180 rows in 121 stripes per server, covering empty/single/many/evolving-column
+tables, aliases, self-joins, multiple indexes and scalar arrays. Fixture geometry
+and statistics match; estimated plan trees/costs and ordered result hashes match;
+both owned schemas were removed. Its retained plan expressions contain only
+synthetic test values, never production request values or packets. Timings are
+descriptive, and finite fixture parity is not a universal semantic proof.
+
+Two earlier native-harness attempts remain private and are not counted as passes:
+v1 called an unavailable setup function and ran zero comparison cases; v2 reached
+the comparison/cleanup phase but failed to serialize a bytes-valued catalog
+`relkind`, leaving invalid JSON. Supported ALTER TABLE options, explicit text
+casting and robust report serialization corrected the harness. Only the complete
+valid v3 rerun supplies the 289-case proof. Provenance records the private failed
+files' hashes without publishing the truncated file as a valid report.
+
+The separate `isolated-patched-native-regressions.txt` run passed **260 tests in
+106.66 seconds**. `patched-native-backup-restore.json` passed the actual
+4,530-row/two-Columnar-relation/eight-chunk-group restore checks, including local
+and remote receiver, a large COPY row, geometry, stage guards, active statistics
+reset with coincident OIDs, and rollback. Native amd64 and arm64
+[CI run 41291043803](https://github.com/SimmerV/meshinfo/actions/runs/41291043803)
+passed for the exact revision, including the new paired comparison and all prior
+backup/lifecycle/mixed/plain-reader steps. Both architectures uploaded their
+comparison artifact. Remote API timestamps are internally inconsistent and are
+preserved verbatim; exact SHA and job/step conclusions establish status, not
+remote timestamp ordering.
+
+The deployed image is identified in `native-planner-patch-provenance.json`, along
+with the exact PostgreSQL/source/patch hashes and build files. The actual
+`live-native-planner-deployment.json` witness preserves the same data volume and
+extension version, healthy services and matching hashes. Its restart-page samples
+were **245.396/15.126/13.984 ms**, passing the unchanged 1,000 ms first-page gate.
+The earlier 1,013.425 ms failed report remains unchanged.
+
+`live-august-native-planner-fixed.json` and its summary retain the subsequent
+same-geometry diagnostic:
+
+| Read | First planning before → v1 (ms) | Allocated planner KiB before → v1 | v1 warm execution (ms) |
+| --- | ---: | ---: | ---: |
+| Page | 886.018 → 156.970 | 200,474 → 35,161 | 2.296 |
+| Node | 1,494.128 → 270.875 | 336,923 → 45,721 | 11.658 |
+| Literal topic | 623.032 → 137.595 | 200,474 → 35,161 | 10.039 |
+| Topic/text | 731.525 → 124.869 | 229,794 → 35,169 | 25.453 |
+
+All four hashes and bounded index paths agree. The first node/topic/topic-text
+executions remained 121.478/54.176/115.350 ms, and the instrumented topic call
+took 1,018.807 ms. That call includes extra EXPLAIN and repeated fetches and is
+not an HTTP measurement. The single-session diagnostic did not measure concurrent
+fresh-planner memory or cold OS caches.
+
+Finally, `live-native-final-concurrent-reads.json` preserves the unchanged declared
+60-second/two-worker live test: **240/240 responses matched**, but
+`indexed_250ms_p95_gate` remains **false**. August node/topic p95 values were
+**308.461/263.389 ms**, with 16 observations per case. The successful restart gate
+and lower medians do not override this failed load gate. Further native work is
+separate; this v1 checkpoint makes no final readiness claim.

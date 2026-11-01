@@ -1,0 +1,211 @@
+{
+  "format_version": 1,
+  "recorded_date_utc": "2026-11-01",
+  "implementation_revision": "55c2ec3835f679292cc91555eea3d1a434001477",
+  "deployment_local_started_utc": "2026-11-01T08:58:21.303408+00:00",
+  "deployment_local_finished_utc": "2026-11-01T08:58:36.398326+00:00",
+  "runtime_image_id": "sha256:dc7616e6ebe4f91c86cd7e85dd9e5182d321507600b9404f13a9a9aad31819c6",
+  "upstream_inputs": {
+    "postgres_manifest": "sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6",
+    "citus_release": "v14.1.0",
+    "citus_tarball_sha256": "e174ed00efba74aaf5a9da87f770f6a7e11274066cce8449d804bc6b17df6ff8",
+    "patch_version": "planner-costing-v1",
+    "patch_sha256": "aed027459fac59a1333ace33d181c3e323bf5917293bfeded1b023fc292ea6b9",
+    "source_build_targets": {
+      "patched": "final",
+      "baseline": "unpatched"
+    },
+    "build_jobs_default": 1,
+    "runtime_extension_version": "14.1-1"
+  },
+  "frozen_source_files": {
+    "Dockerfile.postgres-columnar": {
+      "bytes": 3728,
+      "sha256": "bbfdd3c2f6f09d79f94e223383b626f9529e21ce55ded8e51aca95a1d5c1e703"
+    },
+    ".github/workflows/columnar.yml": {
+      "bytes": 12070,
+      "sha256": "5fca83b4f72f6f0bdda917075e360418ba9c1c64487a896600adde1e9ee92c44"
+    },
+    "patches/citus-14.1.0-planner-costing.patch": {
+      "bytes": 14506,
+      "sha256": "aed027459fac59a1333ace33d181c3e323bf5917293bfeded1b023fc292ea6b9"
+    },
+    "scripts/verify_columnar_planner_costs.py": {
+      "bytes": 21986,
+      "sha256": "17cf0e62ece6766356f108b70dffafaa7f8a5e7301d101ec5077c017b55e21fb"
+    },
+    "tests/test_columnar_planner_costs.py": {
+      "bytes": 6292,
+      "sha256": "77c4ec86368d7c58cf64b01eb4a683afde84df94e5d3d97378c8af9a5ee5a2b9"
+    },
+    "tests/test_columnar_planner_costs_integration.py": {
+      "bytes": 1100,
+      "sha256": "185417254c2e2a215ff8f1eccb76e403ce92210f126a81859f458c3fb77e7ebe"
+    }
+  },
+  "native_parity": {
+    "artifact": "planner-native-parity-v3.json",
+    "paired_cases": 289,
+    "all_exact_plan_cost_and_response_comparisons_passed": true,
+    "initial_columnar_rows_per_server": 8180,
+    "initial_columnar_stripes_per_server": 121,
+    "synthetic_only": true,
+    "fixture_statistics_and_geometry_equal": true,
+    "both_owned_schemas_removed": true,
+    "timings_are_descriptive_only": true,
+    "scope": "17query shapes across8custom/sequence/index flag combinations and2plan modes, plus17transaction visibility comparisons. Empty/single/many/evolving-column fixtures, aliases/selfjoins/multiple indexes/scalar arrays and nested transaction visibility. Finite synthetic parity is not a universal semantic proof or a large-history performance measurement."
+  },
+  "harness_failure_history": [
+    {
+      "private_report_name": "planner-native-parity.json",
+      "bytes": 1025,
+      "sha256": "1d8eb2307f9a2d30ef1d0c64f786a159134ad611981664992e03fda022b67b94",
+      "valid_json": true,
+      "reason": "Fixture setup called an unavailable function. Zero comparison cases; replaced with supported ALTER TABLE options before rerunning.",
+      "published_as_valid_result": false
+    },
+    {
+      "private_report_name": "planner-native-parity-v2.json",
+      "bytes": 1267579,
+      "sha256": "50fa841f005935578f3e930bc07927a846811f1cac39f4f2698a45d81cfd8f37",
+      "valid_json": false,
+      "reason": "The comparison run reached cleanup, then JSON serialization encountered a bytes-valued relkind. Its truncated file is invalid JSON and is not accepted as passing evidence. Explicit text casting and failure serialization were fixed before rerunning.",
+      "published_as_valid_result": false
+    }
+  ],
+  "other_harness_corrections": [
+    "The initial live August report compared node storage messages with the HTTP packets envelope. Correct API normalization/envelope made all four hashes agree; the initial report remains unchanged.",
+    "The seq_off experiment retains a failed structural-check flag caused by a checker that did not recognize varchar-to-text casts. Its report is not rewritten; the later cast-aware both-off check passed but its slower node execution made the flag combination unsuitable."
+  ],
+  "rejected_planner_flags": "Both-off reduces planner allocation but increases node sender work from52 to912rows and warm node execution from12.263 to150.430ms in measured variants. It was not deployed.",
+  "validation_runs": [
+    {
+      "artifact": "isolated-patched-native-regressions.txt",
+      "passed": 260,
+      "duration_seconds": 106.66,
+      "scope": "Isolated PostgreSQL validation suite on patched binary; separate from paired289 comparisons."
+    },
+    {
+      "artifact": "patched-native-backup-restore.json",
+      "status": "passed",
+      "rows": 4530,
+      "columnar_relations": 2,
+      "chunk_groups": 8,
+      "scope": "Actual local/remote-receiver logical backup/restore, exact options/geometry, large COPY row, stage guards, coincident OID analysis reset and rollback."
+    }
+  ],
+  "first_page_gate": {
+    "limit_ms": 1000,
+    "old_unpatched_report": "live-final-restart-validation.json",
+    "old_first_page_ms": 1013.425,
+    "old_gate_passed": false,
+    "patched_report": "live-native-planner-deployment.json",
+    "patched_first_page_ms": 245.396,
+    "patched_gate_passed": true,
+    "scope": "PostgreSQL recreated with patched binary on the same data volume; shared buffers reset, host page cache untouched. Normal backend startup before first measured historical request. Both original reports remain unchanged."
+  },
+  "native_arm64_exact_head_validation": "passed; amd64 and arm64 build, paired parity, backup/lifecycle, mixed and plain reader steps all succeeded in run41291043803",
+  "post_patch_large_history_planning_and_load_acceptance": "Four August hashes/paths agree and first-plan memory/time improved, but the declared60-second two-worker HTTP load gate FAILED:240/240responses match; August node308.461ms/topic263.389ms exceed250ms p95. No production-readiness claim. A subsequent native revision is separate work.",
+  "production_readiness_claimed": false,
+  "privacy_audit": "Live reports omit production values and SQL predicates; retained condition_structure strings contain parameters only. Native parity is entirely synthetic and retains generated predicates/expressions needed for exact plan proof. Image/volume identities substantiate deployment continuity. No production payloads, request values or credentials included.",
+  "artifacts": {
+    "live-august-first-reuse-planning.json": {
+      "bytes": 69485,
+      "sha256": "d281d4737c94c7d9b8fd4d919206682641767b9219496cb25abb656ca77b1cb4",
+      "source_file_modified_utc": "2026-11-01T08:30:29.689674+00:00"
+    },
+    "live-august-first-reuse-planning-corrected.json": {
+      "bytes": 163573,
+      "sha256": "78dc24acaded31d2caff15ae9644877eb3ebf2c6b80c4201b0bce0bc960f4afd",
+      "source_file_modified_utc": "2026-11-01T08:33:46.363799+00:00"
+    },
+    "live-august-first-reuse-planning-summary.json": {
+      "bytes": 6159,
+      "sha256": "b90cea593a1da8335cefd2549b296fb9f929c2555ba7e0a72cc02c4a5ff73484",
+      "source_file_modified_utc": "2026-11-01T08:34:58.959704+00:00"
+    },
+    "live-august-planner-seq-off.json": {
+      "bytes": 172999,
+      "sha256": "bf14698363962d5dfd6f0f08bc2477dc15b48fbc7fb4f29a9e290aab5a2189a4",
+      "source_file_modified_utc": "2026-11-01T08:41:45.749474+00:00"
+    },
+    "live-august-planner-seq-index-off.json": {
+      "bytes": 236793,
+      "sha256": "fa5cc5a2fc64e7d154545fe760dd5ef118f44f24b20242ed1c4ea270a71baf72",
+      "source_file_modified_utc": "2026-11-01T08:42:33.890841+00:00"
+    },
+    "live-august-planner-variants-summary.json": {
+      "bytes": 13060,
+      "sha256": "2321719b8d97a51ee808d30a0d79165ace0b11a7c7773e9d54512c4d52744494",
+      "source_file_modified_utc": "2026-11-01T08:52:08.074448+00:00"
+    },
+    "planner-native-parity-v3.json": {
+      "bytes": 1279974,
+      "sha256": "e5876969a611e7aa395482b1627d416b79fdd1bfb9a7c8c91c9d0c6f28e46008",
+      "source_file_modified_utc": "2026-11-01T08:54:19.102270+00:00"
+    },
+    "isolated-patched-native-regressions.txt": {
+      "bytes": 352,
+      "sha256": "4ce14bb97d829d80ba6792ac388fcbcc156e428ed1fb46949ab1f267d44629a1",
+      "source_file_modified_utc": "2026-11-01T08:56:57.820846+00:00"
+    },
+    "patched-native-backup-restore.json": {
+      "bytes": 486,
+      "sha256": "535368f96c47afeee2a5115ab28430bb82e4950b807627991592d434216c2f8b",
+      "source_file_modified_utc": "2026-11-01T08:57:43.023141+00:00"
+    },
+    "live-native-planner-deployment.json": {
+      "bytes": 3989,
+      "sha256": "6eb90fd48d347b8da48c4d50b2a8d1d68b30c8935d2329505cd00e1feab96c9b",
+      "source_file_modified_utc": "2026-11-01T08:58:36.397666+00:00"
+    },
+    "live-august-native-planner-fixed.json": {
+      "bytes": 163624,
+      "sha256": "9d4a8b71ce54713aa43fcfe5a033f596efcc957d316f086b3489bbddba182c75",
+      "source_file_modified_utc": "2026-11-01T08:59:42.303542+00:00"
+    },
+    "live-august-native-planner-fixed-summary.json": {
+      "bytes": 10336,
+      "sha256": "9838a7d456c429b4a018b9b19c45671dfcc87fb7a263898f6b8badbe5c8edfe0",
+      "source_file_modified_utc": "2026-11-01T09:01:14.745166+00:00"
+    },
+    "native-ci-55c2ec3.json": {
+      "bytes": 10093,
+      "sha256": "d39008e98e71f72f885624790375ae8c05e7c56428d1ea17e99fe4ef943afa69"
+    },
+    "live-native-final-concurrent-reads.json": {
+      "bytes": 35252,
+      "sha256": "2f536b46d06645dfcee93e99953a9de8eb311835b45f59cdb8ae8bf286508832",
+      "source_file_modified_utc": "2026-11-01T09:02:03.108535+00:00"
+    }
+  },
+  "native_ci": {
+    "run_id": 41291043803,
+    "head_sha": "55c2ec3835f679292cc91555eea3d1a434001477",
+    "conclusion": "success",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "required_comparison_and_validation_steps_passed": true,
+    "timestamp_note": "Remote API timestamps are internally inconsistent: run created_at is later than updated_at and some timestamps are approximately one hour ahead of the local clock. Preserved verbatim; exact SHA and completed job/step conclusions establish status. Do not infer local deployment chronology or elapsed time from these remote timestamps."
+  },
+  "post_patch_planning": {
+    "artifact": "live-august-native-planner-fixed-summary.json",
+    "hash_parity_cases": 4,
+    "same_geometry": true,
+    "experimental_scan_flags_used": false,
+    "memory_is_planner_context_not_peak_rss": true,
+    "single_session_only": true,
+    "concurrent_fresh_planner_memory_measured": false
+  },
+  "live_concurrency_gate": {
+    "artifact": "live-native-final-concurrent-reads.json",
+    "requests": 240,
+    "all_response_checks_passed": true,
+    "indexed_250ms_p95_gate": false,
+    "maximum_node_p95_ms": 308.461,
+    "maximum_topic_p95_ms": 263.389
+  }
+}

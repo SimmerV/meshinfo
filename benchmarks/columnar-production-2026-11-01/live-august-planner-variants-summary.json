@@ -1,0 +1,358 @@
+{
+  "read_only": true,
+  "fresh_experimental_statements": 8,
+  "production_changes": false,
+  "experiments": [
+    {
+      "file": "live-august-first-reuse-planning-corrected.json",
+      "all_checks_passed": true,
+      "cases": [
+        {
+          "name": "month_08_page",
+          "response_equal": true,
+          "first_planning_ms": 886.018,
+          "first_execution_ms": 4.694,
+          "first_allocated_kib": 200474,
+          "warm_execution_ms": 1.983,
+          "warm_fetch_ms": [
+            33.83,
+            4.713,
+            7.395
+          ],
+          "canonical_index_checks": null,
+          "settings_restored": null,
+          "session_restored": null
+        },
+        {
+          "name": "month_08_node",
+          "response_equal": true,
+          "first_planning_ms": 1494.128,
+          "first_execution_ms": 14.423,
+          "first_allocated_kib": 336923,
+          "warm_execution_ms": 11.939,
+          "warm_fetch_ms": [
+            29.585,
+            12.659,
+            12.068
+          ],
+          "canonical_index_checks": null,
+          "settings_restored": null,
+          "session_restored": null
+        },
+        {
+          "name": "month_08_topic",
+          "response_equal": true,
+          "first_planning_ms": 623.032,
+          "first_execution_ms": 11.124,
+          "first_allocated_kib": 200474,
+          "warm_execution_ms": 10.038,
+          "warm_fetch_ms": [
+            10.63,
+            10.49,
+            11.576
+          ],
+          "canonical_index_checks": null,
+          "settings_restored": null,
+          "session_restored": null
+        },
+        {
+          "name": "month_08_topic_search",
+          "response_equal": true,
+          "first_planning_ms": 731.525,
+          "first_execution_ms": 27.796,
+          "first_allocated_kib": 229794,
+          "warm_execution_ms": 24.395,
+          "warm_fetch_ms": [
+            27.544,
+            25.911,
+            25.348
+          ],
+          "canonical_index_checks": null,
+          "settings_restored": null,
+          "session_restored": null
+        }
+      ]
+    },
+    {
+      "file": "live-august-planner-seq-off.json",
+      "all_checks_passed": false,
+      "cases": [
+        {
+          "name": "month_08_page",
+          "response_equal": true,
+          "first_planning_ms": 726.965,
+          "first_execution_ms": 2.847,
+          "first_allocated_kib": 162970,
+          "warm_execution_ms": 2.22,
+          "warm_fetch_ms": [
+            26.356,
+            2.382,
+            2.434
+          ],
+          "canonical_index_checks": [
+            {
+              "relation": "mqtt_messages_2026_08",
+              "node_type": "Index Scan",
+              "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+              "rows": 51.0,
+              "loops": 1,
+              "condition_contains_parameter": true,
+              "condition_contains_id_array": true,
+              "condition_contains_sender": false,
+              "condition_contains_recipient": false,
+              "condition_contains_created_at": true
+            }
+          ],
+          "settings_restored": true,
+          "session_restored": true
+        },
+        {
+          "name": "month_08_node",
+          "response_equal": true,
+          "first_planning_ms": 878.991,
+          "first_execution_ms": 74.763,
+          "first_allocated_kib": 211482,
+          "warm_execution_ms": 12.263,
+          "warm_fetch_ms": [
+            23.0,
+            12.344,
+            13.261
+          ],
+          "canonical_index_checks": [
+            {
+              "relation": "mqtt_messages_2026_08",
+              "node_type": "Index Scan",
+              "index": "meshinfo_archive_stage_acda41a224f4_from_node_id_created_at_idx",
+              "rows": 52.0,
+              "loops": 1,
+              "condition_contains_parameter": true,
+              "condition_contains_id_array": false,
+              "condition_contains_sender": false,
+              "condition_contains_recipient": false,
+              "condition_contains_created_at": true
+            },
+            {
+              "relation": "mqtt_messages_2026_08",
+              "node_type": "Index Scan",
+              "index": "meshinfo_archive_stage_acda41a224f445_to_node_id_created_at_idx",
+              "rows": 12.0,
+              "loops": 1,
+              "condition_contains_parameter": true,
+              "condition_contains_id_array": false,
+              "condition_contains_sender": false,
+              "condition_contains_recipient": false,
+              "condition_contains_created_at": true
+            }
+          ],
+          "settings_restored": true,
+          "session_restored": true
+        },
+        {
+          "name": "month_08_topic",
+          "response_equal": true,
+          "first_planning_ms": 549.535,
+          "first_execution_ms": 36.148,
+          "first_allocated_kib": 162970,
+          "warm_execution_ms": 9.796,
+          "warm_fetch_ms": [
+            13.03,
+            10.358,
+            10.573
+          ],
+          "canonical_index_checks": [
+            {
+              "relation": "mqtt_messages_2026_08",
+              "node_type": "Index Scan",
+              "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+              "rows": 51.0,
+              "loops": 1,
+              "condition_contains_parameter": true,
+              "condition_contains_id_array": true,
+              "condition_contains_sender": false,
+              "condition_contains_recipient": false,
+              "condition_contains_created_at": true
+            }
+          ],
+          "settings_restored": true,
+          "session_restored": true
+        },
+        {
+          "name": "month_08_topic_search",
+          "response_equal": true,
+          "first_planning_ms": 528.325,
+          "first_execution_ms": 107.635,
+          "first_allocated_kib": 162978,
+          "warm_execution_ms": 24.825,
+          "warm_fetch_ms": [
+            28.042,
+            25.517,
+            26.832
+          ],
+          "canonical_index_checks": [
+            {
+              "relation": "mqtt_messages_2026_08",
+              "node_type": "Index Scan",
+              "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+              "rows": 128.0,
+              "loops": 1,
+              "condition_contains_parameter": true,
+              "condition_contains_id_array": true,
+              "condition_contains_sender": false,
+              "condition_contains_recipient": false,
+              "condition_contains_created_at": true
+            }
+          ],
+          "settings_restored": true,
+          "session_restored": true
+        }
+      ]
+    },
+    {
+      "file": "live-august-planner-seq-index-off.json",
+      "all_checks_passed": true,
+      "cases": [
+        {
+          "name": "month_08_page",
+          "response_equal": true,
+          "first_planning_ms": 79.703,
+          "first_execution_ms": 5.3,
+          "first_allocated_kib": 18777,
+          "warm_execution_ms": 2.18,
+          "warm_fetch_ms": [
+            5.108,
+            2.616,
+            2.631
+          ],
+          "canonical_index_checks": [
+            {
+              "relation": "mqtt_messages_2026_08",
+              "node_type": "Index Scan",
+              "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+              "rows": 51.0,
+              "loops": 1,
+              "condition_contains_parameter": true,
+              "condition_contains_id_array": true,
+              "condition_contains_sender": false,
+              "condition_contains_recipient": false,
+              "condition_contains_created_at": true,
+              "condition_structure": "((id = ANY ($1)) AND (created_at >= $3) AND (created_at <= $4))"
+            }
+          ],
+          "settings_restored": true,
+          "session_restored": true
+        },
+        {
+          "name": "month_08_node",
+          "response_equal": true,
+          "first_planning_ms": 142.621,
+          "first_execution_ms": 871.231,
+          "first_allocated_kib": 37529,
+          "warm_execution_ms": 150.43,
+          "warm_fetch_ms": [
+            160.097,
+            152.592,
+            150.172
+          ],
+          "canonical_index_checks": [
+            {
+              "relation": "mqtt_messages_2026_08",
+              "node_type": "Index Scan",
+              "index": "meshinfo_archive_stage_acda41a224f4_from_node_id_created_at_idx",
+              "rows": 912.0,
+              "loops": 1,
+              "condition_contains_parameter": true,
+              "condition_contains_id_array": false,
+              "condition_contains_sender": true,
+              "condition_contains_recipient": false,
+              "condition_contains_created_at": true,
+              "condition_structure": "(((from_node_id)::text = $1) AND (created_at >= $2) AND (created_at <= $3))"
+            },
+            {
+              "relation": "mqtt_messages_2026_08",
+              "node_type": "Index Scan",
+              "index": "meshinfo_archive_stage_acda41a224f445_to_node_id_created_at_idx",
+              "rows": 12.0,
+              "loops": 1,
+              "condition_contains_parameter": true,
+              "condition_contains_id_array": false,
+              "condition_contains_sender": false,
+              "condition_contains_recipient": true,
+              "condition_contains_created_at": true,
+              "condition_structure": "(((to_node_id)::text = $1) AND (created_at >= $2) AND (created_at <= $3))"
+            }
+          ],
+          "settings_restored": true,
+          "session_restored": true
+        },
+        {
+          "name": "month_08_topic",
+          "response_equal": true,
+          "first_planning_ms": 55.848,
+          "first_execution_ms": 19.532,
+          "first_allocated_kib": 18777,
+          "warm_execution_ms": 9.915,
+          "warm_fetch_ms": [
+            13.376,
+            11.068,
+            10.398
+          ],
+          "canonical_index_checks": [
+            {
+              "relation": "mqtt_messages_2026_08",
+              "node_type": "Index Scan",
+              "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+              "rows": 51.0,
+              "loops": 1,
+              "condition_contains_parameter": true,
+              "condition_contains_id_array": true,
+              "condition_contains_sender": false,
+              "condition_contains_recipient": false,
+              "condition_contains_created_at": true,
+              "condition_structure": "((id = ANY ($1)) AND (created_at >= $3) AND (created_at <= $4))"
+            }
+          ],
+          "settings_restored": true,
+          "session_restored": true
+        },
+        {
+          "name": "month_08_topic_search",
+          "response_equal": true,
+          "first_planning_ms": 56.99,
+          "first_execution_ms": 26.536,
+          "first_allocated_kib": 18785,
+          "warm_execution_ms": 26.955,
+          "warm_fetch_ms": [
+            27.459,
+            27.045,
+            27.782
+          ],
+          "canonical_index_checks": [
+            {
+              "relation": "mqtt_messages_2026_08",
+              "node_type": "Index Scan",
+              "index": "meshinfo_archive_stage_acda41a224f44592abee9610_pkey",
+              "rows": 128.0,
+              "loops": 1,
+              "condition_contains_parameter": true,
+              "condition_contains_id_array": true,
+              "condition_contains_sender": false,
+              "condition_contains_recipient": false,
+              "condition_contains_created_at": true,
+              "condition_structure": "((id = ANY ($6)) AND (created_at >= $3) AND (created_at <= $4) AND (created_at >= $8) AND (created_at <= $9))"
+            }
+          ],
+          "settings_restored": true,
+          "session_restored": true
+        }
+      ]
+    }
+  ],
+  "conclusion": "Do not apply both-disabled planner flags generally: lower planning memory changed ordered node planning and increased executed sender rows from52 to912, with warm execution12.3ms to150.4ms.",
+  "qualifications": [
+    "All eight experimental response hashes match the successful HTTP baseline and all scoped/session settings were restored.",
+    "The seq_off report remains all_checks_passed=false: its original selective-node condition parser did not accept PostgreSQL varchar-to-text casts. No report was rewritten and no extra fresh statement was used.",
+    "The final both-off report retains sanitized Index Cond structures and passes the corrected cast-aware check. It proves those selective indexes, but not equally bounded node execution.",
+    "Both-off changes PostgreSQL18 disabled-path comparisons and ordinary heap bitmap/index-only choices. These four August cases cannot establish safety for other cardinalities or hot/uncovered branches.",
+    "No cache flush; first costs are newly prepared generic-plan components. Timings are small-sample descriptive results, not p95. Planner memory is allocated context KiB, not RSS."
+  ]
+}
