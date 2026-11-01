@@ -224,10 +224,11 @@ async def _close_stdin(proc: asyncio.subprocess.Process):
             pass
 
 
-def _dump_command(pg: Mapping[str, Any], prefix: Sequence[str]) -> tuple[str, ...]:
+def _dump_command(pg: Mapping[str, Any], prefix: Sequence[str], *, snapshot: str | None = None) -> tuple[str, ...]:
     return (
         *prefix,
         "pg_dump", "--format=custom", "--no-owner", "--no-privileges",
+        *(("--snapshot", snapshot) if snapshot is not None else ()),
         "--host", str(pg.get("host", "postgres")),
         "--port", str(pg.get("port", 5432)),
         "--username", str(pg.get("username", "postgres")),
@@ -329,8 +330,11 @@ async def create_snapshot(
     transport: asyncio.subprocess.Process | None = None
     background: list[asyncio.Task] = []
     target: SnapshotTarget | None = None
+    from storage.columnar_backup import SnapshotMetadata
+    source = SnapshotMetadata(pg, pg_command_prefix, environment)
     try:
         async with asyncio.timeout(policy.timeout_seconds):
+            await source.start()
             if policy.mode == "local":
                 target = SnapshotTarget(policy.directory, filename, policy.min_free_bytes, owner=owner_id)
                 await _filesystem(target.__enter__)
@@ -341,10 +345,10 @@ async def create_snapshot(
                     stderr=asyncio.subprocess.PIPE,
                 )
                 remote_errors = asyncio.create_task(_tail(transport.stderr))
-                remote_output = asyncio.create_task(_bounded_output(transport.stdout))
+                remote_output = asyncio.create_task(_bounded_output(transport.stdout, backup_remote.MANIFEST_BYTES))
                 background.extend([remote_errors, remote_output])
             dump = await asyncio.create_subprocess_exec(
-                *_dump_command(pg, pg_command_prefix), env=environment,
+                *_dump_command(pg, pg_command_prefix, snapshot=source.snapshot), env=environment,
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
@@ -367,10 +371,11 @@ async def create_snapshot(
                 raise BackupError(f"pg_dump failed (exit {code}): {detail}")
             if size == 0:
                 raise BackupError("pg_dump produced an empty snapshot")
+            await source.close()
             if target is not None:
                 await _filesystem(target.seal)
                 await _verify_local(target, pg_command_prefix)
-                metadata = await _filesystem(target.publish)
+                metadata = await _filesystem(target.publish, restore_metadata=source.metadata)
                 try:
                     metadata["pruned"] = await _filesystem(backup_remote.prune_snapshots, policy.directory, policy.keep_days, owner=owner_id)
                 except OSError as exc:
@@ -379,7 +384,9 @@ async def create_snapshot(
                 return _result(str(target.path), metadata)
 
             # Only a SUCCESSFUL pg_dump permits the receiver to verify/publish.
-            commit = json.dumps({"sha256": digest.hexdigest(), "bytes": size}).encode()
+            commit = json.dumps({"sha256": digest.hexdigest(), "bytes": size,
+                "restore_metadata": source.metadata,
+                "restore_metadata_sha256": backup_remote.restore_metadata_checksum(source.metadata)}).encode()
             transport.stdin.write(struct.pack("!II", 0, len(commit)) + commit)
             await transport.stdin.drain()
             await _close_stdin(transport)
@@ -391,6 +398,7 @@ async def create_snapshot(
                 metadata = json.loads(await remote_output)
                 if (
                     metadata.get("schema") != 1
+                    or backup_remote.validate_manifest_restore_metadata(metadata) != source.metadata
                     or metadata.get("owner") != owner_id
                     or metadata.get("filename") != filename
                     or metadata.get("sha256") != digest.hexdigest()
@@ -418,6 +426,7 @@ async def create_snapshot(
                 except asyncio.TimeoutError:
                     pass
         await _stop(dump, drain_stdout=True)
+        await source.close()
         await _stop(transport)
         if background:
             await asyncio.gather(*background, return_exceptions=True)

@@ -1,0 +1,29 @@
+# Optional overlay; the default PostgreSQL image remains unchanged.
+# docker compose -f docker-compose.yml -f docker-compose.columnar.yml build postgres
+# docker compose -f docker-compose.yml -f docker-compose.columnar.yml up -d postgres
+services:
+  postgres:
+    image: meshinfo-postgres-columnar:18.6-citus14.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres-columnar
+    # A command override is needed for existing data volumes whose original
+    # postgresql.conf predates the image's shared-preload default.
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_preload_libraries=citus_columnar"
+      - "-c"
+      - "shared_buffers=${PG_SHARED_BUFFERS:-256MB}"
+      - "-c"
+      - "work_mem=${PG_WORK_MEM:-8MB}"
+      - "-c"
+      - "maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-64MB}"
+      - "-c"
+      - "effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1GB}"
+
+  meshinfo:
+    volumes:
+      # Read-only statvfs probe of the actual database volume, without a Docker
+      # socket or write access to PostgreSQL files. Match archive.database_filesystem.
+      - meshinfo_pgdata:/var/lib/meshinfo-postgres-space:ro

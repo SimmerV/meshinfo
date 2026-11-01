@@ -389,3 +389,126 @@ For issues or questions:
 - Open an issue on GitHub
 - Join #meshinfo on SacValleyMesh Discord
 - Review application logs for detailed error messages
+
+## Optional Columnar image, backup metadata and restore
+
+`Dockerfile.postgres-columnar` supplies PostgreSQL **18.6** with the standalone
+`citus_columnar` extension from Citus **14.1.0** (SQL extension version
+`14.1-1`). It does not configure a distributed Citus cluster. The normal Compose
+file keeps its existing PostgreSQL image; deployments opt into the additional
+image with `docker-compose.columnar.yml`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.columnar.yml build postgres
+docker compose -f docker-compose.yml -f docker-compose.columnar.yml up -d postgres meshinfo
+```
+
+Include any site-specific Compose files explicitly, before the Columnar overlay,
+when using this command. The overlay preserves the PostgreSQL data volume and
+memory tuning variables, and sets `shared_preload_libraries=citus_columnar` for
+both new and existing volumes. Archive policy remains a separate opt-in; merely
+installing the extension does not convert or delete history. If other extensions
+already need preloading, include them in that setting as well.
+
+The backend also receives the existing database volume **read-only** at
+`/var/lib/meshinfo-postgres-space`. Set `storage.archive.database_filesystem` to
+that path so the archive scheduler probes the database's actual filesystem.
+This mount needs no Docker socket and grants no write access to database files.
+A host directory unrelated to PostgreSQL does not establish migration headroom;
+custom tablespaces need their own explicit support and are refused by the archive
+implementation.
+
+The image pins the official multi-architecture PostgreSQL manifest
+`sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6`.
+Its architecture-specific Citus inputs are:
+
+| Architecture | Verified upstream input | SHA-256 |
+| --- | --- | --- |
+| amd64 | [Official Debian trixie PG18 package, 14.1.0.citus-1](https://packagecloud.io/citusdata/community/debian/pool/trixie/main/p/citus/postgresql-18-citus-14.1_14.1.0.citus-1_amd64.deb) | `1e78be38f6c145bac49d622d71def8f1b9a3826d98dffe946e9aed3e0cac1b09` |
+| arm64 | [Official Citus v14.1.0 source](https://codeload.github.com/citusdata/citus/tar.gz/refs/tags/v14.1.0), compiled in a separate build stage | `e174ed00efba74aaf5a9da87f770f6a7e11274066cce8449d804bc6b17df6ff8` |
+
+The official trixie repository does not provide a PG18/14.1 arm64 binary package.
+The arm64 image therefore builds the same source release, without native-CPU or
+AVX2 compiler flags, and keeps its compiler/development packages out of the
+runtime image. Other architectures fail the image build explicitly. The native
+`Columnar native restore` CI matrix builds both amd64 and arm64 and exercises
+real backup/restore behavior. **An arm64 deployment requires a successful native
+arm64 CI run for the exact revision being deployed**; an amd64 test or emulated
+build is not evidence of native arm64 runtime compatibility. No arm64 validation
+is implied merely by this Dockerfile existing.
+
+Treat PostgreSQL/Citus upgrades as an explicit tested change: update the pinned
+input digests, run both native architecture jobs, restore a representative backup
+and verify options and query behavior before adopting the new image. Retain an
+image capable of restoring each retained backup's exact extension version.
+Changing back to a PostgreSQL image without the extension cannot read existing
+Columnar tables.
+
+### What a normal backup now preserves
+
+Local and SSH backups still produce ordinary compressed `pg_dump -Fc` archives
+and the existing `<archive>.manifest.json`. The manifest now also carries a
+bounded, checksummed `restore_metadata` object with the PostgreSQL major version,
+exact installed Columnar extension version, and the effective compression,
+compression level, stripe row limit and chunk-group row limit of **every**
+Columnar table. This includes detached or staged archive tables in other schemas.
+The backup's read-only metadata session exports a snapshot that `pg_dump` imports,
+so both describe the same database snapshot while the existing maintenance lock
+continues to protect archive/retention operations. There are no writes to Citus
+internal catalogs. The backup role must be able to view every Columnar table's
+options (the public options view restricts these to table owners and roles with
+ownership privileges). Invisible options cause refusal rather than substitution
+of default settings.
+
+The archive checksum, destination ownership rules, private permissions, complete
+archive decoding, timeout cleanup and local/SSH retention rules remain in force.
+The receiver verifies the metadata checksum before publishing the archive and
+manifest. Keep the manifest with the archive when moving or downloading backups.
+A standalone `pg_restore` does not apply this metadata and may silently recreate
+Columnar tables with default geometry; use the restore tool below. Archive
+readability verification remains distinct from a successful restore drill.
+
+### Restore to an empty database
+
+Create a new empty destination database from `template0` on a server with the
+required extension binaries and `shared_preload_libraries` setting. Keep the
+application disconnected from that database until restoration succeeds. The
+restore tool requires an explicit database name; it never drops an existing
+database or restores over tables. Linux, PostgreSQL 18 client tools and Python 3.11+
+are required; the MeshInfo backend image includes all three. The restore keeps
+the verified archive open through `/proc/self/fd` to prevent path substitution. For example, from the
+backend container where `/app/backups` is mounted:
+
+```bash
+python scripts/restore_database.py backups/meshinfo-pg-<timestamp>-<id>.dump \
+  --config config.toml --host replacement-postgres --database meshinfo_restored
+python scripts/restore_database.py backups/meshinfo-pg-<timestamp>-<id>.dump \
+  --config config.toml --host replacement-postgres --database meshinfo_restored --apply
+```
+
+The first invocation validates without loading data. The second verifies the
+archive checksum and full decoding, checks the destination, and performs one
+transaction in this order:
+
+1. Restore extension/schema definitions and verify the complete Columnar table inventory.
+2. Apply and verify every captured Columnar option through supported `ALTER TABLE` APIs.
+3. Load the archived rows, then restore indexes, constraints and triggers.
+4. Recheck inventory/options and commit. Any SQL, producer or verification failure rolls back.
+
+The exact extension version must be available; the destination PostgreSQL major
+must match backups that carry restore metadata. Missing, mismatched or incomplete
+Columnar metadata causes refusal. Existing heap-only custom dumps, including
+legacy dumps without manifests, remain supported; they still receive an actual
+catalog check rejecting undocumented Columnar tables before data loading.
+Passwords are passed through the private subprocess environment, not command
+arguments or reported errors. Restore metadata includes names/options, never
+payload copies or credentials.
+
+For resumable archive jobs, ordinary dump/restore also preserves staging rows,
+application job state and source-freeze triggers. The archive executor must
+re-resolve object names and validate its durable markers after restore: numeric
+PostgreSQL OIDs are not stable across logical restoration. The integration gate
+`scripts/verify_columnar_backup_restore.py` uses disposable databases to verify
+local/remote-receiver backup, exact restored data, settings **before COPY** via
+physical chunk geometry, staged rows/job state, restored guards, and full
+rollback after incomplete metadata or a failure after data streaming.

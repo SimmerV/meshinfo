@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1
+# PostgreSQL 18.6 + Citus Columnar 14.1.0. The official PostgreSQL manifest
+# below includes linux/amd64 and linux/arm64. No AVX2/native CPU flags are used.
+# See POSTGRES.md for provenance, architecture validation and upgrade policy.
+ARG TARGETARCH
+FROM postgres:18.6@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6 AS postgres-base
+
+FROM postgres-base AS install-amd64
+ADD --checksum=sha256:1e78be38f6c145bac49d622d71def8f1b9a3826d98dffe946e9aed3e0cac1b09 \
+    https://packagecloud.io/citusdata/community/debian/pool/trixie/main/p/citus/postgresql-18-citus-14.1_14.1.0.citus-1_amd64.deb \
+    /tmp/citus.deb
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends /tmp/citus.deb \
+    && rm -f /tmp/citus.deb \
+    && rm -rf /var/lib/apt/lists/*
+
+# The official Citus trixie repository has no PG18/14.1 arm64 binary package.
+# Build the exact same upstream release on arm64 instead of guessing a URL or
+# running an amd64 binary through emulation. Build tools stay out of runtime.
+FROM postgres-base AS build-arm64
+ADD --checksum=sha256:e174ed00efba74aaf5a9da87f770f6a7e11274066cce8449d804bc6b17df6ff8 \
+    https://codeload.github.com/citusdata/citus/tar.gz/refs/tags/v14.1.0 \
+    /tmp/citus.tar.gz
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential bison flex libssl-dev liblz4-dev libzstd-dev \
+       "postgresql-server-dev-18=${PG_VERSION}" \
+    && mkdir -p /src /out \
+    && tar -xzf /tmp/citus.tar.gz --strip-components=1 -C /src \
+    && cd /src \
+    && PG_CONFIG=/usr/lib/postgresql/18/bin/pg_config ./configure --without-libcurl \
+    && make -j2 with_llvm=no \
+    && make with_llvm=no DESTDIR=/out install
+
+FROM postgres-base AS install-arm64
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends liblz4-1 libzstd1 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build-arm64 /out/usr/ /usr/
+
+# Only these two explicit architecture stages exist: other targets fail closed.
+FROM install-${TARGETARCH} AS final
+RUN printf "\nshared_preload_libraries='citus_columnar'\n" >> /usr/share/postgresql/postgresql.conf.sample
+LABEL org.opencontainers.image.title="MeshInfo PostgreSQL with Citus Columnar" \
+      org.opencontainers.image.version="18.6-citus14.1.0" \
+      org.opencontainers.image.source="https://github.com/citusdata/citus/tree/v14.1.0"
+CMD ["postgres", "-c", "shared_preload_libraries=citus_columnar"]

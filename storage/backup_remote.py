@@ -28,6 +28,8 @@ from typing import BinaryIO
 
 CHUNK_BYTES = 256 * 1024
 STDERR_BYTES = 16 * 1024
+RESTORE_METADATA_BYTES = 1024 * 1024
+MANIFEST_BYTES = RESTORE_METADATA_BYTES + 65536
 OWNED_NAME = re.compile(r"meshinfo-pg-\d{8}-\d{6}-[a-f0-9]{12}\.dump\Z")
 MANIFEST_SUFFIX = ".manifest.json"
 OWNER_MARKER = ".meshinfo-backup-owner.json"
@@ -56,6 +58,60 @@ class BackupError(RuntimeError):
     """An unsuccessful snapshot, never a signal to prune older snapshots."""
 
 
+def validate_restore_metadata(metadata: dict) -> dict:
+    """Validate the bounded, versioned metadata accepted across SSH and restore."""
+    if not isinstance(metadata, dict) or set(metadata) != {"schema", "postgres_major", "extension", "relations"}:
+        raise BackupError("invalid Columnar restore metadata fields")
+    if type(metadata["schema"]) is not int or metadata["schema"] != 1 or type(metadata["postgres_major"]) is not int or not 10 <= metadata["postgres_major"] <= 99:
+        raise BackupError("unsupported Columnar restore metadata version")
+    extension = metadata["extension"]
+    if extension is not None and (not isinstance(extension, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*-[0-9]+", extension) or len(extension) > 64):
+        raise BackupError("invalid Columnar extension version")
+    relations = metadata["relations"]
+    if not isinstance(relations, list) or len(relations) > 4096 or (relations and extension is None):
+        raise BackupError("invalid Columnar relation inventory")
+    names = set()
+    expected = {"schema", "name", "chunk_group_row_limit", "stripe_row_limit", "compression_level", "compression"}
+    for relation in relations:
+        if not isinstance(relation, dict) or set(relation) != expected:
+            raise BackupError("invalid Columnar relation options")
+        for key in ("schema", "name"):
+            value = relation[key]
+            if not isinstance(value, str) or not 1 <= len(value.encode("utf-8")) <= 63 or "\x00" in value:
+                raise BackupError("invalid Columnar relation identifier")
+        name = relation["schema"], relation["name"]
+        if name in names:
+            raise BackupError("duplicate Columnar relation metadata")
+        names.add(name)
+        for key in ("chunk_group_row_limit", "stripe_row_limit"):
+            if type(relation[key]) is not int or not 1 <= relation[key] <= 1000000000:
+                raise BackupError("invalid Columnar row limit")
+        if type(relation["compression_level"]) is not int or not -131072 <= relation["compression_level"] <= 131072:
+            raise BackupError("invalid Columnar compression level")
+        if relation["compression"] not in ("none", "pglz", "lz4", "zstd"):
+            raise BackupError("unsupported Columnar compression algorithm")
+    encoded = json.dumps(metadata, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    if len(encoded) > RESTORE_METADATA_BYTES:
+        raise BackupError("Columnar restore metadata exceeds its bounded budget")
+    return metadata
+
+
+def restore_metadata_checksum(metadata: dict) -> str:
+    validate_restore_metadata(metadata)
+    return hashlib.sha256(json.dumps(metadata, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
+
+
+def validate_manifest_restore_metadata(manifest: dict):
+    if "restore_metadata" not in manifest:
+        if "restore_metadata_sha256" in manifest:
+            raise BackupError("backup restore metadata is missing")
+        return None  # Existing heap-only backup manifests remain valid.
+    metadata = validate_restore_metadata(manifest["restore_metadata"])
+    if manifest.get("restore_metadata_sha256") != restore_metadata_checksum(metadata):
+        raise BackupError("backup restore metadata checksum does not match")
+    return metadata
+
+
 def owned_snapshots(directory: Path, *, owner: str | None = None) -> list[tuple[Path, dict]]:
     """Return only regular files with our complete, valid verification marker."""
     if owner is not None:
@@ -71,7 +127,7 @@ def owned_snapshots(directory: Path, *, owner: str | None = None) -> list[tuple[
             info, marker_info = path.lstat(), marker.lstat()
             if not stat.S_ISREG(info.st_mode) or not stat.S_ISREG(marker_info.st_mode):
                 continue
-            if marker_info.st_size > 4096:
+            if marker_info.st_size > MANIFEST_BYTES:
                 continue
             metadata = json.loads(marker.read_text(encoding="utf-8"))
             completed = metadata.get("completed_at")
@@ -93,8 +149,9 @@ def owned_snapshots(directory: Path, *, owner: str | None = None) -> list[tuple[
                 or not re.fullmatch(r"[a-f0-9]{64}", str(metadata.get("sha256", "")))
             ):
                 continue
+            validate_manifest_restore_metadata(metadata)
             snapshots.append((path, metadata))
-        except (OSError, ValueError, TypeError, AttributeError):
+        except (OSError, ValueError, TypeError, AttributeError, BackupError):
             continue
     return snapshots
 
@@ -270,11 +327,10 @@ class SnapshotTarget:
         self.file.close()
         self.file = None
 
-    def publish(self, *, now: float | None = None) -> dict:
+    def publish(self, *, now: float | None = None, restore_metadata: dict | None = None) -> dict:
         """Publish after full archive decoding and checksum verification only."""
         if self.file is not None or self.size == 0:
             raise BackupError("backup must be sealed and verified before publication")
-        self._check_space(8192)
         metadata = {
             "schema": 1,
             "owner": self.owner,
@@ -286,6 +342,13 @@ class SnapshotTarget:
             "orphan_files_removed": self.orphan_files_removed,
             "orphan_bytes_removed": self.orphan_bytes_removed,
         }
+        if restore_metadata is not None:
+            metadata["restore_metadata"] = validate_restore_metadata(restore_metadata)
+            metadata["restore_metadata_sha256"] = restore_metadata_checksum(restore_metadata)
+        encoded_size = len(json.dumps(metadata, sort_keys=True).encode("utf-8")) + 1
+        if encoded_size > MANIFEST_BYTES:
+            raise BackupError("backup manifest exceeds its bounded budget")
+        self._check_space(encoded_size + 8192)
         fd = os.open(self.marker_temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         self._created_marker_temporary = True
         with os.fdopen(fd, "w", encoding="utf-8") as marker:
@@ -337,7 +400,7 @@ def _read_exact(stream: BinaryIO, length: int) -> bytes:
     return bytes(parts)
 
 
-def receive_stream(stream: BinaryIO, target: SnapshotTarget) -> None:
+def receive_stream(stream: BinaryIO, target: SnapshotTarget) -> dict | None:
     while True:
         length = struct.unpack("!I", _read_exact(stream, 4))[0]
         if length == 0:
@@ -346,7 +409,7 @@ def receive_stream(stream: BinaryIO, target: SnapshotTarget) -> None:
             raise BackupError("invalid backup frame size")
         target.write(_read_exact(stream, length))
     length = struct.unpack("!I", _read_exact(stream, 4))[0]
-    if not 1 <= length <= 4096:
+    if not 1 <= length <= MANIFEST_BYTES:
         raise BackupError("invalid backup commit record size")
     commit = json.loads(_read_exact(stream, length))
     if (
@@ -358,7 +421,9 @@ def receive_stream(stream: BinaryIO, target: SnapshotTarget) -> None:
         raise BackupError("backup stream checksum or byte count does not match")
     if stream.read(1):
         raise BackupError("unexpected data after backup commit")
+    metadata = validate_manifest_restore_metadata(commit)
     target.seal()
+    return metadata
 
 
 def verify_archive(path: Path, *, timeout: float):
@@ -424,10 +489,10 @@ def receiver_main(argv: list[str] | None = None) -> int:
         signal.setitimer(signal.ITIMER_REAL, timeout)
         try:
             with SnapshotTarget(Path(directory), filename, reserve, owner=owner) as target:
-                receive_stream(sys.stdin.buffer, target)
+                restore_metadata = receive_stream(sys.stdin.buffer, target)
                 verify_archive(target.temporary, timeout=max(0.01, deadline - time.monotonic()))
                 verify_checksum(target)
-                result = target.publish()
+                result = target.publish(restore_metadata=restore_metadata)
                 try:
                     result["pruned"] = prune_snapshots(target.directory, keep_days, owner=owner)
                 except OSError as exc:
