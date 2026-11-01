@@ -47,7 +47,12 @@ async def run_archive_work(conn, config, *, free_bytes=None, target_job_id=None)
         restoring = job is not None and job['target_method'] == 'heap'
         if job is not None and not restoring:
             result = await cancel_archive(conn, job['job_id'], config=config)
-            result['reason'] = 'Archiving disabled; unfinished replacement discarded, original history preserved'
+            # Cancellation can be busy, refused, or only partly reclaimed.
+            # Preserve its diagnostic and claim removal only after completion.
+            result.setdefault('reason',
+                'Archiving disabled; unfinished replacement discarded, original history preserved'
+                if result['status'] == 'cancelled' else
+                'Archiving disabled; cancellation requested but not yet complete')
             return result
         if not restoring:
             return {'status': 'disabled'}

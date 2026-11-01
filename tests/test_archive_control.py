@@ -32,6 +32,45 @@ def test_disabling_compression_unfreezes_an_unfinished_original(monkeypatch):
     cancel.assert_awaited_once_with(conn, 'job', config={})
 
 
+@pytest.mark.parametrize('status', ['busy', 'cleanup_pending', 'blocked', 'cancelled'])
+@pytest.mark.parametrize('existing_reason', [None, 'Source ownership could not be established'])
+def test_disabled_policy_reports_actual_cancellation_progress_and_preserves_refusals(
+        monkeypatch, status, existing_reason):
+    job = uuid.uuid4()
+    conn = SimpleNamespace(fetchval=AsyncMock(return_value=True),
+                           fetchrow=AsyncMock(return_value={
+                               'job_id': job, 'target_method': 'columnar', 'phase': 'copying'}))
+    outcome = {'status': status, 'job_id': str(job)}
+    if status == 'cleanup_pending':
+        outcome.update(cleanup_requested=True, cleanup_topics_dropped=True,
+                       cleanup_stage_dropped=False, cleanup_error='Source reader holds a lock')
+    if existing_reason is not None:
+        outcome['reason'] = existing_reason
+    expected = dict(outcome)
+    cancel = AsyncMock(return_value=outcome)
+    runner, indexes = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(archive_control, 'cancel_archive', cancel)
+    monkeypatch.setattr(archive_control, 'run_archive_cycle', runner)
+    monkeypatch.setattr(archive_control, 'prepare_archive_indexes', indexes)
+
+    result = asyncio.run(archive_control.run_archive_work(conn, {}, target_job_id=job))
+
+    assert all(result[key] == value for key, value in expected.items())
+    if existing_reason is not None:
+        assert result['reason'] == existing_reason
+    elif status == 'cancelled':
+        assert result['reason'] == (
+            'Archiving disabled; unfinished replacement discarded, original history preserved')
+    else:
+        assert result['reason'] == (
+            'Archiving disabled; cancellation requested but not yet complete')
+        assert 'discarded' not in result['reason']
+    cancel.assert_awaited_once_with(conn, job, config={})
+    runner.assert_not_called()
+    indexes.assert_not_called()
+    conn.fetchval.assert_awaited_once()
+
+
 def test_explicit_heap_restore_continues_with_automatic_compression_off(monkeypatch):
     conn = SimpleNamespace(fetchval=AsyncMock(return_value=True),
                            fetchrow=AsyncMock(return_value={'job_id': 'job', 'target_method': 'heap'}))
