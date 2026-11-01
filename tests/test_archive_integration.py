@@ -228,6 +228,7 @@ def test_verification_scopes_jit_and_preserves_exact_checks_and_recovery(caller_
         async with fixture() as (conn, expected):
             job, policy = await copy_fixture_to_verification(conn)
             await conn.execute("SET jit=" + caller_jit)
+            caller_plan = await conn.fetchval("SHOW plan_cache_mode")
             reached = asyncio.Event()
             exact_results = []
 
@@ -235,11 +236,19 @@ def test_verification_scopes_jit_and_preserves_exact_checks_and_recovery(caller_
                 def __getattr__(self, name):
                     return getattr(conn, name)
 
+                async def execute(self, sql, *args, **kwargs):
+                    if sql.startswith("UPDATE public.storage_archive_jobs SET verify_id="):
+                        assert await conn.fetchval("SHOW plan_cache_mode") == "force_custom_plan"
+                    return await conn.execute(sql, *args, **kwargs)
+
                 async def fetchval(self, sql, *args, **kwargs):
                     if "FULL JOIN t USING" not in sql:
                         return await conn.fetchval(sql, *args, **kwargs)
                     assert conn.is_in_transaction()
                     assert await conn.fetchval("SHOW jit") == "off"
+                    payload = archive._q(job["stage_name"]) in sql
+                    assert await conn.fetchval("SHOW plan_cache_mode") == (
+                        "force_generic_plan" if payload else "force_custom_plan")
                     result = await conn.fetchval(sql, *args, **kwargs)
                     # Both the heap topic helper and every canonical payload
                     # column are actually compared, including NULL/UTF-8 data.
@@ -272,6 +281,7 @@ def test_verification_scopes_jit_and_preserves_exact_checks_and_recovery(caller_
             assert reached.is_set() and exact_results == [True, True]
             assert not conn.is_in_transaction()
             assert await conn.fetchval("SHOW jit") == caller_jit
+            assert await conn.fetchval("SHOW plan_cache_mode") == caller_plan
             assert await conn.fetchval("SELECT 1") == 1
             state = await archive._job(conn, job["job_id"])
             assert state["rows_copied"] == len(expected) and state["phase"] == "verifying"
@@ -285,10 +295,197 @@ def test_verification_scopes_jit_and_preserves_exact_checks_and_recovery(caller_
             state = await archive._job(conn, job["job_id"])
             assert state["phase"] == "ready" and state["rows_verified"] == state["rows_copied"] == len(expected)
             assert await conn.fetchval("SHOW jit") == caller_jit
+            assert await conn.fetchval("SHOW plan_cache_mode") == caller_plan
             assert [tuple(row) for row in await conn.fetch(
                 "SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
             assert [tuple(row) for row in await conn.fetch(
                 f"SELECT * FROM {archive._q(job['stage_name'])} ORDER BY id,created_at")] == expected
+    asyncio.run(scenario())
+
+
+def test_verification_reuses_bounded_generic_plans_for_new_keys_and_byte_limited_counts():
+    async def scenario():
+        async with fixture() as (conn, _expected):
+            await conn.execute("""INSERT INTO public.mqtt_messages(id,created_at,topic,payload)
+                SELECT i,'1901-01-02'::timestamptz,'bounded verification',
+                    CASE WHEN i BETWEEN 2000 AND 2004 THEN repeat('x',600000) ELSE 'payload-'||i END
+                FROM generate_series(1000,3999) i;
+                INSERT INTO public.mqtt_messages(id,created_at,topic,payload)
+                VALUES(1999,'1901-01-02 00:00:01+00',NULL,'same ID later time'),
+                      (2000,'1901-01-02 00:00:01+00','wide seam',repeat('y',600000))""")
+            expected = [tuple(row) for row in await conn.fetch(
+                "SELECT * FROM public.mqtt_messages ORDER BY id,created_at")]
+            job, policy = await copy_fixture_to_verification(conn)
+            before = await conn.fetchrow("SELECT current_setting('plan_cache_mode'),current_setting('jit')")
+            cached, cohorts, observed = {}, [], []
+
+            class CachedVerification:
+                def __getattr__(self, name):
+                    return getattr(conn, name)
+
+                async def fetch(self, sql, *args, **kwargs):
+                    if "AS logical_bytes" in sql:
+                        assert await conn.fetchval("SHOW plan_cache_mode") == "force_custom_plan"
+                    return await conn.fetch(sql, *args, **kwargs)
+
+                async def execute(self, sql, *args, **kwargs):
+                    if sql.startswith("UPDATE public.storage_archive_jobs"):
+                        assert await conn.fetchval("SHOW plan_cache_mode") == "force_custom_plan"
+                    return await conn.execute(sql, *args, **kwargs)
+
+                async def fetchval(self, sql, *args, **kwargs):
+                    payload = archive._q(job["stage_name"]) in sql and "FULL JOIN t USING" in sql
+                    assert await conn.fetchval("SHOW plan_cache_mode") == (
+                        "force_generic_plan" if payload else "force_custom_plan")
+                    result = await conn.fetchval(sql, *args, **kwargs)
+                    if not payload:
+                        return result
+                    assert result is True and "IS NULL OR" not in sql
+                    assert args[-2] == args[-1]+1
+                    statement = await conn.fetchrow("SELECT name,generic_plans,custom_plans "
+                        "FROM pg_prepared_statements WHERE statement=$1", sql)
+                    assert statement and statement["custom_plans"] == 0
+                    previous = cached.get(sql)
+                    if previous:
+                        assert statement["name"] == previous[0]
+                        assert statement["generic_plans"] == previous[1]+1
+                    else:
+                        assert statement["generic_plans"] == 1
+                    kinds = (("bigint", "timestamptz") * (1 if len(args) == 4 else 2)
+                             + ("bigint", "bigint"))
+                    literals = await conn.fetchrow("SELECT "+",".join(
+                        f"quote_nullable(${index}::{kind})" for index, kind in enumerate(kinds,1)), *args)
+                    assert re.fullmatch(r"[A-Za-z0-9_]+", statement["name"])
+                    executable = ",".join(value+"::"+kind for value,kind in zip(literals,kinds))
+                    plan = json.loads(await conn.fetchval("EXPLAIN (ANALYZE,FORMAT JSON) EXECUTE "
+                        +statement["name"]+"("+executable+")"))[0]["Plan"]
+
+                    def nodes(node):
+                        yield node
+                        for child in node.get("Plans",[]):
+                            yield from nodes(child)
+
+                    scans = [node for node in nodes(plan)
+                             if node.get("Relation Name") in (job["source_name"], job["stage_name"])]
+                    assert {node["Relation Name"] for node in scans} == {job["source_name"], job["stage_name"]}
+                    for node in scans:
+                        if node["Node Type"] == "Bitmap Heap Scan":
+                            # A small heap source can prefer a bounded bitmap
+                            # range. Its actual PK work must still be exact.
+                            assert node["Relation Name"] == job["source_name"]
+                            indexes = [child for child in nodes(node) if child["Node Type"] == "Bitmap Index Scan"]
+                            assert len(indexes) == 1
+                            index = indexes[0]
+                            assert index["Actual Rows"] == args[-1] and index["Actual Loops"] == 1
+                        else:
+                            assert node["Node Type"] == "Index Scan"
+                            index = node
+                        assert index["Index Name"].endswith("_pkey")
+                        condition = index["Index Cond"]
+                        assert "id <= $"+str(1 if len(args) == 4 else 3) in condition
+                        assert all("$"+str(index) in condition for index in range(1,3 if len(args) == 4 else 5))
+                        if len(args) == 6:
+                            assert "id >= $1" in condition
+                        assert node["Actual Rows"] == args[-1] and node["Actual Loops"] == 1
+                        assert node.get("Rows Removed by Filter",0) == node.get("Rows Removed by Index Recheck",0) == 0
+                    cached[sql] = (statement["name"],statement["generic_plans"]+1)
+                    cohorts.append(args[-1])
+                    observed.append(args)
+                    return result
+
+            for _ in range(30):
+                if job["phase"] == "ready":
+                    break
+                await archive._verify_chunk(CachedVerification(),job,policy)
+                assert await conn.fetchrow("SELECT current_setting('plan_cache_mode'),current_setting('jit')") == before
+                job = await archive._job(conn,job["job_id"])
+            assert job["phase"] == "ready" and job["rows_verified"] == job["rows_copied"] == len(expected)
+            assert len(cached) == 2 and len(observed[0]) == 4 and all(len(args) == 6 for args in observed[1:])
+            assert 1 in cohorts and 1000 in cohorts and len(set(cohorts)) >= 3
+            assert sum(cohorts) == len(expected)
+            assert [tuple(row) for row in await conn.fetch(
+                f"SELECT * FROM {archive._q(job['stage_name'])} ORDER BY id,created_at")] == expected
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("extra", [False, True])
+def test_empty_source_verification_keeps_custom_tail_check_and_rejects_extra_stage(extra):
+    async def scenario():
+        async with fixture() as (conn, _expected):
+            await conn.execute("TRUNCATE public.mqtt_messages")
+            job, policy = await copy_fixture_to_verification(conn)
+            if extra:
+                async with conn.transaction():
+                    await conn.execute("UPDATE public.storage_archive_jobs SET phase='copying' WHERE job_id=$1",job["job_id"])
+                    await conn.execute("SELECT set_config('meshinfo.archive_job',$1,true)",str(job["job_id"]))
+                    await conn.execute(f"INSERT INTO {archive._q(job['stage_name'])}(id,created_at) VALUES(0,$1)",STAMP)
+                    await conn.execute("UPDATE public.storage_archive_jobs SET phase='verifying' WHERE job_id=$1",job["job_id"])
+
+            class EmptyVerification:
+                def __getattr__(self, name):
+                    return getattr(conn,name)
+
+                async def fetchval(self, sql, *args, **kwargs):
+                    assert "FULL JOIN t USING" not in sql
+                    assert await conn.fetchval("SHOW plan_cache_mode") == "force_custom_plan"
+                    return await conn.fetchval(sql,*args,**kwargs)
+
+            if extra:
+                with pytest.raises(archive.ArchiveBlocked,match="cardinality"):
+                    await archive._verify_chunk(EmptyVerification(),job,policy)
+            else:
+                await archive._verify_chunk(EmptyVerification(),job,policy)
+            saved = await archive._job(conn,job["job_id"])
+            assert saved["phase"] == ("verifying" if extra else "ready")
+            assert saved["rows_copied"] == saved["rows_verified"] == 0
+            assert await conn.fetchval("SELECT count(*) FROM public.mqtt_messages") == 0
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("cursor", [(None, STAMP), (1, None)])
+def test_verification_refuses_incomplete_composite_cursor(cursor):
+    async def scenario():
+        async with fixture() as (conn, expected):
+            job, policy = await copy_fixture_to_verification(conn)
+            with pytest.raises(archive.ArchiveBlocked,match="cursor is incomplete"):
+                await archive._verify_chunk(conn,{**job,"verify_id":cursor[0],"verify_created_at":cursor[1]},policy)
+            assert (await archive._job(conn,job["job_id"]))["rows_verified"] == 0
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("corruption", ["missing", "same_id_extra", "null", "unicode", "tail"])
+def test_cached_nonfirst_verification_rejects_identity_and_exact_payload_corruption(corruption):
+    async def scenario():
+        async with fixture() as (conn, expected):
+            job, _policy = await copy_fixture_to_verification(conn)
+            policy = archive.ArchivePolicy(batch_rows=16,batch_mib=1)
+            await archive._verify_chunk(conn,job,policy)
+            job = await archive._job(conn,job["job_id"])
+            assert job["verify_id"] == 16 and job["rows_verified"] == 16
+            async with conn.transaction():
+                await conn.execute("UPDATE public.storage_archive_jobs SET phase='copying' WHERE job_id=$1",job["job_id"])
+                await conn.execute("SELECT set_config('meshinfo.archive_job',$1,true)",str(job["job_id"]))
+                await conn.execute(f"TRUNCATE {archive._q(job['stage_name'])}")
+                projection = archive._columns()
+                if corruption in ("null", "unicode"):
+                    replacement = ("CASE WHEN id=17 THEN 'null' ELSE payload END" if corruption == "null"
+                                   else "CASE WHEN id=18 THEN replace(payload,'雪','雪 ') ELSE payload END")
+                    projection = ",".join(replacement if name == "payload" else archive.quote_identifier(name)
+                                          for name in archive.MQTT_COLUMNS)
+                predicate = " WHERE id<>17" if corruption == "missing" else ""
+                await conn.execute(f"INSERT INTO {archive._q(job['stage_name'])} ({archive._columns()}) "
+                                   f"SELECT {projection} FROM public.mqtt_messages_1901_01{predicate}")
+                if corruption in ("same_id_extra", "tail"):
+                    await conn.execute(f"INSERT INTO {archive._q(job['stage_name'])}(id,created_at,payload) "
+                        "VALUES($1,$2::timestamptz+interval '1 second','extra')",16 if corruption == "same_id_extra" else 999,STAMP)
+                await conn.execute("UPDATE public.storage_archive_jobs SET phase='verifying' WHERE job_id=$1",job["job_id"])
+            with pytest.raises(archive.ArchiveBlocked,match="row-by-row|cardinality"):
+                for _ in range(4):
+                    await archive._verify_chunk(conn,job,policy)
+                    job = await archive._job(conn,job["job_id"])
+            assert (await archive._job(conn,job["job_id"]))["phase"] == "verifying"
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
     asyncio.run(scenario())
 
 

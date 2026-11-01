@@ -897,6 +897,8 @@ async def _verify_chunk(conn, job, policy):
         # for these short, exact comparisons. Keep it out of verification only.
         await conn.execute("SET LOCAL jit=off; SET LOCAL columnar.enable_custom_scan=off; "
                            "SET LOCAL enable_seqscan=off; SET LOCAL enable_indexscan=on")
+        if (job["verify_id"] is None) != (job["verify_created_at"] is None):
+            raise ArchiveBlocked("Archive verification cursor is incomplete")
         selected, _size_bytes = await _batch(conn, job["source_name"], job["verify_id"], job["verify_created_at"], policy,
                                              topics_only=job.get("target_method") == "topics")
         if job.get("topic_stage_name"):
@@ -917,16 +919,32 @@ async def _verify_chunk(conn, job, policy):
             return
         # FULL JOIN detects extra and missing keys; bytea equality makes text
         # checks exact even under a case-insensitive database collation.
+        # Separate shapes keep nullable lower-bound ORs out of the generic
+        # plan. Inclusive scalar ID bounds aid index selection while the exact
+        # composite bounds preserve rows sharing an ID across timestamps.
+        if job["verify_id"] is None:
+            bounds = "id <= $1::bigint AND (id,created_at)<=($1,$2::timestamptz)"
+            parameters = (last["id"], last["created_at"], len(selected)+1, len(selected))
+        else:
+            bounds = ("id >= $1::bigint AND id <= $3::bigint "
+                      "AND (id,created_at)>($1,$2::timestamptz) "
+                      "AND (id,created_at)<=($3,$4::timestamptz)")
+            parameters = (job["verify_id"], job["verify_created_at"],
+                          last["id"], last["created_at"], len(selected)+1, len(selected))
+        # Only the already bounded payload comparison reuses its prepared
+        # plan. Selection/helper/tail checks and journal writes stay custom.
+        # Any failure exits this transaction, restoring the caller's settings.
+        await conn.execute("SET LOCAL plan_cache_mode=force_generic_plan")
         good = await conn.fetchval(f"""WITH s AS MATERIALIZED (
             SELECT {_columns()} FROM {_q(job['source_name'])}
-            WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) AND (id,created_at)<=($3,$4)
+            WHERE {bounds}
             ORDER BY id,created_at),
             t AS MATERIALIZED (SELECT {_columns()} FROM {_q(job['stage_name'])}
-            WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) AND (id,created_at)<=($3,$4)
-            ORDER BY id,created_at LIMIT $5)
-            SELECT count(*)=$6 AND coalesce(bool_and(s.id IS NOT NULL AND t.id IS NOT NULL AND ({_exact_equal()})),false)
-            FROM s FULL JOIN t USING(id,created_at)""", job["verify_id"], job["verify_created_at"],
-            last["id"], last["created_at"], len(selected)+1, len(selected))
+            WHERE {bounds}
+            ORDER BY id,created_at LIMIT ${len(parameters)-1})
+            SELECT count(*)=${len(parameters)} AND coalesce(bool_and(s.id IS NOT NULL AND t.id IS NOT NULL AND ({_exact_equal()})),false)
+            FROM s FULL JOIN t USING(id,created_at)""", *parameters)
+        await conn.execute("SET LOCAL plan_cache_mode=force_custom_plan")
         if not good:
             raise ArchiveBlocked("Archive exact row-by-row verification failed; source remains intact")
         await conn.execute("""UPDATE public.storage_archive_jobs SET verify_id=$2,verify_created_at=$3,
