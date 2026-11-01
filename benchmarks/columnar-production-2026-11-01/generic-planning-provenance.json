@@ -1,0 +1,56 @@
+{
+  "format_version": 1,
+  "recorded_date_utc": "2026-11-01",
+  "baseline_revision": "8e8b66866088788fa94396c6d7ade17825ef3212",
+  "implementation_revision": "a1a2fdd64ed36f23ab1107a2919d0f0bf6806560",
+  "diagnosis_scope": "Read-only September bounded payload planning; custom versus generic prepared statements. Query arguments and source payloads omitted; plans exclude expressions and predicates.",
+  "timing_scope": "First means a new prepared plan with existing warm data caches; warm planning/execution values are individual EXPLAIN measurements, not endpoint p95.",
+  "tests": [
+    {
+      "artifact": "isolated-generic-reader-regressions.txt",
+      "passed": 49,
+      "duration_seconds": 8.18,
+      "scope": "Separate local isolated PostgreSQL reader/regression run; not the two-architecture GitHub CI result."
+    },
+    {
+      "artifact": "backend-generic-regressions.txt",
+      "passed": 992,
+      "skipped": 149,
+      "warnings": 1,
+      "duration_seconds": 25.91,
+      "scope": "Separate full backend run; skipped database cases are not counted as actual database passes; existing audioop deprecation warning."
+    }
+  ],
+  "live_checkpoint": {
+    "reported_at_utc": "2026-11-01T06:38:00Z",
+    "source": "Development deployment operator checkpoint",
+    "september": "complete",
+    "july": "copy complete; verification in progress",
+    "july_rows_copied_approximate": 2844000,
+    "july_rows_verified_approximate": 1160000,
+    "full_live_conversion_complete": false
+  },
+  "privacy_audit": "Reviewed diagnostic writer plan allowlist; recursive audit found no SQL text, parameters, source payload/topic fields, predicate expressions or credentials.",
+  "artifacts": {
+    "live-september-payload-planning-memory.json": {
+      "bytes": 273596,
+      "sha256": "cdc7b823913d63dcebb289cf688712a3851f86e324b64adc2fdb9c94966c45fd",
+      "source_file_modified_utc": "2026-11-01T06:29:50.301731+00:00"
+    },
+    "live-september-payload-planning-summary.json": {
+      "bytes": 5043,
+      "sha256": "10bf6003e5fe5415f5a96cc049c6ef7ab30320c354f50715e397be9d11a3cc8b",
+      "source_file_modified_utc": "2026-11-01T06:31:43.631193+00:00"
+    },
+    "isolated-generic-reader-regressions.txt": {
+      "bytes": 99,
+      "sha256": "6a766e3fa323914d4fae08630991ddc7e536254aa1641641db64c3f43f319f59",
+      "source_file_modified_utc": "2026-11-01T06:32:41.194931+00:00"
+    },
+    "backend-generic-regressions.txt": {
+      "bytes": 1712,
+      "sha256": "5d609aef0114ecbca4434d84fc09d8fc877acee8860484aecca5faa0da3ca89c",
+      "source_file_modified_utc": "2026-11-01T06:41:03.330725+00:00"
+    }
+  }
+}

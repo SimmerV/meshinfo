@@ -1,0 +1,28 @@
+{
+  "date_utc": "2026-11-01",
+  "purpose": "Live July bounded-copy read diagnosis",
+  "actual_cohort_rows": 93,
+  "cache_note": "Read-only diagnosis on the live retained heap; no cache reset. SELECT range probes, not full INSERT timing.",
+  "original_composite_only": {
+    "estimated_rows": 281337,
+    "plan": [
+      "Gather Merge",
+      "Sort",
+      "Seq Scan"
+    ],
+    "outcome": "statement_timeout",
+    "deadline_seconds": 3
+  },
+  "redundant_scalar_id_envelope": {
+    "estimated_rows": 9,
+    "actual_rows": 93,
+    "plan": "Primary-key Index Scan",
+    "execution_ms": 0.125,
+    "planning_ms": 0.331,
+    "shared_hit_blocks": 13,
+    "shared_read_blocks": 0,
+    "parallel_workers": 0
+  },
+  "exact_composite_bounds_preserved": true,
+  "source_rows_modified": false
+}

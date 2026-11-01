@@ -1058,8 +1058,8 @@ explicit application support; installing the extension alone is insufficient.
 
 The four prototype blockers now have implementations and isolated verification.
 This entry records implementation evidence, not approval to update an arbitrary
-production deployment. Final workload latency, development deployment checks and
-native CI for the final revision must be accepted before a production rollout.
+production deployment. The dated checkpoint below separates fixture acceptance,
+native compatibility and progress on full-size development history.
 
 | Area | Implemented behavior and verification |
 | --- | --- |
@@ -1068,7 +1068,7 @@ native CI for the final revision must be accepted before a production rollout.
 | Searchable history | Canonical-topic lookup partitions, indexed node branches, combined filters, cursor ordering and reception reconstruction are verified against real heap/mixed fixtures. A 4,098-topic fixture proved dictionary overflow still finds reception-only matches outside the bounded fast-path array. |
 | Backup and recovery | Snapshot-bound manifests preserve every Columnar relation, including detached stages. Restore applies exact options before COPY and uses bounded savepoint batches inside one atomic transaction to preserve observed physical grouping limits. Local/remote receiver, rollback, large rows and restored checkpoint continuation have real database coverage. |
 
-The latest full backend regression run recorded **959 passed, 97 skipped**; skipped
+An earlier full backend regression run recorded **959 passed, 97 skipped**; skipped
 database suites require explicit isolated test connections and are not counted
 as database passes. A separate execution passed **44 real archive, application,
 catalog and legacy-maintenance cases**. Additional focused workload-verifier and
@@ -1120,11 +1120,112 @@ including failures. Both ratios and absolute differences matter: a 2 ms to
 operational treatment. PostgreSQL restart measurements leave the shared host's
 OS cache intact and are labeled accordingly.
 
-Remaining acceptance work at this checkpoint is to compare the final workload's
-forward/restored query timings under the chosen load, inspect the actual
-development deployment and its ingestion behavior, and obtain final native CI
-results. Compression is lossless and immediately queryable, but query speed
+The initial checkpoint above preceded final workload acceptance and the later
+live-scale fixes. The subsequent evidence is recorded in
+[the acceptance record](benchmarks/columnar-production-2026-11-01/ACCEPTANCE.md)
+and the dated update below. Compression is lossless and immediately queryable, but query speed
 depends on filters, physical grouping, indexes, cache state and history size.
 The operator must also retain enough space for complete replacement stages,
 ongoing ingestion and recovery. A finite retention window bounds history age;
 keeping all history still requires growing storage capacity over time.
+
+### Development acceptance checkpoint, 2026-11-01 06:42 UTC
+
+Revision `8e8b668` added explicit guarded capacity trials, durable cancellation,
+and limits inside both ordered canonical-topic candidate branches. Strict
+automated admission remains unchanged. Actual capacity failure and explicit
+cancellation preserve the original and persist their intended terminal outcome;
+cleanup releases the heap helper before the Columnar replacement when both
+remain. Older checkpoints with either stage already removed remain resumable.
+
+The subsequent reader revision, `a1a2fdd64ed36f23ab1107a2919d0f0bf6806560`, reuses
+prepared plans only after packet identities have been bounded. Candidate selection
+and broad fallbacks retain their custom plans. A nested transaction restores the
+prior planner settings on success, error and cancellation. The exact revision
+passed native amd64 and arm64 image, actual backup/restore, archive lifecycle and
+production-reader checks in [CI run 41281751780](https://github.com/SimmerV/meshinfo/actions/runs/41281751780),
+completed at 06:41:50 UTC. The preceding `8e8b668`
+[native run](https://github.com/SimmerV/meshinfo/actions/runs/41280253533) also passed.
+
+Separate local runs recorded **992 passed, 149 skipped** in **25.91 seconds** for
+the full backend, and **49 passed** in **8.18 seconds** for the isolated PostgreSQL
+reader/regression suite. The full run's one warning was the existing `audioop`
+deprecation; skipped integration cases are not database passes. These counts must
+not be added together or substituted for the two-architecture CI result.
+
+Read-only diagnosis on September's **7,596 stripes** found planning overhead in
+the pinned Citus engine: [ordinary path costing still runs before the custom-scan switch](https://github.com/citusdata/citus/blob/v14.1.0/src/backend/columnar/columnar_customscan.c#L324),
+and [row counting enumerates stripe metadata](https://github.com/citusdata/citus/blob/v14.1.0/src/backend/columnar/columnar_reader.c#L984).
+Disabling custom scans alone therefore did not avoid repeated planning work.
+Three fixed bounded payload reads returned identical hashes under custom and
+generic plans, with 51 rows each including the pagination sentinel:
+
+| Bounded payload case | Custom warm planning | Generic first planning | Generic reused planning | Generic reused execution |
+| --- | ---: | ---: | ---: | ---: |
+| Month page | 17.001 ms | 25.444 ms | 0.062 ms | 1.634 ms |
+| Literal topic | 23.176 ms | 24.163 ms | 0.070 ms | 4.055 ms |
+| Topic plus text search | 29.138 ms | 29.327 ms | 0.135 ms | 10.622 ms |
+
+These are component-level EXPLAIN observations, not endpoint p95 or a new
+concurrent-load acceptance run. First means a newly prepared plan with warm data
+caches. Generic first-plan allocations were **8,985–17,313 KiB**; reused planning
+allocated **32–56 KiB**. PostgreSQL planning allocation is neither process peak
+RSS nor constrained by `work_mem`. DDL/statistics invalidation and newly opened
+pool sessions incur fresh planning. August's much larger stripe count and
+concurrent fresh planners have not been measured by this diagnostic.
+
+The [source-free reports and provenance](benchmarks/columnar-production-2026-11-01/generic-planning-provenance.json)
+preserve the full sanitized plans, planning memory and the separate test logs.
+Earlier workload failures and their original acceptance flags remain unchanged.
+The isolated source/restored load tests passed their separately declared
+operational criteria, while failing the original universal ratio gate; that is
+not evidence of identical latency at every history size.
+
+Live conversion remains a separate, unfinished acceptance step. September was
+complete; at 06:38 UTC July had copied approximately **2.844 million rows** and
+verified approximately **1.16 million**, with verification continuing afterward.
+This checkpoint does not establish completed July/August conversion, final net
+filesystem savings, or large-history query acceptance after all conversions.
+Retained source data, ongoing ingestion, actual reserve checks and the final
+deployed revision still require observation before a production-rollout decision.
+
+### Packet-detail checkpoint, 2026-11-01 07:03 UTC
+
+Revision `8a70d6a84179f64c6e57b3f1eb951d54c1f2bf4b` fixes a live-scale point-read
+regression: an ID lookup could scan earlier compressed months even when its row
+was in a different heap month. The bounded point selection now uses indexed
+planning when Columnar is present. Canonical selection and reception retrieval
+share one repeatable-read snapshot and deadline. Sender/packet lookup selects
+the complete newest row directly, preserving its timestamp identity when a
+numeric database ID is reused in another month. Ordinary PostgreSQL works
+without a Columnar setting or extension.
+
+The read-only diagnostic preserved identical response hashes. Its existing-row
+execution fell from **2,831.379 ms** to **0.126 ms**, and missing-row execution
+from **2,671.266 ms** to **0.103 ms**, under the index-favoring generic variant.
+Fresh planning still took roughly 54–55 ms; these execution figures are not
+full endpoint timings. Subsequent live HTTP packet-copy medians were
+**4.726/4.884/5.847 ms** for the fixed July/August/September cases. All 15 sampled
+live cases returned HTTP 200 and matched the supplied baseline hashes; one
+August topic/text case has no recorded successful baseline HTTP status. A missing
+packet returned HTTP 404, with **38.228/4.253/3.966 ms** across three requests.
+These sequential warm-cache samples do not establish concurrent-load p95.
+
+Separate local runs passed **992 tests with 156 skipped** in **22.65 seconds**,
+**49 isolated PostgreSQL reader tests** in **7.65 seconds**, and **seven actual
+plain-PostgreSQL tests** in **0.83 seconds**. The latter used a separate 128 MiB,
+half-CPU PostgreSQL 18.6 server with no network, empty preload configuration,
+no Columnar access method or extension, and a NULL Columnar setting. The tests
+covered copies, missing/non-object payloads, reused identities, timestamp ties
+and receipt snapshot consistency. Its data, container and credentials were
+removed afterward. Full-suite skips include those seven dedicated cases when
+their isolated connection is absent; they are not counted as passes in that run.
+
+Exact-head native amd64 and arm64 [CI run 41283075375](https://github.com/SimmerV/meshinfo/actions/runs/41283075375)
+completed successfully at **07:02:44 UTC**. Both architectures explicitly passed
+the new separate-server test step without Columnar loaded or installed, alongside
+the mixed-history and restore suites. The [point-detail evidence](benchmarks/columnar-production-2026-11-01/point-detail-provenance.json)
+retains the original slow plans, fixed-response hashes, test logs and cleanup
+proof. August conversion and final full-history storage/performance acceptance
+remain outside this checkpoint; no production rollout or final savings claim
+follows from these targeted results.

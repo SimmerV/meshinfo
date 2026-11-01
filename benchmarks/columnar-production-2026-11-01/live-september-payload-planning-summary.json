@@ -1,0 +1,135 @@
+{
+  "source_report": "live-september-payload-planning-memory.json",
+  "read_only": true,
+  "memory_units": "KiB (PostgreSQL18 reports ceil(bytes/1024) as kB)",
+  "stripe_count": 7596,
+  "cases": [
+    {
+      "name": "month_09_page",
+      "variants": {
+        "custom": {
+          "first_planning_ms": 20.222,
+          "first_execution_ms": 2.573,
+          "first_memory_used_kib": 5682,
+          "first_memory_allocated_kib": 8793,
+          "warm_planning_ms": 17.001,
+          "warm_execution_ms": 1.632,
+          "warm_memory_used_kib": 5682,
+          "warm_memory_allocated_kib": 8793,
+          "reuse_counts": {
+            "generic_plans": 0,
+            "custom_plans": 5
+          },
+          "rows": 51,
+          "response_sha256": "44eafeaeaf32c5688fff73b089f5ded7af35e503908f43c3eae2702b560441b0"
+        },
+        "generic": {
+          "first_planning_ms": 25.444,
+          "first_execution_ms": 1.709,
+          "first_memory_used_kib": 7750,
+          "first_memory_allocated_kib": 8985,
+          "warm_planning_ms": 0.062,
+          "warm_execution_ms": 1.634,
+          "warm_memory_used_kib": 13,
+          "warm_memory_allocated_kib": 32,
+          "reuse_counts": {
+            "generic_plans": 5,
+            "custom_plans": 0
+          },
+          "rows": 51,
+          "response_sha256": "44eafeaeaf32c5688fff73b089f5ded7af35e503908f43c3eae2702b560441b0"
+        }
+      }
+    },
+    {
+      "name": "month_09_topic",
+      "variants": {
+        "custom": {
+          "first_planning_ms": 23.474,
+          "first_execution_ms": 17.361,
+          "first_memory_used_kib": 7489,
+          "first_memory_allocated_kib": 8985,
+          "warm_planning_ms": 23.176,
+          "warm_execution_ms": 15.681,
+          "warm_memory_used_kib": 7489,
+          "warm_memory_allocated_kib": 8985,
+          "reuse_counts": {
+            "generic_plans": 0,
+            "custom_plans": 5
+          },
+          "rows": 51,
+          "response_sha256": "676849af02e172295b6c0d06780579aa322eff2f6ca6da9d96f7ef2f45e4f09d"
+        },
+        "generic": {
+          "first_planning_ms": 24.163,
+          "first_execution_ms": 4.185,
+          "first_memory_used_kib": 7750,
+          "first_memory_allocated_kib": 8985,
+          "warm_planning_ms": 0.07,
+          "warm_execution_ms": 4.055,
+          "warm_memory_used_kib": 13,
+          "warm_memory_allocated_kib": 32,
+          "reuse_counts": {
+            "generic_plans": 5,
+            "custom_plans": 0
+          },
+          "rows": 51,
+          "response_sha256": "676849af02e172295b6c0d06780579aa322eff2f6ca6da9d96f7ef2f45e4f09d"
+        }
+      }
+    },
+    {
+      "name": "month_09_topic_search",
+      "variants": {
+        "custom": {
+          "first_planning_ms": 35.629,
+          "first_execution_ms": 14.27,
+          "first_memory_used_kib": 9231,
+          "first_memory_allocated_kib": 17313,
+          "warm_planning_ms": 29.138,
+          "warm_execution_ms": 13.564,
+          "warm_memory_used_kib": 9231,
+          "warm_memory_allocated_kib": 17313,
+          "reuse_counts": {
+            "generic_plans": 0,
+            "custom_plans": 5
+          },
+          "rows": 51,
+          "response_sha256": "2e5650669227e064f81d34b4fb2069a288dfcb15653831fc6d566a9dc3ae1683"
+        },
+        "generic": {
+          "first_planning_ms": 29.327,
+          "first_execution_ms": 11.255,
+          "first_memory_used_kib": 9457,
+          "first_memory_allocated_kib": 17313,
+          "warm_planning_ms": 0.135,
+          "warm_execution_ms": 10.622,
+          "warm_memory_used_kib": 28,
+          "warm_memory_allocated_kib": 56,
+          "reuse_counts": {
+            "generic_plans": 5,
+            "custom_plans": 0
+          },
+          "rows": 51,
+          "response_sha256": "2e5650669227e064f81d34b4fb2069a288dfcb15653831fc6d566a9dc3ae1683"
+        }
+      }
+    }
+  ],
+  "sources": [
+    "https://github.com/citusdata/citus/blob/v14.1.0/src/backend/columnar/columnar_tableam.c#L1901",
+    "https://github.com/citusdata/citus/blob/v14.1.0/src/backend/columnar/columnar_reader.c#L984",
+    "https://github.com/citusdata/citus/blob/v14.1.0/src/backend/columnar/columnar_customscan.c#L324",
+    "https://github.com/citusdata/citus/blob/v14.1.0/src/backend/columnar/columnar_metadata.c#L1508",
+    "https://www.postgresql.org/docs/18/sql-prepare.html",
+    "https://www.postgresql.org/docs/18/sql-explain.html",
+    "https://github.com/postgres/postgres/blob/REL_18_6/src/backend/commands/explain.c#L4300"
+  ],
+  "limitations": [
+    "Three fixed September keysets; warm OS/PG data caches, ordinary ingestion and July conversion continue.",
+    "First means new prepared statement plan, not cold data buffers.",
+    "August150k-stripe planning and concurrent fresh planners have not been measured.",
+    "Generic plan invalidation from DDL or statistics updates incurs fresh planning; pooled sessions warm separately.",
+    "PostgreSQL planning memory is separate from work_mem; reported allocation is not process peak RSS."
+  ]
+}

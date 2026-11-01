@@ -1,0 +1,440 @@
+{
+  "all_checks_passed": true,
+  "read_only": true,
+  "fixture_counts": {
+    "heap": {
+      "packets": 104480,
+      "archived": 63800
+    },
+    "columnar": {
+      "packets": 104480,
+      "archived": 63800
+    }
+  },
+  "cache_state": "shared-local-caches",
+  "preflight_data_probes": true,
+  "planner_profiles": [
+    "default"
+  ],
+  "query_timeout_seconds": 5,
+  "page_limit": 200,
+  "repeats": 5,
+  "results": {
+    "heap": {
+      "archive_payload_common": {
+        "production": {
+          "status": "passed",
+          "planner_profile": "default",
+          "sha256": "6154010b6998943f96237f1913d0b437fb7a94c9750ae5b5e15a3e80ca53e7c7",
+          "rows": 200,
+          "plan": {
+            "Node Type": "Limit",
+            "Plan Rows": 201,
+            "Total Cost": 9503.14,
+            "Plans": [
+              {
+                "Node Type": "Aggregate",
+                "Plan Rows": 1,
+                "Total Cost": 13.64,
+                "Plans": [
+                  {
+                    "Node Type": "Limit",
+                    "Plan Rows": 1,
+                    "Total Cost": 13.62,
+                    "Plans": [
+                      {
+                        "Node Type": "Seq Scan",
+                        "Relation Name": "topics",
+                        "Plan Rows": 1,
+                        "Total Cost": 13.62
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "Node Type": "CTE Scan",
+                "Plan Rows": 1,
+                "Total Cost": 0.03
+              },
+              {
+                "Node Type": "Result",
+                "Plan Rows": 63789,
+                "Total Cost": 3005919.8,
+                "Plans": [
+                  {
+                    "Node Type": "Incremental Sort",
+                    "Plan Rows": 63789,
+                    "Total Cost": 1102934.45,
+                    "Plans": [
+                      {
+                        "Node Type": "Append",
+                        "Plan Rows": 63789,
+                        "Total Cost": 1100063.95,
+                        "Plans": [
+                          {
+                            "Node Type": "Index Scan",
+                            "Index Name": "mqtt_messages_2026_09_created_at_idx",
+                            "Relation Name": "mqtt_messages_2026_09",
+                            "Scan Direction": "Forward",
+                            "Plan Rows": 31791,
+                            "Total Cost": 548155.68,
+                            "Plans": [
+                              {
+                                "Node Type": "Append",
+                                "Plan Rows": 4,
+                                "Total Cost": 67.07,
+                                "Plans": [
+                                  {
+                                    "Node Type": "CTE Scan",
+                                    "Plan Rows": 1,
+                                    "Total Cost": 0.02
+                                  },
+                                  {
+                                    "Node Type": "CTE Scan",
+                                    "Plan Rows": 1,
+                                    "Total Cost": 0.02
+                                  },
+                                  {
+                                    "Node Type": "Index Scan",
+                                    "Index Name": "packet_receptions_2026_08_mqtt_row_id_created_at_idx",
+                                    "Relation Name": "packet_receptions_2026_08",
+                                    "Scan Direction": "Forward",
+                                    "Plan Rows": 1,
+                                    "Total Cost": 16.75,
+                                    "Plans": [
+                                      {
+                                        "Node Type": "Seq Scan",
+                                        "Relation Name": "topics",
+                                        "Plan Rows": 1,
+                                        "Total Cost": 13.62
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "Node Type": "Index Scan",
+                                    "Index Name": "packet_receptions_2026_09_mqtt_row_id_created_at_idx",
+                                    "Relation Name": "packet_receptions_2026_09",
+                                    "Scan Direction": "Forward",
+                                    "Plan Rows": 1,
+                                    "Total Cost": 16.75,
+                                    "Plans": []
+                                  },
+                                  {
+                                    "Node Type": "Index Scan",
+                                    "Index Name": "packet_receptions_2026_10_mqtt_row_id_created_at_idx",
+                                    "Relation Name": "packet_receptions_2026_10",
+                                    "Scan Direction": "Forward",
+                                    "Plan Rows": 1,
+                                    "Total Cost": 16.75,
+                                    "Plans": []
+                                  },
+                                  {
+                                    "Node Type": "Index Scan",
+                                    "Index Name": "packet_receptions_2026_11_mqtt_row_id_created_at_idx",
+                                    "Relation Name": "packet_receptions_2026_11",
+                                    "Scan Direction": "Forward",
+                                    "Plan Rows": 1,
+                                    "Total Cost": 16.75,
+                                    "Plans": []
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "Node Type": "Index Scan",
+                            "Index Name": "mqtt_messages_2026_08_created_at_idx",
+                            "Relation Name": "mqtt_messages_2026_08",
+                            "Scan Direction": "Forward",
+                            "Plan Rows": 31998,
+                            "Total Cost": 551589.33,
+                            "Plans": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Aggregate",
+                    "Plan Rows": 1,
+                    "Total Cost": 29.82,
+                    "Plans": [
+                      {
+                        "Node Type": "Append",
+                        "Plan Rows": 4,
+                        "Total Cost": 29.8,
+                        "Plans": [
+                          {
+                            "Node Type": "Index Only Scan",
+                            "Index Name": "packet_receptions_2026_08_mqtt_row_id_created_at_idx",
+                            "Relation Name": "packet_receptions_2026_08",
+                            "Scan Direction": "Forward",
+                            "Plan Rows": 1,
+                            "Total Cost": 8.44
+                          },
+                          {
+                            "Node Type": "Index Only Scan",
+                            "Index Name": "packet_receptions_2026_09_mqtt_row_id_created_at_idx",
+                            "Relation Name": "packet_receptions_2026_09",
+                            "Scan Direction": "Forward",
+                            "Plan Rows": 1,
+                            "Total Cost": 8.45
+                          },
+                          {
+                            "Node Type": "Index Only Scan",
+                            "Index Name": "packet_receptions_2026_10_mqtt_row_id_created_at_idx",
+                            "Relation Name": "packet_receptions_2026_10",
+                            "Scan Direction": "Forward",
+                            "Plan Rows": 1,
+                            "Total Cost": 4.45
+                          },
+                          {
+                            "Node Type": "Index Only Scan",
+                            "Index Name": "packet_receptions_2026_11_mqtt_row_id_created_at_idx",
+                            "Relation Name": "packet_receptions_2026_11",
+                            "Scan Direction": "Forward",
+                            "Plan Rows": 1,
+                            "Total Cost": 8.44
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "statement_settings": {
+            "plan_cache_mode": "force_custom_plan"
+          },
+          "first_ms": 30.53,
+          "warm_median_ms": 12.981,
+          "successful_executions": 6,
+          "samples_ms": [
+            30.53,
+            12.981,
+            15.66,
+            12.132,
+            12.309,
+            15.81
+          ],
+          "max_ms": 30.53
+        }
+      }
+    },
+    "columnar": {
+      "archive_payload_common": {
+        "production": {
+          "status": "passed",
+          "planner_profile": "default",
+          "sha256": "6154010b6998943f96237f1913d0b437fb7a94c9750ae5b5e15a3e80ca53e7c7",
+          "rows": 200,
+          "plan": {
+            "Node Type": "Limit",
+            "Plan Rows": 1,
+            "Total Cost": 264.56,
+            "Plans": [
+              {
+                "Node Type": "Aggregate",
+                "Plan Rows": 1,
+                "Total Cost": 13.64,
+                "Plans": [
+                  {
+                    "Node Type": "Limit",
+                    "Plan Rows": 1,
+                    "Total Cost": 13.62,
+                    "Plans": [
+                      {
+                        "Node Type": "Seq Scan",
+                        "Relation Name": "topics",
+                        "Plan Rows": 1,
+                        "Total Cost": 13.62
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "Node Type": "CTE Scan",
+                "Plan Rows": 1,
+                "Total Cost": 0.03
+              },
+              {
+                "Node Type": "Result",
+                "Plan Rows": 1,
+                "Total Cost": 250.89,
+                "Plans": [
+                  {
+                    "Node Type": "Sort",
+                    "Plan Rows": 1,
+                    "Total Cost": 221.06,
+                    "Plans": [
+                      {
+                        "Node Type": "Hash Join",
+                        "Plan Rows": 1,
+                        "Total Cost": 221.04,
+                        "Plans": [
+                          {
+                            "Node Type": "Function Scan",
+                            "Plan Rows": 252,
+                            "Total Cost": 2.52
+                          },
+                          {
+                            "Node Type": "Hash",
+                            "Plan Rows": 3,
+                            "Total Cost": 217.15,
+                            "Plans": [
+                              {
+                                "Node Type": "Index Scan",
+                                "Index Name": "meshinfo_archive_stage_8a630b66bc2c44f1864df16c_pkey",
+                                "Relation Name": "mqtt_messages_2026_09",
+                                "Scan Direction": "Backward",
+                                "Plan Rows": 3,
+                                "Total Cost": 217.15,
+                                "Plans": [
+                                  {
+                                    "Node Type": "Append",
+                                    "Plan Rows": 4,
+                                    "Total Cost": 67.07,
+                                    "Plans": [
+                                      {
+                                        "Node Type": "CTE Scan",
+                                        "Plan Rows": 1,
+                                        "Total Cost": 0.02
+                                      },
+                                      {
+                                        "Node Type": "CTE Scan",
+                                        "Plan Rows": 1,
+                                        "Total Cost": 0.02
+                                      },
+                                      {
+                                        "Node Type": "Index Scan",
+                                        "Index Name": "packet_receptions_2026_08_mqtt_row_id_created_at_idx",
+                                        "Relation Name": "packet_receptions_2026_08",
+                                        "Scan Direction": "Forward",
+                                        "Plan Rows": 1,
+                                        "Total Cost": 16.75,
+                                        "Plans": [
+                                          {
+                                            "Node Type": "Seq Scan",
+                                            "Relation Name": "topics",
+                                            "Plan Rows": 1,
+                                            "Total Cost": 13.62
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "Node Type": "Index Scan",
+                                        "Index Name": "packet_receptions_2026_09_mqtt_row_id_created_at_idx",
+                                        "Relation Name": "packet_receptions_2026_09",
+                                        "Scan Direction": "Forward",
+                                        "Plan Rows": 1,
+                                        "Total Cost": 16.75,
+                                        "Plans": []
+                                      },
+                                      {
+                                        "Node Type": "Index Scan",
+                                        "Index Name": "packet_receptions_2026_10_mqtt_row_id_created_at_idx",
+                                        "Relation Name": "packet_receptions_2026_10",
+                                        "Scan Direction": "Forward",
+                                        "Plan Rows": 1,
+                                        "Total Cost": 16.75,
+                                        "Plans": []
+                                      },
+                                      {
+                                        "Node Type": "Index Scan",
+                                        "Index Name": "packet_receptions_2026_11_mqtt_row_id_created_at_idx",
+                                        "Relation Name": "packet_receptions_2026_11",
+                                        "Scan Direction": "Forward",
+                                        "Plan Rows": 1,
+                                        "Total Cost": 16.75,
+                                        "Plans": []
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "Node Type": "Aggregate",
+                    "Plan Rows": 1,
+                    "Total Cost": 29.82,
+                    "Plans": [
+                      {
+                        "Node Type": "Append",
+                        "Plan Rows": 4,
+                        "Total Cost": 29.8,
+                        "Plans": [
+                          {
+                            "Node Type": "Index Only Scan",
+                            "Index Name": "packet_receptions_2026_08_mqtt_row_id_created_at_idx",
+                            "Relation Name": "packet_receptions_2026_08",
+                            "Scan Direction": "Forward",
+                            "Plan Rows": 1,
+                            "Total Cost": 8.44
+                          },
+                          {
+                            "Node Type": "Index Only Scan",
+                            "Index Name": "packet_receptions_2026_09_mqtt_row_id_created_at_idx",
+                            "Relation Name": "packet_receptions_2026_09",
+                            "Scan Direction": "Forward",
+                            "Plan Rows": 1,
+                            "Total Cost": 8.45
+                          },
+                          {
+                            "Node Type": "Index Only Scan",
+                            "Index Name": "packet_receptions_2026_10_mqtt_row_id_created_at_idx",
+                            "Relation Name": "packet_receptions_2026_10",
+                            "Scan Direction": "Forward",
+                            "Plan Rows": 1,
+                            "Total Cost": 4.45
+                          },
+                          {
+                            "Node Type": "Index Only Scan",
+                            "Index Name": "packet_receptions_2026_11_mqtt_row_id_created_at_idx",
+                            "Relation Name": "packet_receptions_2026_11",
+                            "Scan Direction": "Forward",
+                            "Plan Rows": 1,
+                            "Total Cost": 8.44
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "statement_settings": {
+            "plan_cache_mode": "force_custom_plan",
+            "columnar.enable_custom_scan": "off"
+          },
+          "first_ms": 60.998,
+          "warm_median_ms": 37.079,
+          "successful_executions": 6,
+          "samples_ms": [
+            60.998,
+            38.756,
+            40.706,
+            37.079,
+            33.931,
+            36.508
+          ],
+          "max_ms": 60.998
+        }
+      }
+    }
+  },
+  "limits": [
+    "Existing isolated fixtures only; storage loading and migration are not measured.",
+    "First and repeated queries use shared local caches; disk-scale latency is not established.",
+    "Bound-key experiments force custom planning and fetch one bounded key page before payloads.",
+    "Response hashes compare all completed plans; timed-out plans remain failed gates."
+  ]
+}

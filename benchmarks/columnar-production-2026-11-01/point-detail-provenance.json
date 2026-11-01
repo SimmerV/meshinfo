@@ -1,0 +1,67 @@
+{
+  "format_version": 1,
+  "recorded_date_utc": "2026-11-01",
+  "diagnostic_baseline_revision": "a1a2fdd64ed36f23ab1107a2919d0f0bf6806560",
+  "implementation_revision": "8a70d6a84179f64c6e57b3f1eb951d54c1f2bf4b",
+  "diagnostic_scope": "Read-only fixed by-ID and missing-ID statements after July cutover; August target remained heap. Original and index-favoring custom/generic variants had identical response digests.",
+  "live_http_scope": "Three sequential samples per15fixed July/August/September cases; caches not flushed, normal ingestion continues. Not a concurrent-load p95 or full-history acceptance result.",
+  "live_hash_parity_cases": 15,
+  "live_http_200_cases": 15,
+  "baseline_http_status_unrecorded_cases": [
+    "month_08_topic_search"
+  ],
+  "separate_test_runs": [
+    {
+      "artifact": "backend-point-regressions.txt",
+      "passed": 992,
+      "skipped": 156,
+      "warnings": 1,
+      "duration_seconds": 22.65
+    },
+    {
+      "artifact": "isolated-point-reader-regressions.txt",
+      "passed": 49,
+      "duration_seconds": 7.65
+    },
+    {
+      "artifact": "plain-reader-point-proof.json",
+      "passed": 7,
+      "duration_seconds": 0.83
+    }
+  ],
+  "plain_compatibility_scope": "Fresh PostgreSQL18.6 server, empty shared_preload_libraries, NULL Columnar GUC, no Columnar extension/access method; actual production methods and transaction behavior tested.",
+  "full_live_conversion_complete": false,
+  "privacy_audit": "Reports contain timings, hashes, sanitized structural plans and synthetic-test environment/cleanup facts; no source packet/topic values, SQL expressions, parameters or credentials.",
+  "artifacts": {
+    "live-point-read-diagnosis.json": {
+      "bytes": 61505,
+      "sha256": "3c2f3d0d50c5f847e8f92ea2b1b2acd6d554fbfce2c9179eb5243e12b4cf159c",
+      "source_file_modified_utc": "2026-11-01T06:49:47.484796+00:00"
+    },
+    "live-query-after-point-fix.json": {
+      "bytes": 5321,
+      "sha256": "e831b7608cc2225bd8912c457749e3cb4ad3c025004efd9cc1005ecbb26568b5",
+      "source_file_modified_utc": "2026-11-01T07:01:21.592217+00:00"
+    },
+    "live-query-missing-after-point-fix.json": {
+      "bytes": 53,
+      "sha256": "266388f521dc26a7033ccf51f941c7b6d0a8f8797ca738bddd10fb09f19699a7",
+      "source_file_modified_utc": "2026-11-01T07:01:37.541612+00:00"
+    },
+    "plain-reader-point-proof.json": {
+      "bytes": 2030,
+      "sha256": "31b526346d8a60e9c92ea448be426cf354e0f7f45a18208c0b55c3e6cb161287",
+      "source_file_modified_utc": "2026-11-01T07:00:23.790797+00:00"
+    },
+    "backend-point-regressions.txt": {
+      "bytes": 1712,
+      "sha256": "6f8c5c97908ea3768a9c2e742a9fd4fc998ce5c686132cefad513d139de25b10",
+      "source_file_modified_utc": "2026-11-01T06:59:53.516056+00:00"
+    },
+    "isolated-point-reader-regressions.txt": {
+      "bytes": 99,
+      "sha256": "fe67338ff2ab8abcef2a92ecdd5a8370f9212250d77af775528f33a306e71f26",
+      "source_file_modified_utc": "2026-11-01T06:54:45.620300+00:00"
+    }
+  }
+}

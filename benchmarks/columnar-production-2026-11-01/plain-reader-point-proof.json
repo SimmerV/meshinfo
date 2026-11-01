@@ -1,0 +1,58 @@
+{
+  "format_version": 1,
+  "completed_utc": "2026-11-01T07:00:23.790023+00:00",
+  "scope": "Actual production packet detail methods against a separate PostgreSQL18 server without Columnar preload, extension, access method or GUC.",
+  "python_version": "3.12.3",
+  "observed_database": {
+    "server_version": "18.6 (Debian 18.6-1.pgdg13+2)",
+    "shared_preload_libraries": "",
+    "columnar_guc": null,
+    "database": "meshinfo_plain_reader_test",
+    "extensions": [
+      "plpgsql"
+    ],
+    "columnar_access_method_present": false,
+    "test_schemas_remaining": 0
+  },
+  "tests": {
+    "path": "tests/test_history_queries_plain_integration.py",
+    "passed": 7,
+    "failed": 0,
+    "duration_seconds": 0.83,
+    "cases": [
+      "by_id",
+      "by_packet_newest_and_timestamp_tie",
+      "exact_original_copies",
+      "missing",
+      "sql_null_malformed_scalar_array_json_null",
+      "reused_numeric_id_and_cross_month_receptions",
+      "repeatable_read_receipt_snapshot"
+    ]
+  },
+  "resources": {
+    "memory_bytes": 134217728,
+    "cpus": 0.5,
+    "network": "none",
+    "published_ports": false,
+    "owned_files_allocated_bytes_before_removal": 48910336
+  },
+  "cleanup": {
+    "container_removed": true,
+    "owned_database_and_socket_directory_removed": true,
+    "credential_files_removed": true,
+    "test_schemas_remaining_before_stop": 0,
+    "postgres_stop_exit_code": 0,
+    "oom_killed": false
+  },
+  "validation": {
+    "workflow_yaml_parsed": true,
+    "all_workflow_run_blocks_bash_syntax_passed": true,
+    "git_diff_check_passed": true
+  },
+  "source_sha256": {
+    "storage/db/postgres.py": "7601043af6ed7d109eedf4887039522c588f1744503177b0cba8ae2871381b3f",
+    "storage/db/history_queries.py": "09470b959307d3dbf221b7b943bd904c3290c9eff90880968d8af4c76a569129",
+    "tests/test_history_queries_plain_integration.py": "cc7396c909cbbc50e453cf41cda0af823495c67e0bd601e4c472fada1550028f",
+    ".github/workflows/columnar.yml": "1143ab01b8ac5609468874fba5ec218203f1416b6d11ca7a049c9830490050cf"
+  }
+}

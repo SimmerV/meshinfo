@@ -1,0 +1,271 @@
+{
+  "all_checks_passed": false,
+  "target_database": "meshinfo_workload_restore_52ac568204_columnar_test",
+  "packet_schemas": {
+    "heap": "benchmark_heap_full_aa1b20d976",
+    "columnar": "public"
+  },
+  "shared_schema": "benchmark_shared_aa1b20d976",
+  "duration_seconds": 60,
+  "ingest_per_second": 5,
+  "reader_workers": 2,
+  "reader_connections_per_layout": 2,
+  "total_read_connections": 4,
+  "writer_connections": 1,
+  "reads_per_second_per_worker": 5,
+  "thresholds": {
+    "read_p95_ms": 1000,
+    "write_p95_ms": 1000,
+    "columnar_to_heap_p95_ratio": 3
+  },
+  "operational_thresholds": {
+    "indexed_p95_ms": 250,
+    "indexed_ratio": 3,
+    "indexed_additional_p95_ms": 100,
+    "unindexed_p95_ms": 10000,
+    "unindexed_ratio": 3,
+    "writer_p95_ms": 250,
+    "first_postgres_buffer_reset_page_ms": "1000; verified by separate read-plan report"
+  },
+  "limits": [
+    "Bounded isolated fixture; this is not production-scale capacity proof.",
+    "Hot writes use an existing fixture month; archived query windows exclude them.",
+    "PostgreSQL and OS caches may be warm. No host caches are dropped.",
+    "Relative gates use the same query on each layout under concurrent load."
+  ],
+  "ownership": {
+    "first_id": 8000001407332243456,
+    "exclusive_last_id": 8000001407332245504,
+    "created_at": "2026-10-15T00:28:24+00:00"
+  },
+  "cleanup_complete": true,
+  "write_latency": {
+    "count": 299,
+    "p50_ms": 6.666,
+    "p95_ms": 53.269,
+    "max_ms": 64.831
+  },
+  "write_errors": [],
+  "read_errors": [],
+  "read_latency": {
+    "heap": {
+      "archive_page": {
+        "count": 13,
+        "p50_ms": 15.977,
+        "p95_ms": 23.308,
+        "max_ms": 23.308
+      },
+      "archive_common_payload": {
+        "count": 14,
+        "p50_ms": 22.253,
+        "p95_ms": 30.225,
+        "max_ms": 30.225
+      },
+      "archive_absent_payload": {
+        "count": 14,
+        "p50_ms": 1175.819,
+        "p95_ms": 1266.08,
+        "max_ms": 1266.08
+      },
+      "archive_receipt_topic": {
+        "count": 14,
+        "p50_ms": 2322.658,
+        "p95_ms": 2405.524,
+        "max_ms": 2405.524
+      },
+      "archive_node": {
+        "count": 14,
+        "p50_ms": 3.934,
+        "p95_ms": 4.917,
+        "max_ms": 4.917
+      },
+      "archive_literal_topic": {
+        "count": 14,
+        "p50_ms": 6.929,
+        "p95_ms": 8.793,
+        "max_ms": 8.793
+      },
+      "archive_topic_payload_common": {
+        "count": 14,
+        "p50_ms": 11.104,
+        "p95_ms": 13.473,
+        "max_ms": 13.473
+      },
+      "archive_topic_payload_absent": {
+        "count": 14,
+        "p50_ms": 10.404,
+        "p95_ms": 11.089,
+        "max_ms": 11.089
+      },
+      "archive_copies": {
+        "count": 12,
+        "p50_ms": 3.066,
+        "p95_ms": 8.228,
+        "max_ms": 8.228
+      }
+    },
+    "columnar": {
+      "archive_page": {
+        "count": 13,
+        "p50_ms": 41.38,
+        "p95_ms": 63.435,
+        "max_ms": 63.435
+      },
+      "archive_common_payload": {
+        "count": 14,
+        "p50_ms": 45.89,
+        "p95_ms": 104.65,
+        "max_ms": 104.65
+      },
+      "archive_absent_payload": {
+        "count": 14,
+        "p50_ms": 1297.882,
+        "p95_ms": 1385.004,
+        "max_ms": 1385.004
+      },
+      "archive_receipt_topic": {
+        "count": 14,
+        "p50_ms": 2412.01,
+        "p95_ms": 2495.453,
+        "max_ms": 2495.453
+      },
+      "archive_node": {
+        "count": 14,
+        "p50_ms": 16.476,
+        "p95_ms": 65.433,
+        "max_ms": 65.433
+      },
+      "archive_literal_topic": {
+        "count": 14,
+        "p50_ms": 13.748,
+        "p95_ms": 16.972,
+        "max_ms": 16.972
+      },
+      "archive_topic_payload_common": {
+        "count": 14,
+        "p50_ms": 17.54,
+        "p95_ms": 21.998,
+        "max_ms": 21.998
+      },
+      "archive_topic_payload_absent": {
+        "count": 14,
+        "p50_ms": 17.263,
+        "p95_ms": 21.113,
+        "max_ms": 21.113
+      },
+      "archive_copies": {
+        "count": 12,
+        "p50_ms": 35.669,
+        "p95_ms": 41.532,
+        "max_ms": 41.532
+      }
+    }
+  },
+  "read_gates": {
+    "archive_page": {
+      "columnar_to_heap_p95_ratio": 2.7215977346833706,
+      "columnar_p95_under_100ms": true,
+      "columnar_p95_under_250ms": true,
+      "columnar_minus_heap_p95_ms": 40.127,
+      "passed": true
+    },
+    "archive_common_payload": {
+      "columnar_to_heap_p95_ratio": 3.4623655913978495,
+      "columnar_p95_under_100ms": false,
+      "columnar_p95_under_250ms": true,
+      "columnar_minus_heap_p95_ms": 74.425,
+      "passed": false
+    },
+    "archive_absent_payload": {
+      "columnar_to_heap_p95_ratio": 1.0939308732465562,
+      "columnar_p95_under_100ms": false,
+      "columnar_p95_under_250ms": false,
+      "columnar_minus_heap_p95_ms": 118.924,
+      "passed": false
+    },
+    "archive_receipt_topic": {
+      "columnar_to_heap_p95_ratio": 1.0373843703076753,
+      "columnar_p95_under_100ms": false,
+      "columnar_p95_under_250ms": false,
+      "columnar_minus_heap_p95_ms": 89.929,
+      "passed": false
+    },
+    "archive_node": {
+      "columnar_to_heap_p95_ratio": 13.307504575960953,
+      "columnar_p95_under_100ms": true,
+      "columnar_p95_under_250ms": true,
+      "columnar_minus_heap_p95_ms": 60.516,
+      "passed": false
+    },
+    "archive_literal_topic": {
+      "columnar_to_heap_p95_ratio": 1.9301717275105201,
+      "columnar_p95_under_100ms": true,
+      "columnar_p95_under_250ms": true,
+      "columnar_minus_heap_p95_ms": 8.179,
+      "passed": true
+    },
+    "archive_topic_payload_common": {
+      "columnar_to_heap_p95_ratio": 1.6327469754323463,
+      "columnar_p95_under_100ms": true,
+      "columnar_p95_under_250ms": true,
+      "columnar_minus_heap_p95_ms": 8.525,
+      "passed": true
+    },
+    "archive_topic_payload_absent": {
+      "columnar_to_heap_p95_ratio": 1.9039588781675534,
+      "columnar_p95_under_100ms": true,
+      "columnar_p95_under_250ms": true,
+      "columnar_minus_heap_p95_ms": 10.024,
+      "passed": true
+    },
+    "archive_copies": {
+      "columnar_to_heap_p95_ratio": 5.047642197374818,
+      "columnar_p95_under_100ms": true,
+      "columnar_p95_under_250ms": true,
+      "columnar_minus_heap_p95_ms": 33.304,
+      "passed": false
+    }
+  },
+  "operational_read_gates": {
+    "archive_page": {
+      "classification": "indexed lookup",
+      "passed": true
+    },
+    "archive_common_payload": {
+      "classification": "unindexed text search",
+      "passed": false
+    },
+    "archive_absent_payload": {
+      "classification": "unindexed text search",
+      "passed": true
+    },
+    "archive_receipt_topic": {
+      "classification": "unindexed text search",
+      "passed": true
+    },
+    "archive_node": {
+      "classification": "indexed lookup",
+      "passed": true
+    },
+    "archive_literal_topic": {
+      "classification": "indexed lookup",
+      "passed": true
+    },
+    "archive_topic_payload_common": {
+      "classification": "indexed lookup",
+      "passed": true
+    },
+    "archive_topic_payload_absent": {
+      "classification": "indexed lookup",
+      "passed": true
+    },
+    "archive_copies": {
+      "classification": "indexed lookup",
+      "passed": true
+    }
+  },
+  "response_consistency_passed": true,
+  "ingest_checks_passed": true,
+  "latency_gates_passed": false,
+  "operational_acceptance_passed": false
+}

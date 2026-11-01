@@ -1,0 +1,98 @@
+{
+  "format_version": 1,
+  "description": "Source-free benchmark and validation artifacts; original diagnostic reports preserved byte-for-byte. Source fixtures, query arguments and credentials excluded.",
+  "artifacts": {
+    "read-source-first.json": {
+      "bytes": 9143,
+      "sha256": "563faaf34b71f5b0e09ae26d32b4cc961673ce8d5b30b9e359cfb0d7dafb0071"
+    },
+    "read-restored-first.json": {
+      "bytes": 9140,
+      "sha256": "fd7546f4582b26306e10bc56d6ced2b06ade4c10633b99d0f516dca6cff3ce4a"
+    },
+    "read-source-complete.json": {
+      "bytes": 167401,
+      "sha256": "a5294671756c66678cc1fcb2621a44cb56457f172549506022e0aa77e8fdd193"
+    },
+    "read-restored-complete.json": {
+      "bytes": 167164,
+      "sha256": "bdd9218f27085c5d7b86152225b9da637e084190032614480722505830c7bd19"
+    },
+    "read-restored-prefix-compact.json": {
+      "bytes": 18667,
+      "sha256": "a2e5d7ff6eeb02dd3b4a95dbaf40484d5a74acc5e87cdccf96ab8500640811f7"
+    },
+    "concurrent-source-accepted.json": {
+      "bytes": 121839,
+      "sha256": "84e432c6cc5c70d428f16f09fe33d91d9a36ef44a8bd4ad97de04eac54e10cf5"
+    },
+    "concurrent-restored-accepted.json": {
+      "bytes": 121845,
+      "sha256": "bab3b7b99a052552921a6e58102edef6f6120572dda8edd050682660ae27f24c"
+    },
+    "concurrent-restored-final.json": {
+      "bytes": 7384,
+      "sha256": "e871b6a21f7e8caf0c4aeb6cd9743888953e85942d79eb2337bfe34327aa3956"
+    },
+    "concurrent-restored-compact.json": {
+      "bytes": 7386,
+      "sha256": "1bce29c540dc88842f5ce53d14c434021ac76d55de274cb6cc99835b0cb79b22"
+    },
+    "live-september-payload-planning-memory.json": {
+      "bytes": 273596,
+      "sha256": "cdc7b823913d63dcebb289cf688712a3851f86e324b64adc2fdb9c94966c45fd"
+    },
+    "live-september-payload-planning-summary.json": {
+      "bytes": 5043,
+      "sha256": "10bf6003e5fe5415f5a96cc049c6ef7ab30320c354f50715e397be9d11a3cc8b"
+    },
+    "isolated-generic-reader-regressions.txt": {
+      "bytes": 99,
+      "sha256": "6a766e3fa323914d4fae08630991ddc7e536254aa1641641db64c3f43f319f59"
+    },
+    "backend-generic-regressions.txt": {
+      "bytes": 1712,
+      "sha256": "5d609aef0114ecbca4434d84fc09d8fc877acee8860484aecca5faa0da3ca89c"
+    },
+    "generic-planning-provenance.json": {
+      "bytes": 2621,
+      "sha256": "66a5db41c61a1a44dc9c9448b40d477afc0d3f7c03ea50d1def3ce9fe4a31db7"
+    },
+    "native-ci-a1a2fdd.json": {
+      "bytes": 4273,
+      "sha256": "47ba812de4a80c1de93813a2f6cc93097a82963c4d5fff2c7edb6e0df348bf18"
+    },
+    "live-point-read-diagnosis.json": {
+      "bytes": 61505,
+      "sha256": "3c2f3d0d50c5f847e8f92ea2b1b2acd6d554fbfce2c9179eb5243e12b4cf159c"
+    },
+    "live-query-after-point-fix.json": {
+      "bytes": 5321,
+      "sha256": "e831b7608cc2225bd8912c457749e3cb4ad3c025004efd9cc1005ecbb26568b5"
+    },
+    "live-query-missing-after-point-fix.json": {
+      "bytes": 53,
+      "sha256": "266388f521dc26a7033ccf51f941c7b6d0a8f8797ca738bddd10fb09f19699a7"
+    },
+    "plain-reader-point-proof.json": {
+      "bytes": 2030,
+      "sha256": "31b526346d8a60e9c92ea448be426cf354e0f7f45a18208c0b55c3e6cb161287"
+    },
+    "backend-point-regressions.txt": {
+      "bytes": 1712,
+      "sha256": "6f8c5c97908ea3768a9c2e742a9fd4fc998ce5c686132cefad513d139de25b10"
+    },
+    "isolated-point-reader-regressions.txt": {
+      "bytes": 99,
+      "sha256": "fe67338ff2ab8abcef2a92ecdd5a8370f9212250d77af775528f33a306e71f26"
+    },
+    "point-detail-provenance.json": {
+      "bytes": 2998,
+      "sha256": "90cfff2ae40d3711e50a53ebf4fc24419f08f1175071d32e9314d8d442b50620"
+    },
+    "native-ci-8a70d6a.json": {
+      "bytes": 4637,
+      "sha256": "a65c8e7c6006aa3a1e2dfec057564cc83dc29dbae03a33ff0860e524d8e2aa30"
+    }
+  }
+}

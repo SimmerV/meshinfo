@@ -1,0 +1,36 @@
+{
+  "purpose": "Read-only live September stage probe before indexed verification fix",
+  "date_utc": "2026-11-01",
+  "source_rows": 706383,
+  "selected_stage_rows": 1000,
+  "statement_deadline_seconds": 3,
+  "cache_note": "Concurrent live verification; no cache reset. This probes the target range SELECT, not the entire verification transaction.",
+  "measurements": [
+    {
+      "settings": "custom scan on",
+      "node": "ColumnarScan",
+      "execution_ms": 1410.03,
+      "planning_ms": 23.603,
+      "shared_hit_blocks": 254283,
+      "shared_read_blocks": 2
+    },
+    {
+      "settings": "custom scan off",
+      "node": "Seq Scan",
+      "execution_ms": 1344.257,
+      "planning_ms": 9.552,
+      "shared_hit_blocks": 254216,
+      "shared_read_blocks": 0
+    },
+    {
+      "settings": "custom scan off, seqscan discouraged, ordered primary-key range",
+      "node": "Index Scan",
+      "execution_ms": 19.198,
+      "planning_ms": 11.819,
+      "shared_hit_blocks": 4439,
+      "shared_read_blocks": 6
+    }
+  ],
+  "all_reads_read_only": true,
+  "retained_original_unmodified": true
+}
