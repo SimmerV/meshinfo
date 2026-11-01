@@ -81,12 +81,32 @@ function PolicyDetails({
         </p>
       )}
       {oldest && <p>{oldest}</p>}
+      {scope === "packets" && <ArchiveNotice history={history} />}
       <p>
         {scope === "packets"
           ? "Packet age starts when this server first received the packet."
           : "Retention is based on when this server received the data."}
         {" "}Current node state is kept separately.
       </p>
+    </div>
+  );
+}
+
+function ArchiveNotice({ history }: { history: IStorageHistory }) {
+  const archive = history.archive;
+  if (!archive || (!archive.enabled && archive.compressed_partitions === 0)) return null;
+  const status = history.maintenance?.archive?.status;
+  const needsAttention = status && ["blocked", "error", "failed"].includes(status);
+  return (
+    <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+      <p>
+        {archive.enabled
+          ? `Packet history older than ${archive.after_months} calendar month${archive.after_months === 1 ? "" : "s"} is eligible for lossless compression.`
+          : "Automatic history compression is off."}
+        {" "}Compressed history stays available in the usual searches. Compression does not delete history.
+      </p>
+      {archive.compressed_partitions > 0 && <p>{archive.compressed_partitions} historical month{archive.compressed_partitions === 1 ? " is" : "s are"} compressed.</p>}
+      {needsAttention && <p className="text-amber-700 dark:text-amber-300">History compression needs operator attention. Existing history remains available.</p>}
     </div>
   );
 }
@@ -150,6 +170,7 @@ export function HistoryRetentionPanel() {
       ) : data?.scopes ? (
         <>
           <MaintenanceNotice history={data} />
+          <ArchiveNotice history={data} />
           {hasFinitePolicy && !data.enforcement_enabled && (
             <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">Preview only: automatic expiration is off. No history is deleted by these policies.</p>
           )}

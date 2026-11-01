@@ -20,6 +20,7 @@ from typing import Any
 from utils import normalize_node_id
 from storage.retention import retention_policy
 from storage.db.index_maintenance import packing_policy
+from storage.db.archive import archive_policy
 from storage.backup import BackupPolicy
 from pathlib import Path
 
@@ -148,6 +149,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "compression": {
             "enabled": False, "after_months": 6, "index_fillfactor": 100,
             "max_index_mib": 64, "reserve_mib": 1024, "max_seconds": 5,
+            "database_filesystem": "",
+        },
+        "archive": {
+            "enabled": False, "after_months": 6, "batch_rows": 1000,
+            "batch_mib": 8, "cycle_seconds": 10, "statement_seconds": 3,
+            "reserve_mib": 1024, "max_wal_mib": 64,
+            "estimate_multiplier": 1.5, "compression_level": 3,
+            "chunk_group_rows": 1000, "index_build_seconds": 300,
+            "analyze_seconds": 8,
             "database_filesystem": "",
         },
         # Uplink dedup (#526): store one canonical mqtt_messages row per mesh
@@ -533,6 +543,7 @@ def validate(config: dict) -> list[str]:
     try:
         retention_policy(config)
         packing_policy(config)
+        archive_policy(config)
     except ValueError as exc:
         raise ConfigValidationError(str(exc)) from exc
 
@@ -724,6 +735,7 @@ class Config:
             ("storage", "postgres", "password"),
             ("storage", "postgres", "username"),
             ("storage", "compression", "database_filesystem"),
+            ("storage", "archive", "database_filesystem"),
             ("backups", "dir"),
             ("backups", "remote_target"),
         ]

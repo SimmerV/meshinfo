@@ -16,6 +16,7 @@ inside PostgreSQL; it does not immediately return that space to the filesystem.
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import json
 import re
 
 from storage.retention import (
@@ -46,9 +47,10 @@ SELECT r.parent_name, r.partition_key, r.is_parent, c.oid::bigint AS relation_oi
        CASE WHEN c.relkind = 'r' THEN pg_table_size(c.oid) ELSE 0 END AS table_bytes,
        CASE WHEN c.relkind = 'r' THEN pg_indexes_size(c.oid) ELSE 0 END AS index_bytes,
        CASE WHEN c.relkind = 'r' THEN pg_relation_size(c.oid) ELSE 0 END AS heap_bytes,
-       c.reltuples::double precision AS estimated_rows
+       c.reltuples::double precision AS estimated_rows, am.amname AS access_method
 FROM relations r JOIN pg_class c ON c.oid = r.relation_oid
 JOIN pg_namespace n ON n.oid = c.relnamespace
+LEFT JOIN pg_am am ON am.oid=c.relam
 ORDER BY r.parent_name, r.is_parent DESC, n.nspname, c.relname
 """
 
@@ -105,6 +107,7 @@ def _relation_detail(row: Mapping, cutoff: datetime | None) -> dict:
         "name": row["relation_name"],
         "parent": row["parent_name"],
         "kind": row["relation_kind"],
+        "access_method": row.get("access_method", "heap" if row["relation_kind"] == "r" else None),
         "is_parent": row["is_parent"],
         "partition_key": row["partition_key"],
         "partition_bound": row["partition_bound"],
@@ -188,7 +191,13 @@ async def build_storage_report(connection_or_pool, config: Mapping, *,
             catalog = [dict(row) for row in await conn.fetch(_CATALOG_SQL, table_names)]
             database_bytes = await conn.fetchval("SELECT pg_database_size(current_database())")
             maintenance = await read_status(conn)
+            archive_inventory = await _archive_inventory(conn)
     public = retention_summary(config, now=now, enforcement_available=enforcement_available)
+    from storage.db.archive import archive_policy
+    archive = archive_policy(config)
+    archived = [row for row in catalog if row.get('access_method') == 'columnar' and row['parent_name'] == 'mqtt_messages']
+    public['archive'] = {'enabled': archive.enabled, 'after_months': archive.after_months,
+                         'compressed_partitions': len(archived), 'history_remains_queryable': True}
     public["maintenance"] = public_status(maintenance)
     scopes = {}
     for scope in RETENTION_SCOPES:
@@ -225,8 +234,36 @@ async def build_storage_report(connection_or_pool, config: Mapping, *,
         "candidate_bytes_note": "Whole paired partitions before the UTC cutoff; execution checks may retain them. Row deletes do not promise filesystem space reclamation.",
         "scopes": scopes,
         "maintenance": maintenance,
+        "archive": archive_inventory,
     }
     return {"public": public, "details": details}
+
+
+async def _archive_inventory(conn):
+    """Bounded operator-only migration and shared metadata accounting.
+
+    Detached replacements are additional disk use until cutover. Columnar
+    metadata belongs to the database, so do not attribute it repeatedly to
+    individual partitions or omit it from compression measurements.
+    """
+    if not await conn.fetchval("SELECT to_regclass('public.storage_archive_jobs')"):
+        return {"jobs": [], "staging_bytes": 0, "metadata_bytes": 0, "journal_bytes": 0}
+    value = await conn.fetchval("""SELECT json_build_object(
+        'staging_bytes', (SELECT coalesce(sum(pg_total_relation_size(c.oid)),0)
+            FROM public.storage_archive_jobs j JOIN pg_namespace n ON n.nspname='public'
+            JOIN pg_class c ON c.relnamespace=n.oid AND c.relname=j.stage_name
+            WHERE NOT c.relispartition AND j.phase IN ('copying','verifying','ready','failed')),
+        'metadata_bytes', (SELECT coalesce(sum(pg_total_relation_size(c.oid)),0)
+            FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+            WHERE n.nspname IN ('columnar','columnar_internal') AND c.relkind IN ('r','m','S')),
+        'journal_bytes', pg_total_relation_size('public.storage_archive_jobs'),
+        'jobs', (SELECT coalesce(json_agg(row_to_json(j)),'[]'::json) FROM (
+            SELECT job_id,source_name,target_method,phase,source_frozen,rows_copied,rows_verified,
+                   copied_logical_bytes,source_bytes,blocked_reason,updated_at
+            FROM public.storage_archive_jobs
+            ORDER BY (phase IN ('copying','verifying','ready','failed')) DESC, updated_at DESC
+            LIMIT 12) j))""")
+    return json.loads(value) if isinstance(value, str) else value
 
 
 async def public_history_report(connection_or_pool, config: Mapping, **kwargs) -> dict:

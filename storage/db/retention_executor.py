@@ -154,6 +154,19 @@ def _empty_scope(cutoff, status="complete"):
 
 
 async def _expire_packets(conn, cutoff, *, max_months, tail_limit, interleaved_limit):
+    # The caller holds the shared maintenance lock. If a newly shortened
+    # retention policy expires a source being copied, discard only its private
+    # replacement and release the source guard before normal grouped expiration.
+    # Leaving a detached stage behind would otherwise retain expired data.
+    if await conn.fetchval("SELECT to_regclass('public.storage_archive_jobs')"):
+        from storage.db.archive import cancel_archive
+        active = await conn.fetch("SELECT job_id FROM public.storage_archive_jobs "
+                                  "WHERE source_frozen AND phase IN ('copying','verifying','ready') "
+                                  "AND bound_end <= $1", cutoff)
+        for job in active:
+            cancelled = await cancel_archive(conn, job['job_id'])
+            if cancelled['status'] != 'cancelled':
+                raise RetentionBlocked('Archive replacement must be cancelled before expiring its source')
     async with conn.transaction():
         await _transaction_limits(conn)
         # ONLY avoids implicit recursive lock order. Parent locks prevent
@@ -255,6 +268,9 @@ async def _expire_packets(conn, cutoff, *, max_months, tail_limit, interleaved_l
         # entire cohort, including any reception tail deletes above.
         targets = ", ".join(_relation(r) for r in old_receptions + old_canonical)
         await conn.execute(f"DROP TABLE {targets}")
+        if await conn.fetchval("SELECT to_regclass('public.storage_archive_jobs')"):
+            await conn.execute("DELETE FROM public.storage_archive_jobs WHERE phase IN ('complete','cancelled','failed') "
+                               "AND source_name=ANY($1::text[])", [r['relation_name'] for r in old_canonical])
         result = _empty_scope(cutoff, "partial" if len(expired) > len(selected) else "complete")
         result.update(partitions_dropped=[r["relation_name"] for r in old],
                       receptions_deleted=len(tails),

@@ -42,6 +42,28 @@ function history(overrides: Partial<IStorageHistory> = {}): IStorageHistory {
 afterEach(() => cleanup());
 
 describe("History retention visibility", () => {
+  it("shows lossless compression separately from forever retention", async () => {
+    stubApi({ history: history({
+      archive: { enabled: true, after_months: 1, compressed_partitions: 3, history_remains_queryable: true },
+      maintenance: { archive: { status: "blocked", updated_at: "2026-10-27T12:00:00Z", scopes: {} } },
+    }) });
+    await mountAt("/logs", <RetentionNotice scope="packets" />);
+    expect(document.querySelector("summary")?.textContent).toBe("History retention: Forever");
+    expect(document.body.textContent).toContain("Compression does not delete history");
+    expect(document.body.textContent).toContain("3 historical months are compressed");
+    expect(document.body.textContent).toContain("Existing history remains available");
+  });
+
+  it("keeps compressed history visible when future compression is disabled", async () => {
+    stubApi({ history: history({
+      archive: { enabled: false, after_months: 6, compressed_partitions: 1, history_remains_queryable: true },
+    }) });
+    await mountAt("/stats", <HistoryRetentionPanel />);
+    expect(document.body.textContent).toContain("Automatic history compression is off");
+    expect(document.body.textContent).toContain("1 historical month is compressed");
+    expect(document.body.textContent).toContain("Compressed history stays available in the usual searches");
+  });
+
   it("describes forever as a policy without promising that all past data exists", async () => {
     stubApi({ history: history() });
     await mountAt("/logs", <RetentionNotice scope="packets" />);

@@ -56,7 +56,7 @@ SELECT idx.oid::bigint AS index_oid, idx.relname AS index_name, idx.reloptions,
        pg_get_expr(t.relpartbound,t.oid) AS bound, ts.spcname AS tablespace,
        pg_get_partkeydef(p.oid) AS partition_key, am.amname AS method,
        idx.relkind::text AS index_kind,t.relkind::text AS table_kind,
-       t.relpersistence::text AS persistence,
+       t.relpersistence::text AS persistence,ta.amname AS table_access_method,
        x.indisvalid,x.indisready,x.indisunique,x.indisprimary,
        x.indkey::text AS keys,x.indclass::text AS classes,x.indcollation::text AS collations,
        x.indoption::text AS options,pg_get_expr(x.indpred,t.oid) AS predicate,
@@ -67,6 +67,7 @@ JOIN pg_class t ON t.oid=x.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace
 JOIN pg_namespace ni ON ni.oid=idx.relnamespace
 JOIN pg_inherits inh ON inh.inhrelid=t.oid JOIN pg_class p ON p.oid=inh.inhparent
 JOIN pg_namespace pn ON pn.oid=p.relnamespace JOIN pg_am am ON am.oid=idx.relam
+JOIN pg_am ta ON ta.oid=t.relam
 LEFT JOIN pg_tablespace ts ON ts.oid=idx.reltablespace
 WHERE n.nspname='public' AND ni.nspname='public' AND pn.nspname='public'
   AND p.relname IN ('mqtt_messages','packet_receptions')
@@ -80,6 +81,8 @@ def _fingerprint(row):
 
 
 def _reason(row, now, limits):
+    if row.get('table_access_method', 'heap') != 'heap':
+        return 'compressed_history_uses_archive_maintenance'
     bounds = monthly_partition_bounds(row["bound"])
     cutoff = complete_month_cutoff(now, limits.after_months) if limits.after_months else now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     if (row["index_kind"] != "i" or row["table_kind"] != "r" or row["persistence"] != "p"

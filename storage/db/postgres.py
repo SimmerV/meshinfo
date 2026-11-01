@@ -22,6 +22,15 @@ from typing import Any, Dict, Optional, List, Tuple
 from zoneinfo import ZoneInfo
 
 from storage.db.ingest_guard import NodeRateLimiter, SuppressedCopyLog
+from storage.db.history_queries import (
+    HistoryReadError,
+    HistoryUnavailableError,
+    literal_topic_pattern,
+    packet_page_sql,
+    page_limit,
+    read_failure,
+    search_condition,
+)
 from storage.db.uplink_dedup import (
     UplinkDedupCache,
     coerce_packet_id,
@@ -579,13 +588,17 @@ class PostgresStorage:
                 await conn.execute(
                     "CREATE EXTENSION IF NOT EXISTS pg_trgm", timeout=60
                 )
-                # First build scans the whole table: ~40s per 3M rows.
-                await conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_mqtt_messages_topic_trgm
-                        ON mqtt_messages USING gin (topic gin_trgm_ops);
-                """, timeout=900)
+                from storage.db.archive_catalog import ensure_heap_topic_indexes
+                await ensure_heap_topic_indexes(
+                    conn, allow_legacy_parent=not self.config.get("storage", {}).get("archive", {}).get("enabled", False))
         except Exception as e:
             logger.warning(f"pg_trgm topic index skipped (topic filters will be slower): {e}")
+
+        # Ordinary installations need only the small job journal. Installing the
+        # optional table access method is an explicit deployment prerequisite.
+        from storage.db.archive import ensure_archive_schema
+        async with self.pool.acquire() as conn:
+            await ensure_archive_schema(conn)
 
         # Preset-split partial index — stats-only perf. The 24h preset GROUP BY
         # keeps ~1% of a day's rows, so indexing just the matching topics turns
@@ -692,50 +705,71 @@ class PostgresStorage:
                             f"FOR VALUES FROM (TIMESTAMPTZ '{lo} 00:00:00+00') "
                             f"TO (TIMESTAMPTZ '{hi} 00:00:00+00')"
                         )
+                from storage.db.archive_catalog import ensure_heap_topic_indexes
+                if await conn.fetchval("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_trgm')"):
+                    await ensure_heap_topic_indexes(
+                        conn, allow_legacy_parent=not self.config.get("storage", {}).get("archive", {}).get("enabled", False))
         except Exception as e:
             logger.error("ensure_mqtt_partitions failed: %s", e)
 
     async def _backfill_mqtt_node_ids(self):
-        """Backfill from_node_id/to_node_id for existing mqtt_messages rows in batches."""
-        BATCH = 5000
+        """Backfill only writable heap leaves, using the complete packet key.
+
+        A parent UPDATE cannot prune columnar children by ID alone. Lock and
+        recheck each heap leaf so a concurrent archive freeze/cutover cannot
+        race this startup repair. Frozen sources remain byte-for-byte stable.
+        """
+        from storage.db.archive_catalog import relation
+        batch_size = 1000
         total = 0
         try:
-            while True:
-                async with self.pool.acquire() as conn:
-                    # Override the pool-level command_timeout (10s) — backfill
-                    # batches can take longer on large tables.
-                    await conn.execute("SET statement_timeout = '120s'", timeout=120)
-                    # Fetch candidate IDs and parse in Python to skip bad payloads
-                    rows = await conn.fetch("""
-                        SELECT id, payload
-                        FROM mqtt_messages
-                        WHERE from_node_id IS NULL
-                          AND payload IS NOT NULL
-                          AND payload ~ '^\\s*\\{'
-                        LIMIT $1
-                    """, BATCH, timeout=120)
-                    if not rows:
-                        break
-                    updates = []
-                    for row in rows:
-                        try:
-                            j = json.loads(row["payload"])
-                        except Exception:
-                            # Mark as processed with empty node IDs so we don't retry
-                            updates.append((row["id"], "", ""))
-                            continue
-                        fid = self._normalize_node_id(j.get("from")) or ""
-                        tid = self._normalize_node_id(j.get("to")) or ""
-                        updates.append((row["id"], fid, tid))
-                    if updates:
-                        await conn.executemany("""
-                            UPDATE mqtt_messages
-                            SET from_node_id = $2, to_node_id = $3
-                            WHERE id = $1
-                        """, updates, timeout=120)
-                    total += len(updates)
-                    if len(updates) < BATCH:
-                        break
+            async with self.pool.acquire() as conn:
+                from storage.db.archive_catalog import heap_leaves
+                leaves = await heap_leaves(conn)
+            for leaf in leaves:
+                target = relation(leaf['schema'], leaf['name'])
+                try:
+                    while True:
+                        async with self.pool.acquire() as conn:
+                            async with conn.transaction():
+                                await conn.execute("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='100ms'")
+                                await conn.execute(f'LOCK TABLE ONLY {target} IN ROW EXCLUSIVE MODE NOWAIT')
+                                current = await conn.fetchrow("""SELECT c.oid::bigint AS oid,am.amname
+                                    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                                    JOIN pg_am am ON am.oid=c.relam
+                                    WHERE n.nspname=$1 AND c.relname=$2""", leaf['schema'], leaf['name'])
+                                if not current or current['oid'] != leaf['oid'] or current['amname'] != 'heap':
+                                    break
+                                if await conn.fetchval("SELECT to_regclass('public.storage_archive_jobs')"):
+                                    if await conn.fetchval('SELECT EXISTS(SELECT 1 FROM public.storage_archive_jobs '
+                                                          'WHERE (source_oid=$1::oid OR source_name=$2) AND source_frozen)', leaf['oid'], leaf['name']):
+                                        break
+                                rows = await conn.fetch(
+                                    f"SELECT id,created_at,payload FROM ONLY {target} "
+                                    "WHERE from_node_id IS NULL AND payload IS NOT NULL "
+                                    "AND payload ~ '^\\s*\\{' ORDER BY id,created_at LIMIT $1", batch_size)
+                                if not rows:
+                                    break
+                                updates = []
+                                for row in rows:
+                                    try:
+                                        value = json.loads(row['payload'])
+                                    except (ValueError, TypeError):
+                                        value = {}
+                                    if not isinstance(value, dict):
+                                        value = {}
+                                    updates.append((row['id'], row['created_at'],
+                                        self._normalize_node_id(value.get('from')) or '',
+                                        self._normalize_node_id(value.get('to')) or ''))
+                                await conn.executemany(
+                                    f'UPDATE ONLY {target} SET from_node_id=$3,to_node_id=$4 '
+                                    'WHERE id=$1 AND created_at=$2', updates)
+                                total += len(updates)
+                        if len(rows) < batch_size:
+                            break
+                        await asyncio.sleep(0.01)
+                except asyncpg.LockNotAvailableError:
+                    logger.info('Node-ID backfill deferred for a busy history partition')
             if total > 0:
                 logger.info(f"MQTT node-ID backfill complete: {total} rows updated")
             else:
@@ -2022,7 +2056,8 @@ class PostgresStorage:
         None when this is the last page.
         """
         if not self._ready("query_mqtt_messages"):
-            return {"messages": [], "next_cursor": None}
+            raise HistoryUnavailableError("query_mqtt_messages")
+        limit = page_limit(limit)
         try:
             import time
             async with self.pool.acquire() as conn:
@@ -2036,20 +2071,7 @@ class PostgresStorage:
                     idx += 1
 
                 if search:
-                    # The EXISTS arm covers per-copy data that dedup moved out
-                    # of this table: other gateways' uplink topics (and thereby
-                    # their gateway ids, which end every topic).
-                    conditions.append(
-                        f"(topic ILIKE '%' || ${idx} || '%'"
-                        f" OR payload ILIKE '%' || ${idx} || '%'"
-                        f" OR EXISTS (SELECT 1 FROM packet_receptions pr"
-                        f"            JOIN mqtt_topics t ON t.id = pr.topic_id"
-                        f"            WHERE pr.mqtt_row_id = mqtt_messages.id"
-                        f"              AND pr.created_at >= mqtt_messages.created_at"
-                        f"              AND pr.created_at < mqtt_messages.created_at"
-                        f"                  + interval '{self._reception_lookback} seconds'"
-                        f"              AND t.topic ILIKE '%' || ${idx} || '%'))"
-                    )
+                    conditions.append(search_condition(idx, self._reception_lookback))
                     params.append(search)
                     idx += 1
 
@@ -2059,28 +2081,20 @@ class PostgresStorage:
                     conditions.append(
                         f"topic ILIKE '%' || ${idx} || '%' ESCAPE '\\'"
                     )
-                    params.append(
-                        topic.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-                    )
+                    params.append(literal_topic_pattern(topic))
                     idx += 1
 
                 idx = self._append_window_conditions(conditions, params, idx, start, end, before)
 
-                where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
                 params.append(limit + 1)  # +1 row tells us whether another page exists
 
                 rows = await conn.fetch(
-                    f"""SELECT id, topic, payload, qos, retain, timestamp, created_at,
-                               {self._reception_count_sql} AS reception_count
-                        FROM mqtt_messages
-                        {where}
-                        ORDER BY created_at DESC, id DESC LIMIT ${idx}""",
+                    packet_page_sql(conditions, idx, self._reception_count_sql),
                     *params,
                 )
             return self._build_mqtt_message_page(rows, limit)
         except Exception as e:
-            logger.error("Failed to query mqtt_messages: %r", e)
-            return {"messages": [], "next_cursor": None}
+            raise read_failure("query_mqtt_messages", e) from e
 
     async def query_node_mqtt_messages(
         self,
@@ -2095,7 +2109,8 @@ class PostgresStorage:
         See query_mqtt_messages for start/end/before semantics and the return shape.
         """
         if not self._ready("query_node_mqtt_messages"):
-            return {"messages": [], "next_cursor": None}
+            raise HistoryUnavailableError("query_node_mqtt_messages")
+        limit = page_limit(limit)
         node_id = self._normalize_node_id(node_id) or node_id
         try:
             async with self.pool.acquire() as conn:
@@ -2104,17 +2119,12 @@ class PostgresStorage:
                 idx = self._append_window_conditions(conditions, params, 2, start, end, before)
                 params.append(limit + 1)
                 rows = await conn.fetch(
-                    f"""SELECT id, topic, payload, qos, retain, timestamp, created_at,
-                               {self._reception_count_sql} AS reception_count
-                        FROM mqtt_messages
-                        WHERE {" AND ".join(conditions)}
-                        ORDER BY created_at DESC, id DESC LIMIT ${idx}""",
+                    packet_page_sql(conditions, idx, self._reception_count_sql),
                     *params,
                 )
             return self._build_mqtt_message_page(rows, limit)
         except Exception as e:
-            logger.error("Failed to query node mqtt_messages: %s", e)
-            return {"messages": [], "next_cursor": None}
+            raise read_failure("query_node_mqtt_messages", e) from e
 
     @staticmethod
     def _append_window_conditions(conditions: list, params: list, idx: int,
@@ -2182,18 +2192,17 @@ class PostgresStorage:
         """Canonical archived row for a mesh packet, addressed the way chat
         knows it: (sender, 32-bit packet id). Newest row wins on reuse."""
         if not self._ready("query_mqtt_message_by_packet"):
-            return None
+            raise HistoryUnavailableError("query_mqtt_message_by_packet")
         try:
             async with self.pool.acquire() as conn:
                 row_id = await conn.fetchval(
                     """SELECT id FROM mqtt_messages
                        WHERE from_node_id = $1 AND packet_id = $2
-                       ORDER BY created_at DESC LIMIT 1""",
+                       ORDER BY created_at DESC, id DESC LIMIT 1""",
                     from_id, mesh_packet_id,
                 )
         except Exception as e:
-            logger.error("Failed to query mqtt_messages by packet: %r", e)
-            return None
+            raise read_failure("query_mqtt_message_by_packet", e) from e
         if row_id is None:
             return None
         return await self.query_mqtt_message_by_id(row_id, include_copies=include_copies)
@@ -2205,7 +2214,7 @@ class PostgresStorage:
         include_copies additionally rebuilds each reception into the exact
         original uplink message (the #526 losslessness contract, user-visible)."""
         if not self._ready("query_mqtt_message_by_id"):
-            return None
+            raise HistoryUnavailableError("query_mqtt_message_by_id")
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
@@ -2235,9 +2244,10 @@ class PostgresStorage:
                 if include_copies:
                     self._attach_reconstructed_copies(row["payload"], msg["receptions"])
             return msg
+        except HistoryReadError:
+            raise
         except Exception as e:
-            logger.error("Failed to query mqtt_message by id: %s", e)
-            return None
+            raise read_failure("query_mqtt_message_by_id", e) from e
 
     @staticmethod
     def _attach_reconstructed_copies(payload_text: Optional[str], receptions: List[dict]) -> None:
@@ -2260,7 +2270,7 @@ class PostgresStorage:
                     canonical, r.get("gateway"), r.get("topic"), fields, r.get("extras")
                 )
             except Exception as e:
-                logger.warning("Copy reconstruction failed for a reception: %s", e)
+                raise read_failure("reconstruct_packet_copy", e) from e
 
     @staticmethod
     def _reception_to_dict(row) -> dict:

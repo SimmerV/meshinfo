@@ -61,6 +61,27 @@ max_seconds = 5
 # this process. The application host's filesystem is not a valid assumption.
 database_filesystem = ""
 
+# Lossless compression of completed canonical packet partitions. This retains
+# queryable history; storage.retention independently controls permanent deletion.
+# Requires the columnar PostgreSQL image and the guarded migration described in
+# STORAGE.md. Default installations retain ordinary heap storage.
+[storage.archive]
+enabled = false
+after_months = 6
+batch_rows = 1000
+batch_mib = 8
+cycle_seconds = 10
+statement_seconds = 3
+reserve_mib = 1024
+max_wal_mib = 64
+estimate_multiplier = 1.5
+compression_level = 3
+chunk_group_rows = 1000
+index_build_seconds = 300
+analyze_seconds = 8
+# Directory on the actual PostgreSQL data filesystem, not an inferred app path.
+database_filesystem = ""
+
 # Database snapshot backups. The app schedules these itself — the schedule is
 # applied automatically on (re)start, no host cron needed. Backup retention is
 # separate from history retention; backups may still contain expired history.

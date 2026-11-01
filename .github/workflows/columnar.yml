@@ -8,6 +8,11 @@ on:
       - 'storage/backup*.py'
       - 'storage/columnar_backup.py'
       - 'storage/db/archive*.py'
+      - 'storage/db/postgres.py'
+      - 'storage/db/retention_executor.py'
+      - 'storage/db/storage_report.py'
+      - 'config.py'
+      - 'scripts/sample_columnar_history.py'
       - 'tests/test_archive*.py'
       - 'scripts/restore_database.py'
       - 'scripts/verify_columnar_backup_restore.py'
@@ -19,6 +24,11 @@ on:
       - 'storage/backup*.py'
       - 'storage/columnar_backup.py'
       - 'storage/db/archive*.py'
+      - 'storage/db/postgres.py'
+      - 'storage/db/retention_executor.py'
+      - 'storage/db/storage_report.py'
+      - 'config.py'
+      - 'scripts/sample_columnar_history.py'
       - 'tests/test_archive*.py'
       - 'scripts/restore_database.py'
       - 'scripts/verify_columnar_backup_restore.py'
@@ -44,7 +54,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build the production image on its native architecture
-        run: docker build --file Dockerfile.postgres-columnar --tag columnar-native-ci .
+        run: |
+          set +e
+          docker build --progress=plain --file Dockerfile.postgres-columnar --tag columnar-native-ci . 2>&1 | tee "$RUNNER_TEMP/columnar-build.log"
+          result=${PIPESTATUS[0]}
+          set -e
+          if [ "$result" -ne 0 ]; then
+            # Public check annotations remain readable without access to GitHub's
+            # authenticated log-download API. This build has no secret inputs.
+            python3 - "$RUNNER_TEMP/columnar-build.log" <<'PYCODE'
+          import pathlib, sys
+          detail = pathlib.Path(sys.argv[1]).read_text(errors='replace')[-10000:]
+          detail = detail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::error title=Native Columnar image build::' + detail)
+          PYCODE
+            exit "$result"
+          fi
       - name: Start an isolated test cluster without published ports
         run: |
           test "$(docker image inspect --format '{{.Architecture}}' columnar-native-ci)" = '${{ matrix.arch }}'
@@ -60,14 +85,23 @@ jobs:
             sleep 1
           done
           exit 1
-      - name: Add only the test interpreter to the disposable container
+      - name: Add minimal test dependencies to the disposable container
         run: |
           docker exec -u 0 columnar-native-ci sh -c \
-            'apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*'
+            'apt-get update && apt-get install -y --no-install-recommends python3 python3-asyncpg python3-pytest python3-requests && rm -rf /var/lib/apt/lists/*'
       - name: Verify actual backup, settings before COPY, staging and rollback
         run: |
           docker exec -w /work columnar-native-ci \
             python3 scripts/verify_columnar_backup_restore.py
+      - name: Verify checkpoint restore, cancellation, queries and startup indexes
+        run: |
+          docker exec columnar-native-ci createdb -U postgres native_archive_test
+          docker exec -w /work \
+            -e MESHINFO_ARCHIVE_TEST_DSN=postgresql://postgres@127.0.0.1:5432/native_archive_test \
+            columnar-native-ci python3 -m pytest -q -p no:cacheprovider \
+            tests/test_archive_integration.py tests/test_archive_application_integration.py \
+            tests/test_archive_catalog_integration.py tests/test_archive.py \
+            tests/test_archive_catalog.py tests/test_columnar_backup.py
       - name: Remove the isolated cluster and anonymous data volume
         if: always()
         run: |

@@ -22,6 +22,12 @@ export interface IStorageHistory {
   configured_enabled: boolean;
   granularity: "calendar_month";
   scopes: Record<HistoryScope, IHistoryPolicy>;
+  archive?: {
+    enabled: boolean;
+    after_months: number;
+    compressed_partitions: number;
+    history_remains_queryable: boolean;
+  };
   maintenance?: Record<string, {
     updated_at: string;
     status: string;

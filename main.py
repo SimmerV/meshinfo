@@ -86,6 +86,7 @@ async def maintenance_loop(config, data, interval_seconds: float = MAINTENANCE_I
     backup_task: asyncio.Task | None = None
     retention_task: asyncio.Task | None = None
     compression_task: asyncio.Task | None = None
+    archive_task: asyncio.Task | None = None
     try:
         while True:
             try:
@@ -102,10 +103,13 @@ async def maintenance_loop(config, data, interval_seconds: float = MAINTENANCE_I
                         and config.get("storage", {}).get("compression", {}).get("enabled", False)
                         and (compression_task is None or compression_task.done())):
                     compression_task = asyncio.create_task(maintenance.run_compression(config, data.pg_storage, after=retention_task))
+                if archive_task is None or archive_task.done():
+                    preceding_archive = compression_task if compression_task is not None and not compression_task.done() else retention_task
+                    archive_task = asyncio.create_task(maintenance.run_archive(config, data.pg_storage, after=preceding_archive))
                 # Backups run whenever the newest dump is older than the schedule —
                 # a single-flight background task; a multi-GB dump must not stall this loop.
                 if (backup_task is None or backup_task.done()) and await maintenance.scheduled_backup_due(config, data.pg_storage):
-                    preceding = compression_task if compression_task is not None and not compression_task.done() else retention_task
+                    preceding = archive_task
                     backup_task = asyncio.create_task(maintenance.run_backup(config, data.pg_storage, after=preceding))
             except asyncio.CancelledError:
                 raise
@@ -115,7 +119,7 @@ async def maintenance_loop(config, data, interval_seconds: float = MAINTENANCE_I
             await asyncio.sleep(interval_seconds)
 
     finally:
-        tasks = [task for task in (retention_task, backup_task, compression_task) if task is not None]
+        tasks = [task for task in (retention_task, backup_task, compression_task, archive_task) if task is not None]
         for task in tasks:
             task.cancel()
         if tasks:

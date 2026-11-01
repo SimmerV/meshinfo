@@ -27,6 +27,20 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 
+from storage.db.history_queries import HistoryReadError
+
+
+@app.exception_handler(HistoryReadError)
+async def history_read_error(request: Request, exc: HistoryReadError):
+    """A failed history query is unavailable, never an empty page or a 404."""
+    return JSONResponse(
+        {"error": "history_query_timeout" if exc.timed_out else "history_unavailable",
+         "retryable": True},
+        status_code=504 if exc.timed_out else 503,
+        headers={"Cache-Control": "no-store", "Retry-After": "2"},
+    )
+
+
 class TileFiles(StaticFiles):
     """StaticFiles with a cache header. Static bakes default to a 1-day TTL
     (re-bakes propagate within ~24 h); the live coverage pyramid passes

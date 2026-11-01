@@ -85,10 +85,12 @@ def test_cleanse_redacts_encryption_keys_in_both_shapes():
 
 def test_cleanse_keeps_operator_database_filesystem_private():
     import config as config_mod
-    source = {"storage": {"compression": {"enabled": True, "database_filesystem": "/private/database"}}}
+    source = {"storage": {name: {"enabled": True, "database_filesystem": "/private/database"}
+                          for name in ('compression', 'archive')}}
     cleaned = config_mod.Config.cleanse(source)
-    assert cleaned["storage"]["compression"]["database_filesystem"] == "***REDACTED***"
-    assert source["storage"]["compression"]["database_filesystem"] == "/private/database"
+    for name in ('compression', 'archive'):
+        assert cleaned["storage"][name]["database_filesystem"] == "***REDACTED***"
+        assert source["storage"][name]["database_filesystem"] == "/private/database"
 
 
 def test_cleanse_redacts_backup_destinations_but_keeps_policy_visible():

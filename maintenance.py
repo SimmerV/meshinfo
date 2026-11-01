@@ -95,6 +95,31 @@ async def run_compression(config, storage, *, after=None) -> dict:
     return result
 
 
+async def run_archive(config, storage, *, after=None) -> dict:
+    """Resume one archive cycle on a dedicated connection, preserving checkpoints."""
+    from storage.db.archive_control import run_archive_work
+    from storage.db.maintenance_connection import maintenance_connection
+    from storage.db.maintenance_status import save_status
+    try:
+        if after is not None:
+            await asyncio.shield(after)
+        async with maintenance_connection(storage, config, application_name='meshinfo-archive-control') as conn:
+            try:
+                result = await run_archive_work(conn, config)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception('History archive cycle failed')
+                result = {'status': 'error', 'reason': type(exc).__name__}
+            await save_status(conn, 'archive', result)
+            return result
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception('Archive status could not be persisted')
+        return {'status': 'error', 'status_persisted': False}
+
+
 def latest_backup_age_days(dir_path: Path, now: Optional[float] = None) -> Optional[float]:
     """Age in days of the newest finished dump, or None if there is none."""
     now = time.time() if now is None else now
