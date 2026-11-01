@@ -187,3 +187,80 @@ database. `native-ci-8a70d6a.json` records the public API evidence, while
 `point-detail-provenance.json` binds the source-free reports, revision and scope.
 Earlier reports and failed gates remain unchanged. These checks do not establish
 completed August conversion, final net savings or full-history rollout readiness.
+
+## Node-reader candidate checkpoint (2026-11-01 07:35 UTC)
+
+The node fix in `54f8fd74db109e70e82485703d378ad19edda8a3` was committed and
+validated but not deployed at this checkpoint. August copy was still running.
+The existing node SQL retains its disjoint sender/recipient branches and exact
+pagination; the candidate scopes generic, index-oriented planning to that read,
+inside a read-only repeatable-read transaction and ten-second deadline. Ordinary
+PostgreSQL remains supported without creating a Columnar setting.
+
+`live-query-during-august-6m.json` preserves 15 fixed HTTP cases measured at
+approximately six million August rows copied. All returned 200 and matched the
+supplied baseline hashes. July and September had already been compressed; their
+node timings failed the latency acceptance gate:
+
+| Node page | Earlier heap median (ms) | During-copy samples (ms) | During-copy median (ms) |
+| --- | ---: | --- | ---: |
+| July | 12.976 | 295.196, 189.486, 222.641 | 222.641 |
+| September | 9.298 | 165.585, 61.416, 282.649 | 165.585 |
+
+`live-query-updated-heap.json` supplies that earlier comparison. Its file timestamp
+is 04:22:28 UTC, but its deployed revision was not recorded and is not inferred
+from commit timestamps. Both reports are copied unchanged. Each case has three
+sequential warm-cache samples, not a p95 or concurrent-load measurement. The
+August topic/text baseline status is still unrecorded; its matching response hash
+must not be interpreted as a successful baseline HTTP timing.
+
+`live-sender-node-read-diagnosis.json`, recorded at 06:52 UTC, contains the original
+read-only planning diagnosis and unchanged generic/custom variants. It predates
+the node candidate deployment and includes sender/packet diagnostics as well as
+the node cases:
+
+| Statement | Original planning (ms) | Original execution (ms) | Indexed generic execution (ms) | Generic first fetch (ms) | Generic reused fetch (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| July node page | 173.777 | 13.751 | 11.535 | 195.208 | 11.071 |
+| Missing July node | 162.159 | 1.350 | 0.168 | 169.794 | 0.387 |
+
+All variants have matching result hashes; the node page returns 51 rows including
+its sentinel. First-plan overhead remains visible. These component observations
+motivate plan reuse but do not establish post-deployment HTTP performance or
+full-history acceptance.
+
+The separate validation runs are preserved without combining their totals:
+
+- `backend-node-regressions.txt`: 1,000 passed, 175 skipped, one existing
+  `audioop` deprecation warning, 24.72 seconds. The absolute workspace path in
+  that warning was redacted; no test result changed.
+- `isolated-node-reader-regressions.txt`: 50 actual PostgreSQL reader tests
+  passed in 21.95 seconds, including the larger heap/mixed node fixture.
+- `plain-reader-node-proof.json` and `plain-node-reader-regressions.txt`: 25
+  actual cases passed in 2.89 seconds on a separate 128 MiB/half-CPU PostgreSQL
+  18.6 server with no preload, Columnar extension, access method or GUC. Seven
+  original detail scenarios remain; 18 additional node cases cover limits,
+  inclusive windows, tied cursors, sender/recipient identity, self-addressed and
+  NULL-sender rows, actual SQL failure, deadline and external cancellation.
+  The same pooled backend remains usable with its original settings. All test
+  schemas, the server, data and private credentials were removed.
+
+Exact-head native amd64 and arm64 [CI run 41285209001](https://github.com/SimmerV/meshinfo/actions/runs/41285209001)
+passed at 07:34:33 UTC. Both jobs actually ran and passed the expanded mixed-reader
+and no-Columnar node/detail steps. `native-ci-54f8fd7.json` records public API
+evidence. `node-reader-provenance.json` binds scope, source timestamps, revision
+and hashes; `acceptance-artifacts.json` retains the earlier 23 artifact digests
+and adds this checkpoint's eleven artifacts. No earlier failed gate is rewritten.
+The node fix's live deployment and post-cutover acceptance remain unmeasured at
+this checkpoint.
+
+The subsequent test-only revision `3796e38fb6424f6ffdba424ac2eee242a3a51bfe`
+adds stronger assertions that selective sender and recipient reads use their
+appropriate indexes. Its production source is identical to `54f8fd7`.
+`isolated-node-selective-regression.txt` records the separate actual PostgreSQL
+rerun: one test passed in 13.89 seconds. Native amd64 and arm64
+[CI run 41285435161](https://github.com/SimmerV/meshinfo/actions/runs/41285435161)
+passed at 07:37:44 UTC, including both mixed and plain reader steps.
+`native-ci-3796e38.json` preserves that exact-head result separately from the
+implementation revision's CI evidence. Neither validation changes the live
+deployment status recorded above.

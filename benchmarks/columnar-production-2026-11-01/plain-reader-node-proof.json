@@ -1,0 +1,44 @@
+{
+  "postgres_version": "18.6 (Debian 18.6-1.pgdg13+2)",
+  "shared_preload_libraries": "",
+  "columnar_guc": null,
+  "extensions": [
+    "plpgsql"
+  ],
+  "columnar_access_method_exists": false,
+  "remaining_test_schemas": 0,
+  "test_result": "25 passed in 2.89s",
+  "original_detail_cases": 7,
+  "node_cases": 18,
+  "resource_limits": {
+    "memory_bytes": 134217728,
+    "nano_cpus": 500000000,
+    "published_ports": false,
+    "network": "none"
+  },
+  "verified_cases": [
+    "common rare and missing nodes",
+    "limits 1 50 and 50000",
+    "inclusive old hot and mixed windows",
+    "cursor timestamp ties and same numeric ID in different partitions",
+    "self recipient occurs once and NULL sender recipient remains visible",
+    "actual generic planning inside readonly repeatable-read transaction",
+    "SQL error deadline and external cancellation restore pooled connection settings",
+    "Columnar extension access method and GUC absent throughout"
+  ],
+  "created_utc": "2026-11-01T07:29:56.388043+00:00",
+  "source_sha256": {
+    "storage/db/history_queries.py": "61db71f804651a307b39d525f3361740c123272175bb312594782c5f7dcd1f97",
+    "storage/db/postgres.py": "3b0b5f4e24d6859b8df2c281773d39c3cfaa9177736fff052bf7f29a629c79a0",
+    "tests/test_history_queries_plain_integration.py": "366550c03645540c48ab67f15105d5f023458fdd72048b09485e5bd0b0979717"
+  },
+  "shutdown": {
+    "exit_code": 0,
+    "oom_killed": false
+  },
+  "cleanup": {
+    "owned_credentials_and_data_removed": true,
+    "container_removed": true,
+    "ownership_marker_removed": true
+  }
+}

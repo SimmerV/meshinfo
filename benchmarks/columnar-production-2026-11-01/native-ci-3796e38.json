@@ -1,0 +1,228 @@
+{
+  "observed_utc": "2026-11-01T07:38:39.224875+00:00",
+  "head_sha": "3796e38fb6424f6ffdba424ac2eee242a3a51bfe",
+  "run": {
+    "id": 41285435161,
+    "name": "Columnar native restore",
+    "html_url": "https://github.com/SimmerV/meshinfo/actions/runs/41285435161",
+    "status": "completed",
+    "conclusion": "success",
+    "created_at": "2026-11-01T07:36:00Z",
+    "updated_at": "2026-11-01T07:37:44Z",
+    "head_branch": "feature/storage-management"
+  },
+  "jobs": [
+    {
+      "id": 124785648188,
+      "name": "PostgreSQL 18.6 / Citus 14.1 (arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-01T07:36:05Z",
+      "completed_at": "2026-11-01T07:37:43Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-01T07:36:05Z",
+          "completed_at": "2026-11-01T07:36:06Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-01T07:36:06Z",
+          "completed_at": "2026-11-01T07:36:07Z"
+        },
+        {
+          "name": "Build the production image on its native architecture",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-01T07:36:07Z",
+          "completed_at": "2026-11-01T07:36:38Z"
+        },
+        {
+          "name": "Start an isolated test cluster without published ports",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-01T07:36:38Z",
+          "completed_at": "2026-11-01T07:36:39Z"
+        },
+        {
+          "name": "Add minimal test dependencies to the disposable container",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-01T07:36:39Z",
+          "completed_at": "2026-11-01T07:36:47Z"
+        },
+        {
+          "name": "Verify actual backup, settings before COPY, staging and rollback",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-01T07:36:47Z",
+          "completed_at": "2026-11-01T07:36:51Z"
+        },
+        {
+          "name": "Verify checkpoint restore, cancellation, queries and startup indexes",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-01T07:36:51Z",
+          "completed_at": "2026-11-01T07:37:30Z"
+        },
+        {
+          "name": "Verify production history readers on heap and mixed partitions",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-01T07:37:30Z",
+          "completed_at": "2026-11-01T07:37:37Z"
+        },
+        {
+          "name": "Verify packet details and node pages without Columnar loaded or installed",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-01T07:37:37Z",
+          "completed_at": "2026-11-01T07:37:41Z"
+        },
+        {
+          "name": "Remove the isolated cluster and anonymous data volume",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-01T07:37:41Z",
+          "completed_at": "2026-11-01T07:37:41Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-01T07:37:41Z",
+          "completed_at": "2026-11-01T07:37:42Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-01T07:37:42Z",
+          "completed_at": "2026-11-01T07:37:42Z"
+        }
+      ]
+    },
+    {
+      "id": 124785648461,
+      "name": "PostgreSQL 18.6 / Citus 14.1 (amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-01T07:36:03Z",
+      "completed_at": "2026-11-01T07:37:33Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-01T07:36:04Z",
+          "completed_at": "2026-11-01T07:36:05Z"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-01T07:36:05Z",
+          "completed_at": "2026-11-01T07:36:06Z"
+        },
+        {
+          "name": "Build the production image on its native architecture",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-01T07:36:06Z",
+          "completed_at": "2026-11-01T07:36:19Z"
+        },
+        {
+          "name": "Start an isolated test cluster without published ports",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-01T07:36:19Z",
+          "completed_at": "2026-11-01T07:36:20Z"
+        },
+        {
+          "name": "Add minimal test dependencies to the disposable container",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-01T07:36:20Z",
+          "completed_at": "2026-11-01T07:36:30Z"
+        },
+        {
+          "name": "Verify actual backup, settings before COPY, staging and rollback",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-01T07:36:30Z",
+          "completed_at": "2026-11-01T07:36:34Z"
+        },
+        {
+          "name": "Verify checkpoint restore, cancellation, queries and startup indexes",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-01T07:36:34Z",
+          "completed_at": "2026-11-01T07:37:17Z"
+        },
+        {
+          "name": "Verify production history readers on heap and mixed partitions",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-01T07:37:17Z",
+          "completed_at": "2026-11-01T07:37:25Z"
+        },
+        {
+          "name": "Verify packet details and node pages without Columnar loaded or installed",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-01T07:37:25Z",
+          "completed_at": "2026-11-01T07:37:30Z"
+        },
+        {
+          "name": "Remove the isolated cluster and anonymous data volume",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-01T07:37:30Z",
+          "completed_at": "2026-11-01T07:37:31Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-01T07:37:31Z",
+          "completed_at": "2026-11-01T07:37:31Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-01T07:37:31Z",
+          "completed_at": "2026-11-01T07:37:31Z"
+        }
+      ]
+    }
+  ]
+}

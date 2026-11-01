@@ -1,0 +1,114 @@
+{
+  "format_version": 1,
+  "recorded_date_utc": "2026-11-01",
+  "implementation_revision": "54f8fd74db109e70e82485703d378ad19edda8a3",
+  "implementation_deployed_at_checkpoint": false,
+  "diagnostic_scope": "Read-only sender/packet and July node planning variants; byte-identical original reports with query values omitted. Existing and missing nodes return identical digests across all variants. First-plan and reused fetch measurements are distinct.",
+  "live_http_scope": "Three sequential HTTP samples per 15 fixed live cases during August copy at approximately six million rows; July and September already compressed. No cache flush; normal ingestion continued. This precedes the node fix deployment.",
+  "updated_heap_baseline_revision": "not recorded in report",
+  "live_hash_parity_cases": 15,
+  "live_http_200_cases": 15,
+  "baseline_http_status_unrecorded_cases": [
+    "month_08_topic_search"
+  ],
+  "full_live_conversion_complete": false,
+  "node_live_performance_gate_passed": false,
+  "node_fix_post_deployment_acceptance_performed": false,
+  "separate_test_runs": [
+    {
+      "artifact": "backend-node-regressions.txt",
+      "passed": 1000,
+      "skipped": 175,
+      "warnings": 1,
+      "duration_seconds": 24.72
+    },
+    {
+      "artifact": "isolated-node-reader-regressions.txt",
+      "passed": 50,
+      "duration_seconds": 21.95
+    },
+    {
+      "artifact": "plain-reader-node-proof.json",
+      "passed": 25,
+      "duration_seconds": 2.89,
+      "original_detail_cases": 7,
+      "additional_node_cases": 18
+    },
+    {
+      "artifact": "isolated-node-selective-regression.txt",
+      "revision": "3796e38fb6424f6ffdba424ac2eee242a3a51bfe",
+      "passed": 1,
+      "duration_seconds": 13.89,
+      "scope": "Focused rerun of strengthened actual selective sender/recipient index-plan assertions; separate from the earlier50-test run."
+    }
+  ],
+  "plain_compatibility_scope": "Separate PostgreSQL18.6 server with empty preload, no Columnar extension/access method and NULL GUC. Limits/windows/cursors and actual SQL failure/deadline/cancellation test the production helper; exact same pooled backend remains usable afterward. Container, data and credentials removed.",
+  "privacy_audit": "Reports contain timing/hash/structural-plan facts and synthetic test cleanup. SQL predicates, source values, request arguments and credentials are absent. Only the new backend log absolute workspace path was redacted. Earlier evidence bytes and failed gates are unchanged.",
+  "artifacts": {
+    "live-sender-node-read-diagnosis.json": {
+      "bytes": 185859,
+      "sha256": "90d7b8d971de65b26c63090cf76fc07c5ef867d5cf0d9b27e2603bc29bb436f8",
+      "source_file_modified_utc": "2026-11-01T06:52:16.918062+00:00"
+    },
+    "live-query-during-august-6m.json": {
+      "bytes": 5325,
+      "sha256": "0b533a6495bfccc987314ae3c475b70fc33d3082e6c84937681125c5af98b151",
+      "source_file_modified_utc": "2026-11-01T07:23:22.289387+00:00"
+    },
+    "live-query-updated-heap.json": {
+      "bytes": 5313,
+      "sha256": "af5820d8fed268d65fd0971112f7e2cfab6eb5aeb76ab2322d356f2d0342d43b",
+      "source_file_modified_utc": "2026-11-01T04:22:28.000342+00:00"
+    },
+    "plain-reader-node-proof.json": {
+      "bytes": 1571,
+      "sha256": "6f97b6d2800c72c34f3b2b694e23d2834c6b151272ff4537e7372be2a8a90458",
+      "source_file_modified_utc": "2026-11-01T07:29:56.912251+00:00"
+    },
+    "isolated-node-reader-regressions.txt": {
+      "bytes": 100,
+      "sha256": "77b6bce2580243763de47dee96a2c324c14bca8ea6e2cf3034cc915c39b67b83",
+      "source_file_modified_utc": "2026-11-01T07:31:10.249275+00:00"
+    },
+    "backend-node-regressions.txt": {
+      "bytes": 1788,
+      "sha256": "e4f8dd16e4cc32e3d3370b47fa1b8bca13a71aa87c8264aec8ada6e50b8a4af9",
+      "source_file_modified_utc": "2026-11-01T07:32:02.572719+00:00",
+      "redaction": "Absolute workspace path replaced with <workspace>; test output otherwise unchanged."
+    },
+    "plain-node-reader-regressions.txt": {
+      "bytes": 99,
+      "sha256": "de73a2f33d452fe6e09db54413b75ae5dbba0748f2cb1497a10fb6fa58b876e0",
+      "source_file_modified_utc": "2026-11-01T07:29:33.461605+00:00"
+    },
+    "isolated-node-selective-regression.txt": {
+      "bytes": 99,
+      "sha256": "98e9bcc37dfe213070603df3fa2b1e53ae913f62a7463437e31f665389257547",
+      "source_file_modified_utc": "2026-11-01T07:36:28.934115+00:00"
+    }
+  },
+  "native_ci": {
+    "head_sha": "54f8fd74db109e70e82485703d378ad19edda8a3",
+    "run_id": 41285209001,
+    "conclusion": "success",
+    "completed_utc": "2026-11-01T07:34:33Z",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "mixed_node_and_plain_node_steps_passed": true
+  },
+  "later_test_guard_revision": "3796e38fb6424f6ffdba424ac2eee242a3a51bfe",
+  "later_test_guard_scope": "Stronger selective sender/recipient index-plan assertions only; runtime source identical to implementation 54f8fd7.",
+  "later_test_guard_native_ci": {
+    "head_sha": "3796e38fb6424f6ffdba424ac2eee242a3a51bfe",
+    "run_id": 41285435161,
+    "conclusion": "success",
+    "completed_utc": "2026-11-01T07:37:44Z",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "mixed_node_and_plain_node_steps_passed": true
+  }
+}

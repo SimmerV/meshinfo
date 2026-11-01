@@ -1229,3 +1229,64 @@ retains the original slow plans, fixed-response hashes, test logs and cleanup
 proof. August conversion and final full-history storage/performance acceptance
 remain outside this checkpoint; no production rollout or final savings claim
 follows from these targeted results.
+
+### Node-reader candidate checkpoint, 2026-11-01 07:35 UTC
+
+Revision `54f8fd74db109e70e82485703d378ad19edda8a3` extends scoped generic,
+index-oriented planning to the existing sender/recipient node-page query. The
+ordered, disjoint branches, filters, keyset cursor and response shaping remain
+unchanged. The read runs in one read-only repeatable-read transaction with the
+existing ten-second deadline. Success, SQL failure, deadline expiry and external
+cancellation restore the pooled connection's settings. Plain PostgreSQL still
+requires no Columnar extension or setting. This revision is committed and tested
+but **was not deployed at this checkpoint**.
+
+The motivating live samples were taken while August had copied approximately
+six million rows and July/September were already compressed. All 15 fixed cases
+returned HTTP 200 and matched their baseline hashes, but node latency regressed:
+
+| Node page | Earlier heap median | During-copy median | During-copy maximum |
+| --- | ---: | ---: | ---: |
+| July | 12.976 ms | 222.641 ms | 295.196 ms |
+| September | 9.298 ms | 165.585 ms | 282.649 ms |
+
+Each figure comes from three sequential requests without cache flushing. The
+maximum is not a measured p95, and the earlier heap report does not record its
+exact deployed revision. Its original bytes and timestamp are preserved instead
+of inferring a revision from nearby commits. Hash agreement did not satisfy the
+latency gate; these failed timings remain part of the evidence.
+
+The earlier read-only planning diagnostic explains the candidate change. For a
+fixed July node page, original planning took **173.777 ms**, while indexed generic
+execution took **11.535 ms**. A fresh prepared fetch still took **195.208 ms**;
+its reused fetch took **11.071 ms**. A missing-node variant likewise took
+**169.794 ms** on first fetch and **0.387 ms** on reuse. All variants retained
+identical result hashes. These statement-level samples do not establish endpoint
+p95, eliminate fresh-plan cost, or prove performance after August cutover.
+
+Separate runs passed **1,000 backend tests with 175 skipped** in **24.72 seconds**,
+**50 actual isolated PostgreSQL reader tests** in **21.95 seconds**, and **25 plain
+PostgreSQL cases** in **2.89 seconds**. The latter preserve the original seven
+detail cases and add 18 node cases covering inclusive old/hot/mixed windows,
+limits 1/50/50,000, tied cursors, sender/recipient identity, self-addressed and
+NULL-sender rows, and error/cancellation recovery on the same pooled backend.
+The small plain fixture checks the limit contract; the separate mixed-reader
+fixture exercises the 50,000-row limit and its extra pagination row. The plain
+test server, credentials and data were removed afterward. Full-suite skips are
+not database passes, and these separate runs are not additive.
+
+Exact-head amd64 and arm64 [CI run 41285209001](https://github.com/SimmerV/meshinfo/actions/runs/41285209001)
+passed at **07:34:33 UTC**, including the expanded mixed-reader and separate
+plain-server node suites on both architectures. The [node evidence and provenance](benchmarks/columnar-production-2026-11-01/node-reader-provenance.json)
+retain the failed live timings, original planning variants, test logs, cleanup
+proof and public CI result. August conversion was still in progress; deployment,
+post-deployment read measurements, final net savings and rollout acceptance
+remain subsequent steps.
+
+At **07:37:44 UTC**, the later test-only revision
+`3796e38fb6424f6ffdba424ac2eee242a3a51bfe` also passed both architectures in
+[CI run 41285435161](https://github.com/SimmerV/meshinfo/actions/runs/41285435161).
+It strengthens selective sender/recipient index-plan assertions; production
+source is unchanged from `54f8fd7`. Its separate local PostgreSQL rerun passed
+**one test in 13.89 seconds**. This adds an index-use regression check without
+changing the deployment or live-acceptance status above.

@@ -93,6 +93,50 @@
     "native-ci-8a70d6a.json": {
       "bytes": 4637,
       "sha256": "a65c8e7c6006aa3a1e2dfec057564cc83dc29dbae03a33ff0860e524d8e2aa30"
+    },
+    "live-sender-node-read-diagnosis.json": {
+      "bytes": 185859,
+      "sha256": "90d7b8d971de65b26c63090cf76fc07c5ef867d5cf0d9b27e2603bc29bb436f8"
+    },
+    "live-query-during-august-6m.json": {
+      "bytes": 5325,
+      "sha256": "0b533a6495bfccc987314ae3c475b70fc33d3082e6c84937681125c5af98b151"
+    },
+    "live-query-updated-heap.json": {
+      "bytes": 5313,
+      "sha256": "af5820d8fed268d65fd0971112f7e2cfab6eb5aeb76ab2322d356f2d0342d43b"
+    },
+    "plain-reader-node-proof.json": {
+      "bytes": 1571,
+      "sha256": "6f97b6d2800c72c34f3b2b694e23d2834c6b151272ff4537e7372be2a8a90458"
+    },
+    "isolated-node-reader-regressions.txt": {
+      "bytes": 100,
+      "sha256": "77b6bce2580243763de47dee96a2c324c14bca8ea6e2cf3034cc915c39b67b83"
+    },
+    "backend-node-regressions.txt": {
+      "bytes": 1788,
+      "sha256": "e4f8dd16e4cc32e3d3370b47fa1b8bca13a71aa87c8264aec8ada6e50b8a4af9"
+    },
+    "plain-node-reader-regressions.txt": {
+      "bytes": 99,
+      "sha256": "de73a2f33d452fe6e09db54413b75ae5dbba0748f2cb1497a10fb6fa58b876e0"
+    },
+    "node-reader-provenance.json": {
+      "bytes": 5236,
+      "sha256": "851647761e62293dc07ad355f9d397aa70dd75364b87bd051012978fdc45647f"
+    },
+    "native-ci-54f8fd7.json": {
+      "bytes": 7675,
+      "sha256": "2bdc5a2286c218e1d93c432be95a1aa40a2e7a7c94a16044d6a6d2ce1b9242a0"
+    },
+    "isolated-node-selective-regression.txt": {
+      "bytes": 99,
+      "sha256": "98e9bcc37dfe213070603df3fa2b1e53ae913f62a7463437e31f665389257547"
+    },
+    "native-ci-3796e38.json": {
+      "bytes": 7675,
+      "sha256": "7a29bf1e7a6ae84a93e843780641067a44f8d4a273b20708295ee6b0118bb2eb"
     }
   }
 }
