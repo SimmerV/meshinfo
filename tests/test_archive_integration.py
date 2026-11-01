@@ -221,6 +221,77 @@ def test_verification_failure_restores_planner_settings_and_checkpoint(interrupt
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("caller_jit", ["on", "off"])
+@pytest.mark.parametrize("interruption", [None, "sql_error", "cancel"])
+def test_verification_scopes_jit_and_preserves_exact_checks_and_recovery(caller_jit, interruption):
+    async def scenario():
+        async with fixture() as (conn, expected):
+            job, policy = await copy_fixture_to_verification(conn)
+            await conn.execute("SET jit=" + caller_jit)
+            reached = asyncio.Event()
+            exact_results = []
+
+            class ObserveVerification:
+                def __getattr__(self, name):
+                    return getattr(conn, name)
+
+                async def fetchval(self, sql, *args, **kwargs):
+                    if "FULL JOIN t USING" not in sql:
+                        return await conn.fetchval(sql, *args, **kwargs)
+                    assert conn.is_in_transaction()
+                    assert await conn.fetchval("SHOW jit") == "off"
+                    result = await conn.fetchval(sql, *args, **kwargs)
+                    # Both the heap topic helper and every canonical payload
+                    # column are actually compared, including NULL/UTF-8 data.
+                    exact_results.append(result)
+                    if archive._q(job["stage_name"]) in sql:
+                        reached.set()
+                        if interruption == "sql_error":
+                            await conn.execute("SELECT 1/0")
+                        elif interruption == "cancel":
+                            await conn.execute("SELECT pg_sleep(2)")
+                    return result
+
+            if interruption == "cancel":
+                pending = asyncio.create_task(archive._verify_chunk(ObserveVerification(), job, policy))
+                try:
+                    await asyncio.wait_for(reached.wait(), timeout=2)
+                    pending.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await pending
+                finally:
+                    if not pending.done():
+                        pending.cancel()
+                        await asyncio.gather(pending, return_exceptions=True)
+            elif interruption == "sql_error":
+                with pytest.raises(asyncpg.DivisionByZeroError):
+                    await archive._verify_chunk(ObserveVerification(), job, policy)
+            else:
+                await archive._verify_chunk(ObserveVerification(), job, policy)
+
+            assert reached.is_set() and exact_results == [True, True]
+            assert not conn.is_in_transaction()
+            assert await conn.fetchval("SHOW jit") == caller_jit
+            assert await conn.fetchval("SELECT 1") == 1
+            state = await archive._job(conn, job["job_id"])
+            assert state["rows_copied"] == len(expected) and state["phase"] == "verifying"
+            if interruption:
+                assert state["rows_verified"] == 0 and state["verify_id"] is None
+                await archive._verify_chunk(conn, state, policy)
+                state = await archive._job(conn, job["job_id"])
+            assert state["rows_verified"] == len(expected)
+            assert (state["verify_id"], state["verify_created_at"]) == (expected[-1][0], expected[-1][6])
+            await archive._verify_chunk(conn, state, policy)
+            state = await archive._job(conn, job["job_id"])
+            assert state["phase"] == "ready" and state["rows_verified"] == state["rows_copied"] == len(expected)
+            assert await conn.fetchval("SHOW jit") == caller_jit
+            assert [tuple(row) for row in await conn.fetch(
+                "SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+            assert [tuple(row) for row in await conn.fetch(
+                f"SELECT * FROM {archive._q(job['stage_name'])} ORDER BY id,created_at")] == expected
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("corruption", ["missing","extra_before","extra_same_id","extra_tail"])
 def test_indexed_verification_detects_missing_and_extra_payload_identities(corruption):
     async def scenario():

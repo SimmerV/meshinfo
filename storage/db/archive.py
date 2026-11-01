@@ -893,7 +893,9 @@ async def _verify_chunk(conn, job, policy):
         # otherwise rescan its entire growing payload for every small cohort.
         # Both source and stage have validated (id,created_at) primary keys;
         # use those ordered ranges only within this verification transaction.
-        await conn.execute("SET LOCAL columnar.enable_custom_scan=off; "
+        # Large-source cost estimates can trigger expensive LLVM compilation
+        # for these short, exact comparisons. Keep it out of verification only.
+        await conn.execute("SET LOCAL jit=off; SET LOCAL columnar.enable_custom_scan=off; "
                            "SET LOCAL enable_seqscan=off; SET LOCAL enable_indexscan=on")
         selected, _size_bytes = await _batch(conn, job["source_name"], job["verify_id"], job["verify_created_at"], policy,
                                              topics_only=job.get("target_method") == "topics")
