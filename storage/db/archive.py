@@ -29,6 +29,15 @@ class ArchiveBlocked(ValueError):
     """A precondition failed; the original history remains authoritative."""
 
 
+class ArchiveCapacityBlocked(ArchiveBlocked):
+    """Actual filesystem headroom is insufficient, independently of a pilot."""
+
+    def __init__(self,available_bytes,required_bytes):
+        self.available_bytes = available_bytes
+        self.required_bytes = required_bytes
+        super().__init__(f"Archive needs {required_bytes} free bytes on its database filesystem; {available_bytes} available")
+
+
 @dataclass(frozen=True)
 class ArchivePolicy:
     enabled: bool = False
@@ -45,6 +54,7 @@ class ArchivePolicy:
     database_filesystem: str = ""
     index_build_seconds: float = 300
     analyze_seconds: float = 300
+    cleanup_seconds: float = 300
 
     def __post_init__(self):
         if type(self.enabled) is not bool or not isinstance(self.database_filesystem, str):
@@ -58,7 +68,7 @@ class ArchivePolicy:
                 raise ValueError(f"archive {name} must be an integer from {lower} to {upper}")
         for name, lower, upper in (("cycle_seconds", 1, 12), ("statement_seconds", .1, 5),
                                    ("estimate_multiplier", 1.1, 4), ("index_build_seconds", 1, 1800),
-                                   ("analyze_seconds", .1, 1800)):
+                                   ("analyze_seconds", .1, 1800),("cleanup_seconds", .1, 1800)):
             value = getattr(self, name)
             if type(value) not in (int, float) or not math.isfinite(value) or not lower <= value <= upper:
                 raise ValueError(f"archive {name} must be between {lower} and {upper}")
@@ -109,6 +119,12 @@ CREATE TABLE IF NOT EXISTS public.storage_archive_jobs (
     rows_copied BIGINT NOT NULL DEFAULT 0, rows_verified BIGINT NOT NULL DEFAULT 0,
     copied_logical_bytes BIGINT NOT NULL DEFAULT 0,
     source_bytes BIGINT NOT NULL, estimated_stage_bytes BIGINT NOT NULL,
+    admission_mode TEXT NOT NULL DEFAULT 'strict' CHECK(admission_mode IN ('strict','guarded')),
+    admission_free_bytes BIGINT,
+    cleanup_requested BOOLEAN NOT NULL DEFAULT false, cleanup_reason TEXT,
+    cleanup_terminal_phase TEXT NOT NULL DEFAULT 'failed' CHECK(cleanup_terminal_phase IN ('failed','cancelled')),
+    cleanup_stage_dropped BOOLEAN NOT NULL DEFAULT false,
+    cleanup_topics_dropped BOOLEAN NOT NULL DEFAULT false,
     inflight_bytes BIGINT, aborted_bytes BIGINT NOT NULL DEFAULT 0,
     abort_count INTEGER NOT NULL DEFAULT 0,
     analyzed BOOLEAN NOT NULL DEFAULT false,
@@ -118,6 +134,15 @@ CREATE TABLE IF NOT EXISTS public.storage_archive_jobs (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(), finished_at TIMESTAMPTZ
 );
 ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS analyzed BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS admission_mode TEXT NOT NULL DEFAULT 'strict'
+    CHECK(admission_mode IN ('strict','guarded'));
+ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS admission_free_bytes BIGINT;
+ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS cleanup_requested BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS cleanup_reason TEXT;
+ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS cleanup_terminal_phase TEXT NOT NULL DEFAULT 'failed'
+    CHECK(cleanup_terminal_phase IN ('failed','cancelled'));
+ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS cleanup_stage_dropped BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS cleanup_topics_dropped BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS stage_analyzed BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS topic_analyzed BOOLEAN NOT NULL DEFAULT false;
 UPDATE public.storage_archive_jobs SET stage_analyzed=true,topic_analyzed=true
@@ -262,6 +287,13 @@ async def plan_archive(conn, config):
         if await conn.fetchval("SELECT to_regclass('public.storage_archive_jobs') IS NOT NULL"):
             jobs = [dict(row) for row in await conn.fetch("""SELECT job_id::text,source_name,stage_name,source_method,target_method,phase,
                 source_frozen,blocked_reason,rows_copied,rows_verified,source_bytes,estimated_stage_bytes,
+                coalesce(to_jsonb(storage_archive_jobs)->>'admission_mode','strict') AS admission_mode,
+                (to_jsonb(storage_archive_jobs)->>'admission_free_bytes')::bigint AS admission_free_bytes,
+                coalesce((to_jsonb(storage_archive_jobs)->>'cleanup_requested')::boolean,false) AS cleanup_requested,
+                to_jsonb(storage_archive_jobs)->>'cleanup_reason' AS cleanup_reason,
+                coalesce(to_jsonb(storage_archive_jobs)->>'cleanup_terminal_phase','failed') AS cleanup_terminal_phase,
+                coalesce((to_jsonb(storage_archive_jobs)->>'cleanup_stage_dropped')::boolean,false) AS cleanup_stage_dropped,
+                coalesce((to_jsonb(storage_archive_jobs)->>'cleanup_topics_dropped')::boolean,false) AS cleanup_topics_dropped,
                 aborted_bytes,abort_count,created_at,updated_at,finished_at FROM public.storage_archive_jobs
                 ORDER BY created_at DESC LIMIT 100""")]
             failed = {row["source_name"] for row in await conn.fetch("""SELECT source_name FROM public.storage_archive_jobs j
@@ -391,7 +423,7 @@ def _free(free_bytes, policy, required=0):
     if type(available) is not int or available < 0:
         raise ArchiveBlocked("Database filesystem probe returned an invalid byte count")
     if available < policy.reserve_bytes + required:
-        raise ArchiveBlocked(f"Archive needs {policy.reserve_bytes+required} free bytes on its database filesystem; {available} available")
+        raise ArchiveCapacityBlocked(available,policy.reserve_bytes+required)
     return available
 
 
@@ -439,7 +471,8 @@ async def _fill_columnar_pilot(conn,heap,columnar,policy):
         async with conn.transaction():
             command = await conn.execute(f"""INSERT INTO {_q(columnar)} ({_columns()})
                 SELECT {_columns()} FROM {_q(heap)}
-                WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz))
+                WHERE ($1::bigint IS NULL OR id >= $1) AND id <= $3
+                  AND ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz))
                   AND (id,created_at)<=($3,$4) ORDER BY id,created_at""",
                 last_id,last_time,last["id"],last["created_at"])
             if command != f"INSERT 0 {len(selected)}":
@@ -559,7 +592,9 @@ async def _constraints(conn, oid):
     return sorted(tuple(row) for row in rows)
 
 
-async def _start(conn, source, policy, free_bytes, *, target_method="columnar"):
+async def _start(conn, source, policy, free_bytes, *, target_method="columnar",admission_mode="strict"):
+    if admission_mode not in ("strict","guarded") or admission_mode == "guarded" and target_method != "columnar":
+        raise ValueError("Guarded admission is limited to explicit heap-to-columnar conversion")
     job_id = uuid.uuid4()
     stage = "meshinfo_archive_stage_" + job_id.hex[:24]
     bounds = monthly_partition_bounds(source["bound"])
@@ -597,7 +632,8 @@ async def _start(conn, source, policy, free_bytes, *, target_method="columnar"):
             conn, source, policy, target_method=target_method, extra_indexes=extra_indexes)
         if target_method in ("columnar","topics"):
             estimated += await archive_topics.estimate(conn,source,policy)
-        _free(free_bytes, policy, estimated + policy.max_wal_bytes)
+        admission_free = _free(free_bytes,policy,
+            estimated+policy.max_wal_bytes if admission_mode == "strict" else 4*policy.batch_bytes+policy.max_wal_bytes)
         # This brief lock drains earlier writers before installing ALWAYS guards.
         await conn.execute(f"LOCK TABLE ONLY {_q(source['name'])} IN SHARE ROW EXCLUSIVE MODE NOWAIT")
         if await _fingerprint(conn, source["oid"], source_method) != fingerprint:
@@ -606,10 +642,11 @@ async def _start(conn, source, policy, free_bytes, *, target_method="columnar"):
         await conn.execute("""INSERT INTO public.storage_archive_jobs
             (job_id,source_oid,source_name,stage_name,bound_start,bound_end,phase,source_frozen,
              schema_fingerprint,compression_options,source_bytes,estimated_stage_bytes,
-             source_method,target_method,previous_guard_job,original_comment)
-            VALUES($1,$2,$3,$4,$5,$6,'copying',true,$7::jsonb,$8::jsonb,$9,$10,$11,$12,$13,$14)""",
+             source_method,target_method,previous_guard_job,original_comment,admission_mode,admission_free_bytes)
+            VALUES($1,$2,$3,$4,$5,$6,'copying',true,$7::jsonb,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16)""",
             job_id, source["oid"], source["name"], stage, *bounds, json.dumps(fingerprint),
-            json.dumps(options), source["total_bytes"], estimated, source_method,target_method,previous_guard_job,original_comment)
+            json.dumps(options), source["total_bytes"], estimated, source_method,target_method,previous_guard_job,original_comment,
+            admission_mode,admission_free)
         if previous_guard_job is not None:
             await conn.execute(f"DROP TRIGGER meshinfo_archive_freeze ON {_q(source['name'])}")
             await conn.execute(f"DROP TRIGGER meshinfo_archive_freeze_truncate ON {_q(source['name'])}")
@@ -820,9 +857,14 @@ async def _copy_chunk(conn, job, policy, free_bytes):
         last = selected[-1]
         await conn.execute("SELECT set_config('meshinfo.archive_job',$1,true)", str(job["job_id"]))
         if job.get("target_method") != "topics":
+            # Independent row-comparison selectivities can make a tiny middle
+            # cohort look like a large fraction of the partition. Redundant
+            # scalar ID bounds expose its narrow range to the planner; exact
+            # composite bounds still decide which timestamp ties are copied.
             command = await conn.execute(f"""INSERT INTO {_q(job['stage_name'])} ({_columns()})
                 SELECT {_columns()} FROM {_q(job['source_name'])}
-                WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz))
+                WHERE ($1::bigint IS NULL OR id >= $1) AND id <= $3
+                  AND ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz))
                   AND (id,created_at)<=($3,$4) ORDER BY id,created_at""",
                 job["last_id"], job["last_created_at"], last["id"], last["created_at"])
             if command != f"INSERT 0 {len(selected)}":
@@ -941,8 +983,10 @@ async def _cutover(conn, job, policy, free_bytes):
             blocked_reason=NULL,updated_at=clock_timestamp(),finished_at=clock_timestamp() WHERE job_id=$1""", job["job_id"])
 
 
-async def _cancel_locked(conn, job, policy):
-    if job["phase"] == "failed" and not job["source_frozen"] and job["stage_oid"] is None:
+async def _cancel_locked(conn,job,policy,*,terminal_phase="cancelled",terminal_reason=None):
+    if terminal_phase not in ("failed","cancelled"):
+        raise ValueError("Cancellation outcome must be failed or cancelled")
+    if terminal_phase == "cancelled" and job["phase"] == "failed" and not job["source_frozen"] and job["stage_oid"] is None:
         await conn.execute("UPDATE public.storage_archive_jobs SET phase='cancelled',updated_at=clock_timestamp() WHERE job_id=$1", job["job_id"])
         return {"status": "cancelled", "job_id": str(job["job_id"]), "source_preserved": True}
     if job["phase"] in ("complete", "cancelled", "failed"):
@@ -974,10 +1018,10 @@ async def _cancel_locked(conn, job, policy):
         await conn.execute(f"DROP TRIGGER meshinfo_archive_freeze_truncate ON {_q(job['source_name'])}")
         if job.get("previous_guard_job") is not None:
             await _freeze(conn, job["source_name"], job["previous_guard_job"])
-        await conn.execute("""UPDATE public.storage_archive_jobs SET phase='cancelled',source_frozen=false,
-            stage_oid=NULL,topic_stage_oid=NULL,topic_stage_name=NULL,inflight_bytes=NULL,blocked_reason=NULL,updated_at=clock_timestamp(),
-            finished_at=clock_timestamp() WHERE job_id=$1""", job["job_id"])
-    return {"status": "cancelled", "job_id": str(job["job_id"]), "source_preserved": True}
+        await conn.execute("""UPDATE public.storage_archive_jobs SET phase=$2,source_frozen=false,
+            stage_oid=NULL,topic_stage_oid=NULL,topic_stage_name=NULL,inflight_bytes=NULL,blocked_reason=$3,updated_at=clock_timestamp(),
+            cleanup_requested=false,finished_at=clock_timestamp() WHERE job_id=$1""",job["job_id"],terminal_phase,terminal_reason)
+    return {"status":terminal_phase,"job_id":str(job["job_id"]),"source_preserved":True}
 
 
 async def _analyze_stage(conn, job, policy):
@@ -1009,13 +1053,183 @@ async def _analyze_stage(conn, job, policy):
     job.update(stage_analyzed=stage_done,topic_analyzed=topic_done,analyzed=stage_done and topic_done)
 
 
+def _job_report(job,started=None):
+    result = {"status":job["phase"],"job_id":str(job["job_id"]),"partition":job["source_name"],
+              "target_method":job["target_method"],"rows_copied":job["rows_copied"],"rows_verified":job["rows_verified"],
+              "admission_mode":job.get("admission_mode","strict"),
+              "admission_free_bytes":job.get("admission_free_bytes"),
+              "estimated_stage_bytes":job.get("estimated_stage_bytes"),
+              "cleanup_requested":bool(job.get("cleanup_requested")),
+              "cleanup_terminal_phase":job.get("cleanup_terminal_phase","failed"),
+              "cleanup_stage_dropped":bool(job.get("cleanup_stage_dropped")),
+              "cleanup_topics_dropped":bool(job.get("cleanup_topics_dropped"))}
+    if job.get("cleanup_reason"):
+        result["cleanup_reason"] = job["cleanup_reason"]
+    if job.get("blocked_reason"):
+        result["reason"] = job["blocked_reason"]
+    if started is not None:
+        result["elapsed_seconds"] = round(time.monotonic()-started,3)
+    return result
+
+
+async def _cleanup_source(conn,job,*,exclusive=False):
+    mode = "ACCESS EXCLUSIVE" if exclusive else "ACCESS SHARE"
+    await conn.execute(f"LOCK TABLE ONLY {_q(job['source_name'])} IN {mode} MODE NOWAIT")
+    source = await conn.fetchrow("""SELECT c.oid,a.amname,pg_get_expr(c.relpartbound,c.oid) AS bound,
+        pg_get_userbyid(c.relowner) AS owner FROM pg_class c JOIN pg_am a ON a.oid=c.relam
+        JOIN pg_inherits i ON i.inhrelid=c.oid
+        WHERE c.oid=to_regclass($1) AND i.inhparent='public.mqtt_messages'::regclass""",_q(job["source_name"]))
+    if (not source or source["amname"] != "heap" or job["source_method"] != "heap"
+            or source["owner"] != _json(job["schema_fingerprint"])["relation"]["owner"]
+            or monthly_partition_bounds(source["bound"]) != (job["bound_start"],job["bound_end"])
+            or not await _guarded(conn,source["oid"],job["job_id"])):
+        raise ArchiveBlocked("Cannot establish original source ownership for capacity cleanup")
+    return source["oid"]
+
+
+async def _drop_capacity_stage(conn,job,policy,*,topics=False):
+    flag = "cleanup_topics_dropped" if topics else "cleanup_stage_dropped"
+    field = "topic_stage_name" if topics else "stage_name"
+    oid_field = "topic_stage_oid" if topics else "stage_oid"
+    prefix = "meshinfo_topics_stage_" if topics else "meshinfo_archive_stage_"
+    name = job[field]
+    if name != prefix+job["job_id"].hex[:24]:
+        raise ArchiveBlocked("Capacity cleanup requires the job's original private staging name")
+    async with conn.transaction():
+        await _settings(conn,policy)
+        await conn.execute(f"SET LOCAL statement_timeout='{math.ceil(policy.cleanup_seconds*1000)}ms'")
+        source_oid = await _cleanup_source(conn,job)
+        await conn.execute(f"LOCK TABLE ONLY {_q(name)} IN ACCESS EXCLUSIVE MODE NOWAIT")
+        stage = await conn.fetchrow("""SELECT c.oid,a.amname,pg_get_userbyid(c.relowner) AS owner,
+            obj_description(c.oid,'pg_class') AS comment,
+            EXISTS(SELECT 1 FROM pg_inherits WHERE inhrelid=c.oid) AS attached
+            FROM pg_class c JOIN pg_am a ON a.oid=c.relam WHERE c.oid=to_regclass($1)""",_q(name))
+        marker = "meshinfo archive topics stage " if topics else "meshinfo archive stage "
+        if (not stage or stage["attached"] or stage["amname"] != ("heap" if topics else "columnar")
+                or stage["owner"] != _json(job["schema_fingerprint"])["relation"]["owner"]
+                or stage["comment"] != marker+str(job["job_id"])):
+            raise ArchiveBlocked("Cannot establish detached staging ownership for capacity cleanup")
+        guards = await conn.fetch("""SELECT tgname,tgenabled::text,tgtype,tgargs,
+            tgfoid='public.meshinfo_archive_stage_guard()'::regprocedure AS expected_function
+            FROM pg_trigger WHERE tgrelid=$1 AND NOT tgisinternal
+              AND tgname='meshinfo_archive_stage_guard'""",stage["oid"])
+        if (len(guards) != 1 or any(guard["tgname"] != "meshinfo_archive_stage_guard"
+                or guard["tgenabled"] != "A" or guard["tgtype"] != 62 or not guard["expected_function"]
+                or bytes(guard["tgargs"]) != str(job["job_id"]).encode()+b"\0" for guard in guards)):
+            raise ArchiveBlocked("Cannot establish private staging guard ownership for capacity cleanup")
+        await conn.execute(f"DROP TABLE {_q(name)}",timeout=policy.cleanup_seconds+.25)
+        await conn.execute(f"UPDATE public.storage_archive_jobs SET {flag}=true,{oid_field}=NULL,"
+                           "source_oid=$2,updated_at=clock_timestamp() WHERE job_id=$1",job["job_id"],source_oid)
+
+
+async def _finish_capacity_cleanup(conn,job,policy):
+    terminal = job.get("cleanup_terminal_phase","failed")
+    if terminal not in ("failed","cancelled"):
+        raise ArchiveBlocked("Guarded cleanup has an invalid terminal outcome")
+    async with conn.transaction():
+        await _settings(conn,policy)
+        source_oid = await _cleanup_source(conn,job,exclusive=True)
+        for name in (job["stage_name"],job["topic_stage_name"]):
+            if await conn.fetchval("SELECT to_regclass($1) IS NOT NULL",_q(name)):
+                raise ArchiveBlocked("A staging name reappeared after durable capacity cleanup")
+        await conn.execute(f"DROP TRIGGER meshinfo_archive_freeze ON {_q(job['source_name'])}")
+        await conn.execute(f"DROP TRIGGER meshinfo_archive_freeze_truncate ON {_q(job['source_name'])}")
+        await conn.execute("""UPDATE public.storage_archive_jobs SET phase=$3,source_frozen=false,
+            source_oid=$2,inflight_bytes=NULL,cleanup_requested=false,blocked_reason=cleanup_reason,
+            updated_at=clock_timestamp(),finished_at=clock_timestamp() WHERE job_id=$1""",job["job_id"],source_oid,terminal)
+
+
+async def _capacity_cleanup(conn,job,policy,*,max_steps=1):
+    """Drop one owned stage while readers continue, then commit the recorded outcome."""
+    try:
+        if (not job.get("cleanup_requested") or job.get("source_method") != "heap"
+                or job.get("target_method") != "columnar"):
+            raise ArchiveBlocked("Staged cleanup requires durable intent for a heap-to-columnar job")
+        async with asyncio.timeout(policy.cleanup_seconds+2):
+            for _ in range(max_steps):
+                # Release the cheap heap/index allocation before a large
+                # Columnar metadata deletion can generate additional WAL.
+                # Independent flags also resume checkpoints from either order.
+                if not job.get("cleanup_topics_dropped"):
+                    await _drop_capacity_stage(conn,job,policy,topics=True)
+                elif not job.get("cleanup_stage_dropped"):
+                    await _drop_capacity_stage(conn,job,policy)
+                job = await _job(conn,job["job_id"])
+                if job["cleanup_stage_dropped"] and job["cleanup_topics_dropped"]:
+                    await _finish_capacity_cleanup(conn,job,policy)
+                    break
+            else:
+                return {**_job_report(job),"status":"cleanup_pending","source_preserved":True}
+        result = _job_report(await _job(conn,job["job_id"]))
+        result["source_preserved"] = True
+        return result
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        # The earlier intent commit survives a blocked reader, interrupted
+        # DROP, or ownership refusal. The next cycle retries cleanup, not copy.
+        return {**_job_report(job),"status":"cleanup_pending","cleanup_error":_reason(exc),
+                "source_preserved":True}
+
+
+async def _request_capacity_cleanup(conn,job,policy,reason,*,terminal_phase="failed",max_steps=1):
+    if job.get("cleanup_requested"):
+        return await _capacity_cleanup(conn,job,policy,max_steps=max_steps)
+    if terminal_phase not in ("failed","cancelled"):
+        raise ValueError("Guarded cleanup outcome must be failed or cancelled")
+    await conn.execute("""UPDATE public.storage_archive_jobs SET cleanup_requested=true,
+        cleanup_reason=$2,blocked_reason=$2,cleanup_terminal_phase=$3,updated_at=clock_timestamp()
+        WHERE job_id=$1 AND phase IN ('copying','verifying','ready')""",job["job_id"],reason,terminal_phase,timeout=2)
+    job.update(cleanup_requested=True,cleanup_reason=reason,blocked_reason=reason,cleanup_terminal_phase=terminal_phase)
+    return await _capacity_cleanup(conn,job,policy,max_steps=max_steps)
+
+
 async def cancel_archive(conn, job, *, config=None):
     policy = archive_policy(config or {})
     job_id = uuid.UUID(str(job))
     async with maintenance_lock(conn) as acquired:
         if not acquired:
             return {"status": "busy"}
-        return await _cancel_locked(conn, await _job(conn, job_id), policy)
+        current = await _job(conn,job_id)
+        if current.get("cleanup_requested"):
+            return await _capacity_cleanup(conn,current,policy,max_steps=3)
+        if (current.get("source_method") == "heap" and current.get("target_method") == "columnar"
+                and current["phase"] in ("copying","verifying","ready")):
+            return await _request_capacity_cleanup(conn,current,policy,
+                "Cancellation requested; original source preserved",terminal_phase="cancelled",max_steps=3)
+        return await _cancel_locked(conn,current,policy)
+
+
+async def start_guarded_archive(conn,partition: str,config,*,free_bytes: Callable[[],int] | None=None):
+    """Explicitly try one eligible heap month when its estimate exceeds space.
+
+    This changes admission only. The full pilot and actual per-batch filesystem
+    floor remain mandatory; capacity refusal durably requests owned cleanup.
+    Automatic scheduling never creates a job with this admission mode.
+    """
+    policy = archive_policy(config)
+    if not policy.enabled:
+        return {"status":"blocked","reason":"Enable automatic archiving before requesting a guarded job",
+                "source_preserved":True}
+    if conn.is_in_transaction():
+        raise ValueError("Guarded admission requires a dedicated connection outside a transaction")
+    async with maintenance_lock(conn) as acquired:
+        if not acquired:
+            return {"status":"busy"}
+        try:
+            async with asyncio.timeout(policy.cycle_seconds):
+                if await conn.fetchval("SELECT EXISTS(SELECT 1 FROM public.storage_archive_jobs WHERE phase IN ('copying','verifying','ready'))"):
+                    return {"status":"busy","reason":"Another conversion job is active"}
+                preview = await plan_archive(conn,config)
+                source = next((row for row in preview["partitions"] if row["name"] == partition),None)
+                if source is None or source["method"] != "heap" or not source["eligible"]:
+                    raise ArchiveBlocked("Guarded admission requires a named eligible monthly heap partition")
+                job_id = await _start(conn,source,policy,free_bytes,admission_mode="guarded")
+                return _job_report(await _job(conn,job_id))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return {"status":"blocked","reason":_reason(exc),"source_preserved":True}
 
 
 async def start_restore_archive(conn, partition: str, config, *, free_bytes: Callable[[], int] | None = None):
@@ -1050,25 +1264,44 @@ async def start_restore_archive(conn, partition: str, config, *, free_bytes: Cal
             return {"status": "blocked", "reason": _reason(exc), "source_preserved": True}
 
 
-async def run_archive_cycle(conn, config, *, free_bytes: Callable[[], int] | None = None):
+async def run_archive_cycle(conn, config, *, free_bytes: Callable[[], int] | None = None,target_job_id=None):
     policy = archive_policy(config)
-    if not policy.enabled:
+    if not policy.enabled and target_job_id is None:
         exists = await conn.fetchval("SELECT to_regclass('public.storage_archive_jobs') IS NOT NULL")
-        if not exists or not await conn.fetchval("""SELECT EXISTS(SELECT 1 FROM public.storage_archive_jobs
-                WHERE phase IN ('copying','verifying','ready') AND target_method='heap')"""):
+        if not exists:
             return {"status": "disabled"}
+    target_job_id = uuid.UUID(str(target_job_id)) if target_job_id is not None else None
     if conn.is_in_transaction():
         raise ValueError("Archiving requires a dedicated connection outside a transaction")
     async with maintenance_lock(conn) as acquired:
         if not acquired:
             return {"status": "busy"}
         job_id = None
+        job = None
         started = time.monotonic()
         try:
+            active_id = await conn.fetchval("SELECT job_id FROM public.storage_archive_jobs WHERE phase IN ('copying','verifying','ready') LIMIT 1")
+            if target_job_id is not None:
+                target = await conn.fetchrow("SELECT * FROM public.storage_archive_jobs WHERE job_id=$1",target_job_id)
+                if target is None:
+                    return {"status":"blocked","reason":"Requested archive job does not exist","source_preserved":True}
+                job = dict(target)
+                if job["phase"] in ("complete","cancelled","failed"):
+                    return _job_report(job,started)
+                if active_id != target_job_id:
+                    return {"status":"busy","reason":"Another conversion job is active"}
+            elif active_id is not None:
+                job = await _job(conn,active_id)
+            job_id = job["job_id"] if job else None
+            # Recovery precedes all new-work admission. Even a missing free
+            # probe or disabled policy must not strand a resource cleanup.
+            if job and job.get("cleanup_requested"):
+                return await _capacity_cleanup(conn,job,policy)
+            if not policy.enabled and (not job or job["target_method"] != "heap"):
+                return {"status":"disabled"}
             async with asyncio.timeout(policy.cycle_seconds) as cycle_deadline:
                 await _environment(conn)
                 _free(free_bytes, policy, 4*policy.batch_bytes)
-                job_id = await conn.fetchval("SELECT job_id FROM public.storage_archive_jobs WHERE phase IN ('copying','verifying','ready') LIMIT 1")
                 if job_id is None:
                     if not policy.enabled:
                         return {"status": "disabled"}
@@ -1084,13 +1317,15 @@ async def run_archive_cycle(conn, config, *, free_bytes: Callable[[], int] | Non
                     await _validate_job(conn, job)
                     await _recover_inflight(conn, job, policy)
                 if job["abort_count"] >= 3:
-                    result = await _cancel_locked(conn, job, policy)
-                    result["reason"] = "Three interrupted copy batches; staging reclaimed and original source preserved"
+                    reason = "Three interrupted copy batches; staging reclaimed and original source preserved"
                     if job.get("blocked_reason"):
-                        result["reason"] += ". Last copy refusal: "+job["blocked_reason"]
-                    await conn.execute("UPDATE public.storage_archive_jobs SET phase='failed',blocked_reason=$2 WHERE job_id=$1",
-                                       job["job_id"], result["reason"])
-                    result["status"] = "failed"
+                        reason += ". Last copy refusal: "+job["blocked_reason"]
+                    if job.get("source_method") == "heap" and job.get("target_method") == "columnar":
+                        cycle_deadline.reschedule(asyncio.get_running_loop().time()+policy.cleanup_seconds+2)
+                        return await _request_capacity_cleanup(conn,job,policy,
+                            reason.replace("staging reclaimed and ",""),max_steps=3)
+                    result = await _cancel_locked(conn,job,policy,terminal_phase="failed",terminal_reason=reason)
+                    result["reason"] = reason
                     return result
                 wal_start = await conn.fetchval("SELECT pg_current_wal_insert_lsn()::text")
                 while time.monotonic()-started < policy.cycle_seconds-policy.statement_seconds:
@@ -1117,16 +1352,17 @@ async def run_archive_cycle(conn, config, *, free_bytes: Callable[[], int] | Non
                     else:
                         break
                 final = await _job(conn, job_id)
-                return {"status": final["phase"], "job_id": str(job_id), "partition": final["source_name"],
-                        "target_method": final["target_method"],
-                        "rows_copied": final["rows_copied"], "rows_verified": final["rows_verified"],
-                        "elapsed_seconds": round(time.monotonic()-started, 3)}
+                return _job_report(final,started)
         except asyncio.CancelledError:
             # The committed in-flight marker distinguishes a cancelled chunk
             # from a committed checkpoint after reconnect. Never drop source.
             raise
         except Exception as exc:
             reason = _reason(exc)
+            if (job_id is not None and job is not None and job.get("admission_mode") == "guarded"
+                    and (isinstance(exc,ArchiveCapacityBlocked) or getattr(exc,"sqlstate",None) == "53100")
+                    and not conn.is_closed()):
+                return await _request_capacity_cleanup(conn,job,policy,reason)
             if job_id is not None and not conn.is_closed():
                 await conn.execute("""UPDATE public.storage_archive_jobs SET blocked_reason=$2,
                     updated_at=clock_timestamp() WHERE job_id=$1 AND phase IN ('copying','verifying','ready')""",

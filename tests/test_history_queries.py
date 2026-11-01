@@ -108,8 +108,13 @@ def test_topic_lookup_coverage_preserves_gaps_and_binds_half_open_months():
     query, parameters = topic_candidate_sql(["topic ILIKE $1", "created_at <= $2"], 3, intervals)
     assert "UNION ALL" in query and "AND NOT (" in query
     assert "FROM mqtt_archive_topics" in query and "FROM mqtt_messages" in query
-    assert query.count("created_at <= $2") == 2 and "LIMIT $3::integer" in query
+    assert query.count("created_at <= $2") == 2
+    assert query.count("ORDER BY created_at DESC,id DESC LIMIT $3::integer") == 3
     assert len(parameters) == 4 and "$4::timestamptz" in query and "$7::timestamptz" in query
+    unbounded, same_parameters = topic_candidate_sql(
+        ["topic ILIKE $1", "created_at <= $2"], 3, intervals, bounded=False)
+    assert same_parameters == parameters
+    assert "LIMIT" not in unbounded and "ORDER BY" not in unbounded
 
 
 def test_topic_bounds_rendered_in_local_timezone_still_cover_exact_utc_month():

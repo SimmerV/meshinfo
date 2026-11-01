@@ -80,6 +80,8 @@ chunk_group_rows = 1000
 index_build_seconds = 300
 # Full-table statistics use a separate per-relation budget (maximum 1800s).
 analyze_seconds = 300
+# Owned failed-stage cleanup can scan Columnar metadata; separate limit, maximum 1800 seconds.
+cleanup_seconds = 300
 # Directory on the actual PostgreSQL data filesystem, not an inferred app path.
 database_filesystem = ""
 

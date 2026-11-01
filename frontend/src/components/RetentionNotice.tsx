@@ -94,8 +94,9 @@ function PolicyDetails({
 
 function ArchiveNotice({ history }: { history: IStorageHistory }) {
   const archive = history.archive;
-  if (!archive || (!archive.enabled && archive.compressed_partitions === 0)) return null;
   const status = history.maintenance?.archive?.status;
+  const cleanupPending = status === "cleanup_pending";
+  if (!archive || (!archive.enabled && archive.compressed_partitions === 0 && !cleanupPending)) return null;
   const needsAttention = status && ["blocked", "error", "failed"].includes(status);
   return (
     <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
@@ -106,6 +107,7 @@ function ArchiveNotice({ history }: { history: IStorageHistory }) {
         {" "}Compressed history stays available in the usual searches. Compression does not delete history.
       </p>
       {archive.compressed_partitions > 0 && <p>{archive.compressed_partitions} historical month{archive.compressed_partitions === 1 ? " is" : "s are"} compressed.</p>}
+      {cleanupPending && <p className="text-amber-700 dark:text-amber-300">History compression cleanup is pending. Existing history remains available.</p>}
       {needsAttention && <p className="text-amber-700 dark:text-amber-300">History compression needs operator attention. Existing history remains available.</p>}
     </div>
   );

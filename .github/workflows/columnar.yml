@@ -121,6 +121,7 @@ jobs:
             tests/test_archive_integration.py tests/test_archive_application_integration.py \
             tests/test_archive_analysis.py tests/test_archive_analysis_integration.py \
             tests/test_archive_topics_estimate_integration.py \
+            tests/test_archive_copy_ranges_integration.py tests/test_archive_guarded_integration.py \
             tests/test_archive_catalog_integration.py tests/test_archive.py \
             tests/test_archive_catalog.py tests/test_columnar_backup.py tests/test_columnar_copy.py \
             tests/test_legacy_storage_guards.py tests/test_legacy_storage_integration.py
@@ -132,7 +133,8 @@ jobs:
           docker exec -w /work \
             -e MESHINFO_HISTORY_TEST_DSN=postgresql://postgres@127.0.0.1:5432/native_columnar_test \
             columnar-native-ci python3 -m pytest -q -p no:cacheprovider \
-            tests/test_history_queries.py tests/test_history_queries_integration.py
+            tests/test_history_queries.py tests/test_history_queries_integration.py \
+            tests/test_history_candidates_integration.py
       - name: Remove the isolated cluster and anonymous data volume
         if: always()
         run: |

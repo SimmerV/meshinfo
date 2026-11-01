@@ -478,7 +478,7 @@ the default does not override explicit operator settings. Observe CPU/query
 latency and allow enough time for this full scan instead of bypassing its gate.
 
 Small copy batches bound memory, locks and WAL per transaction; they do not bound
-the complete replacement's disk footprint. Before the switch, free space must
+the complete replacement's disk footprint. Normal admission requires free space to
 cover the estimated compressed month, its retained indexes, the canonical-topic
 lookup and its indexes, the WAL allowance, and the free-space reserve. The old
 month already occupies disk and remains in place until verification succeeds.
@@ -488,6 +488,63 @@ unrelated unused files or add capacity before retrying. Lowering the reserve or
 deleting parts of the original is not a supported way to make the job fit.
 Future ingestion also needs ongoing headroom: retention limits growth, while
 keeping all history still requires eventual disk expansion even with compression.
+
+#### Explicit trial when the estimate exceeds available space
+
+The estimate includes a conservative multiplier and a bounded sample. An operator
+may explicitly try **one named eligible heap month** when the full estimate does
+not fit, provided actual capacity still satisfies every existing reserve and WAL
+check. This is a trial, not evidence that the replacement will fit. The old month
+and its entire replacement must coexist until verification and the atomic switch
+finish. A realistic footprint can still exceed the available space.
+
+Keep archiving enabled and inspect the candidate and actual filesystem first.
+Then opt in for that partition only:
+
+```sh
+dc exec meshinfo python scripts/manage_archive.py run \
+  --partition mqtt_messages_2026_08 --allow-estimate-shortfall --apply \
+  --until-idle --max-cycles 100
+```
+
+The flag requires `run`, `--partition` and `--apply`. It is deliberately absent
+from configuration and automated admission. Index preparation, partition age,
+retention, source/schema validation and the full compression pilot still apply.
+The journal records the admission mode, actual free bytes at admission, full
+estimated staging bytes and cleanup intent. These audit fields appear in `plan`,
+cycle JSON and the private operator storage report, never the public history API.
+
+After admission, this command follows only the returned job UUID. It stops when
+that job completes or fails; it cannot opt the next month into the exception.
+If the cycle limit or an interruption leaves work pending, resume that exact job:
+
+```sh
+dc exec meshinfo python scripts/manage_archive.py run \
+  --job JOB_UUID --apply --until-idle --max-cycles 100
+```
+
+Actual free-space checks, the configured WAL limit and the **minimum 1 GiB free
+reserve remain unchanged**. If actual capacity refuses further work, the executor
+records cleanup intent durably and discards only its verified, owned replacement
+stages while preserving the original history. An interrupted cleanup resumes
+before further copying. Removing a large Columnar stage also traverses its
+metadata, so cleanup has a separate `cleanup_seconds` budget: **300 seconds** by
+default, at most **1,800 seconds**. Each normal worker invocation removes at most
+one physical stage and commits that progress; an explicit cancellation can drain
+both stages and finalize within the same overall cleanup budget.
+`cleanup_pending` means reclamation or the final
+source-guard restoration remains unfinished. Readers continue using the original.
+Cleanup takes precedence over new work, including after disabling archiving or
+losing the configured free-space probe. Shutdown may interrupt cleanup safely;
+the committed per-stage checkpoints prevent repeating a completed removal.
+
+The failed attempt stays recorded and is excluded from
+automatic retry; inspect its reason and reclaim capacity before explicitly
+clearing that attempt with the normal cancellation command. Never lower the
+reserve, remove source data, or delete journal/guard objects to force completion.
+Normal automated admission remains strict, including for other partitions.
+
+#### Verification and recovery for every conversion
 
 Verification compares every retained column, including text bytes and NULLs,
 then checks schema, constraints, indexes, partition bounds and job ownership
@@ -513,6 +570,28 @@ freeze triggers to bypass a refusal. To discard an unfinished conversion safely:
 ```sh
 dc exec meshinfo python scripts/manage_archive.py cancel --job JOB_UUID --apply
 ```
+
+Forward heap-to-Columnar cancellation uses the same durable cleanup checkpoints,
+including for jobs admitted under the normal strict estimate. Large replacements
+are removed while readers continue using the original; only final guard removal
+needs a short exclusive source lock. A cancellation may therefore return
+`cleanup_pending` and a nonzero exit code. This is incomplete cancellation, not
+data loss or permission to remove staging manually. Continue that exact job:
+
+```sh
+dc exec meshinfo python scripts/manage_archive.py run \
+  --job JOB_UUID --apply --until-idle --max-cycles 100
+```
+
+The journal's `cleanup_terminal_phase`, shown by `plan`, cycle JSON and the
+private operator storage report, records
+the intended outcome. Explicit cancellation or disabling archiving requests
+`cancelled`; an actual capacity refusal or repeated interrupted copy batches
+requests `failed`, which prevents automatic retry. Once cleanup intent is
+recorded, subsequent cancel requests do not change its outcome. A completed
+capacity failure can then be acknowledged with `cancel` to permit a fresh attempt
+after its cause is resolved. Inspect the terminal JSON status: targeted `run`
+returns nonzero for `cancelled` or `failed` even when reclamation completed.
 
 The container entrypoint replaces its shell with the application process, so
 Docker stop signals reach maintenance cancellation and database cleanup. Both

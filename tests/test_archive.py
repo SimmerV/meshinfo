@@ -8,7 +8,7 @@ import uuid
 import pytest
 
 from storage.db.archive import (
-    ArchiveBlocked, ArchivePolicy, _batch, _exact_equal, _free, _guarded,
+    ArchiveBlocked, ArchiveCapacityBlocked, ArchivePolicy, _batch, _exact_equal, _free, _guarded,
     _recover_inflight, archive_policy, _copy_batch_policy, _rebind_job_identity,
 )
 
@@ -27,8 +27,10 @@ def test_database_filesystem_probe_is_required_and_floor_is_reserved():
     policy = ArchivePolicy()
     with pytest.raises(ArchiveBlocked, match="verified free-space"):
         _free(None, policy)
-    with pytest.raises(ArchiveBlocked, match="needs"):
+    with pytest.raises(ArchiveCapacityBlocked, match="needs") as refused:
         _free(lambda: policy.reserve_bytes+999, policy, 1000)
+    assert refused.value.available_bytes == policy.reserve_bytes+999
+    assert refused.value.required_bytes == policy.reserve_bytes+1000
     assert _free(lambda: policy.reserve_bytes+1000, policy, 1000) == policy.reserve_bytes+1000
     with pytest.raises(ArchiveBlocked, match="invalid"):
         _free(lambda: True, policy)

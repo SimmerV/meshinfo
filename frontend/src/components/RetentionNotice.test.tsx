@@ -64,6 +64,26 @@ describe("History retention visibility", () => {
     expect(document.body.textContent).toContain("Compressed history stays available in the usual searches");
   });
 
+  it.each([true, false])("shows pending cleanup without exposing operator details (enabled=%s)", async (enabled) => {
+    const fixture = history({
+      archive: { enabled, after_months: 6, compressed_partitions: 0, history_remains_queryable: true },
+      maintenance: { archive: { status: "cleanup_pending", updated_at: "2026-10-27T12:00:00Z", scopes: {} } },
+    });
+    // Even an unexpectedly overbroad response must not render operator fields.
+    Object.assign(fixture.maintenance!.archive, {
+      job_id: "private-job", admission_free_bytes: 123456789,
+      cleanup_reason: "private-capacity-reason", source_name: "private-month",
+    });
+    stubApi({ history: fixture });
+    await mountAt("/stats", <HistoryRetentionPanel />);
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("History compression cleanup is pending. Existing history remains available.");
+    expect(text).not.toContain("needs operator attention");
+    for (const privateValue of ["cleanup_pending", "private-job", "123456789", "private-capacity-reason", "private-month"]) {
+      expect(text).not.toContain(privateValue);
+    }
+  });
+
   it("describes forever as a policy without promising that all past data exists", async () => {
     stubApi({ history: history() });
     await mountAt("/logs", <RetentionNotice scope="packets" />);

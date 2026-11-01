@@ -267,7 +267,14 @@ async def _archive_inventory(conn):
         'journal_bytes', pg_total_relation_size('public.storage_archive_jobs'),
         'jobs', (SELECT coalesce(json_agg(row_to_json(j)),'[]'::json) FROM (
             SELECT job_id,source_name,target_method,phase,source_frozen,rows_copied,rows_verified,
-                   copied_logical_bytes,source_bytes,blocked_reason,updated_at
+                   copied_logical_bytes,source_bytes,estimated_stage_bytes,blocked_reason,updated_at,
+                   coalesce(to_jsonb(storage_archive_jobs)->>'admission_mode','strict') AS admission_mode,
+                   (to_jsonb(storage_archive_jobs)->>'admission_free_bytes')::bigint AS admission_free_bytes,
+                   coalesce((to_jsonb(storage_archive_jobs)->>'cleanup_requested')::boolean,false) AS cleanup_requested,
+                   coalesce((to_jsonb(storage_archive_jobs)->>'cleanup_stage_dropped')::boolean,false) AS cleanup_stage_dropped,
+                   coalesce((to_jsonb(storage_archive_jobs)->>'cleanup_topics_dropped')::boolean,false) AS cleanup_topics_dropped,
+                   coalesce(to_jsonb(storage_archive_jobs)->>'cleanup_terminal_phase','failed') AS cleanup_terminal_phase,
+                   to_jsonb(storage_archive_jobs)->>'cleanup_reason' AS cleanup_reason
             FROM public.storage_archive_jobs
             ORDER BY (phase IN ('copying','verifying','ready','failed')) DESC, updated_at DESC
             LIMIT 12) j))""")

@@ -158,6 +158,40 @@ def test_public_report_contains_no_operator_capacity_or_config_secrets():
         assert secret not in encoded
 
 
+def test_guarded_admission_audit_is_operator_only_and_legacy_columns_are_optional():
+    audit = {'admission_mode': 'guarded', 'admission_free_bytes': 12_000_000_000,
+             'estimated_stage_bytes': 17_000_000_000, 'cleanup_requested': True,
+             'cleanup_stage_dropped': True, 'cleanup_topics_dropped': False,
+             'cleanup_terminal_phase': 'cancelled',
+             'cleanup_reason': 'Actual reserve refused further work', 'source_name': 'private_month'}
+
+    class ArchiveConnection(FakeConnection):
+        async def fetchval(self, query, *, timeout=None):
+            assert self.active
+            self.commands.append(query)
+            if "to_regclass('public.storage_archive_jobs')" in query:
+                return 123
+            if "'journal_bytes'" in query:
+                # Old journals lack admission/cleanup columns. The reader must
+                # extract those optional fields from the row JSON, not name
+                # missing SQL columns or mutate a read-only report session.
+                for field in ('admission_mode', 'admission_free_bytes', 'cleanup_requested', 'cleanup_reason',
+                              'cleanup_stage_dropped', 'cleanup_topics_dropped', 'cleanup_terminal_phase'):
+                    assert "to_jsonb(storage_archive_jobs)->>'" + field + "'" in query
+                return json.dumps({'jobs': [audit], 'staging_bytes': 1024,
+                                   'metadata_bytes': 2048, 'journal_bytes': 4096})
+            if 'to_regclass' in query:
+                return None
+            return 1_000_000
+
+    conn = ArchiveConnection(paired_catalog())
+    output = asyncio.run(build_storage_report(conn, CONFIG, now=NOW))
+    assert output['details']['archive']['jobs'] == [audit]
+    public = json.dumps(output['public'])
+    for private in (*audit.keys(), 'private_month', '12000000000', '17000000000'):
+        assert private not in public
+
+
 def test_unknown_statistics_are_not_reported_as_zero():
     catalog = paired_catalog()
     next(r for r in catalog if r["parent_name"] == "telemetry")["estimated_rows"] = -1

@@ -227,7 +227,8 @@ async def estimate(conn, source, policy):
 async def copy_chunk(conn, job, last, count):
     command = await conn.execute(f"""INSERT INTO {q(job['topic_stage_name'])}(id,created_at,topic)
         SELECT id,created_at,topic FROM {q(job['source_name'])}
-        WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz))
+        WHERE ($1::bigint IS NULL OR id >= $1) AND id <= $3
+          AND ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz))
           AND (id,created_at)<=($3,$4) ORDER BY id,created_at""",
         job["last_id"],job["last_created_at"],last["id"],last["created_at"])
     if command != f"INSERT 0 {count}":

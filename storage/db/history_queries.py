@@ -152,15 +152,20 @@ def topic_candidate_sql(conditions, limit_parameter, intervals, *, bounded=True)
         parameter += 2
     where = " AND ".join(conditions) if conditions else "true"
     covered = " OR ".join(exclusions)
-    sql = (
-        "SELECT id,created_at FROM ("
-        f"SELECT id,created_at FROM mqtt_archive_topics WHERE ({where}) AND ({covered}) "
-        "UNION ALL "
-        f"SELECT id,created_at FROM mqtt_messages WHERE ({where}) AND NOT ({covered})"
-        ") candidates"
-    )
+    branches = [
+        f"SELECT id,created_at FROM mqtt_archive_topics WHERE ({where}) AND ({covered})",
+        f"SELECT id,created_at FROM mqtt_messages WHERE ({where}) AND NOT ({covered})",
+    ]
+    ordering = f" ORDER BY created_at DESC,id DESC LIMIT ${limit_parameter}::integer"
     if bounded:
-        sql += f" ORDER BY created_at DESC,id DESC LIMIT ${limit_parameter}::integer"
+        # A global UNION limit alone can sort every matching helper row, even
+        # when its ordered index could stop immediately. The branches cover
+        # disjoint identities; each branch's newest N contains every row that
+        # could occur in the global newest N, including a caller's sentinel.
+        branches = [f"({branch}{ordering})" for branch in branches]
+    sql = "SELECT id,created_at FROM (" + " UNION ALL ".join(branches) + ") candidates"
+    if bounded:
+        sql += ordering
     return sql, values
 
 
