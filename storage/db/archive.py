@@ -179,6 +179,14 @@ async def _settings(conn, policy):
 
 
 async def _environment(conn):
+    major = int(await conn.fetchval("SHOW server_version_num")) // 10000
+    extension = await conn.fetchval("SELECT extversion FROM pg_extension WHERE extname='citus_columnar'")
+    if major != 18 or extension != "14.1-1":
+        raise ArchiveBlocked(f"Unsupported archive engine: PostgreSQL {major}, citus_columnar {extension or 'missing'}; supported matrix is PostgreSQL 18 and citus_columnar 14.1-1")
+    preloaded = {entry.strip().strip('"').split('/')[-1].removesuffix('.so')
+                 for entry in (await conn.fetchval("SHOW shared_preload_libraries")).split(',')}
+    if not preloaded.intersection({"citus_columnar", "citus"}):
+        raise ArchiveBlocked("The archive engine requires citus_columnar or citus in shared_preload_libraries")
     if (await conn.fetchval("SHOW default_tablespace") not in ("", "pg_default")
             or await conn.fetchval("SHOW temp_tablespaces") not in ("", "pg_default")
             or await conn.fetchval("""SELECT t.spcname FROM pg_database d JOIN pg_tablespace t

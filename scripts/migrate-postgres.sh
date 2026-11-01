@@ -41,6 +41,9 @@ DB_NAME="${POSTGRES_DB:-meshinfo}"
 DB_USER="${POSTGRES_USER:-postgres}"
 DB_PASSWORD="${POSTGRES_PASSWORD:-password}"
 TMP_PG="meshinfo-pg-migrate"
+TMP_PG_STARTED=0
+# Pass credentials through Docker's inherited environment, not command arguments.
+export PGPASSWORD="$DB_PASSWORD" POSTGRES_PASSWORD="$DB_PASSWORD"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DUMP_DIR="${REPO_ROOT}/backups"
@@ -49,7 +52,12 @@ DUMP_FILE="${DUMP_DIR}/meshinfo-pg-$(date +%Y%m%d-%H%M%S).sql.gz"
 log()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m warn:\033[0m %s\n' "$*" >&2; }
 err()  { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; }
-cleanup() { docker rm -f "$TMP_PG" >/dev/null 2>&1 || true; }
+cleanup() {
+  if [ "$TMP_PG_STARTED" = 1 ]; then
+    docker rm -f "$TMP_PG" >/dev/null 2>&1 || true
+    TMP_PG_STARTED=0
+  fi
+}
 trap cleanup EXIT
 
 cd "$REPO_ROOT"
@@ -114,6 +122,34 @@ if [ "$OLD_VER" -gt "$NEW_VER" ]; then
   exit 1
 fi
 
+# Ordinary PostgreSQL images and this plain SQL dump cannot preserve Columnar
+# options. Verify the running OLD server before stopping anything; inability to
+# inspect is a refusal, not evidence of heap-only storage. Repeat after stopping
+# the app so a conversion racing the first check cannot reach volume removal.
+HEAP_GUARD_SQL="BEGIN READ ONLY; SET LOCAL statement_timeout='4000ms';
+SELECT CASE WHEN
+ EXISTS(SELECT 1 FROM pg_extension WHERE extname='citus_columnar') OR
+ EXISTS(SELECT 1 FROM pg_class c JOIN pg_am a ON a.oid=c.relam WHERE a.amname='columnar') OR
+ EXISTS(SELECT 1 FROM pg_trigger WHERE tgname IN
+   ('meshinfo_archive_freeze','meshinfo_archive_freeze_truncate','meshinfo_archive_stage_guard'))
+ THEN 'blocked' ELSE 'heap_only' END; ROLLBACK;"
+require_heap_only() {
+  local state
+  if ! state="$("$@" psql -X -v ON_ERROR_STOP=1 -tAq -U "$DB_USER" -d "$DB_NAME" \
+      -c "$HEAP_GUARD_SQL" 2>/dev/null)"; then
+    err "Cannot verify the old database's storage format; no volume will be removed."
+    err "Start its original compatible PostgreSQL image and retry the preflight."
+    return 1
+  fi
+  if [ "$state" != heap_only ]; then
+    err "This legacy major-upgrade script refuses Columnar extensions/tables and frozen archive jobs."
+    err "Use a compatible Columnar image and a manifest-aware restore drill; see POSTGRES.md."
+    err "The current restore tool requires the same PostgreSQL major; a major upgrade needs a separately validated migration."
+    return 1
+  fi
+}
+require_heap_only docker compose exec -T -e PGPASSWORD postgres
+
 log "Migrating volume '$VOLUME': PostgreSQL ${OLD_VER} → ${NEW_VER}"
 mkdir -p "$DUMP_DIR"
 
@@ -129,8 +165,9 @@ OLD_MOUNT="/var/lib/postgresql/data"
 [ "$OLD_VER" -ge 18 ] && OLD_MOUNT="/var/lib/postgresql"
 docker run -d --name "$TMP_PG" \
   -v "$VOLUME":"$OLD_MOUNT" \
-  -e POSTGRES_PASSWORD="$DB_PASSWORD" \
+  -e POSTGRES_PASSWORD \
   "postgres:${OLD_VER}" >/dev/null
+TMP_PG_STARTED=1
 
 log "Waiting for PostgreSQL ${OLD_VER} to accept connections…"
 for i in $(seq 1 60); do
@@ -143,8 +180,10 @@ for i in $(seq 1 60); do
   sleep 1
 done
 
+require_heap_only docker exec -e PGPASSWORD "$TMP_PG"
+
 log "Dumping database '${DB_NAME}' → ${DUMP_FILE}"
-if ! docker exec -e PGPASSWORD="$DB_PASSWORD" "$TMP_PG" \
+if ! docker exec -e PGPASSWORD "$TMP_PG" \
        pg_dump -U "$DB_USER" -d "$DB_NAME" --no-owner --no-privileges \
      | gzip > "$DUMP_FILE"; then
   err "pg_dump failed — the volume has NOT been modified."
@@ -192,7 +231,7 @@ done
 
 log "Restoring the dump into PostgreSQL ${NEW_VER}…"
 if ! gzip -dc "$DUMP_FILE" \
-     | docker compose exec -T -e PGPASSWORD="$DB_PASSWORD" postgres \
+     | docker compose exec -T -e PGPASSWORD postgres \
          psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -q >/dev/null; then
   err "Restore failed. Your data is safe in: ${DUMP_FILE}"
   err "Investigate, then re-run the restore manually:"

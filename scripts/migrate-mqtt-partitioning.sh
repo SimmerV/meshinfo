@@ -37,6 +37,7 @@ export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 DB_NAME="${POSTGRES_DB:-meshinfo}"
 DB_USER="${POSTGRES_USER:-postgres}"
 DB_PASSWORD="${POSTGRES_PASSWORD:-password}"
+export PGPASSWORD="$DB_PASSWORD"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -55,8 +56,8 @@ docker compose version >/dev/null 2>&1 || {
 }
 
 psql_q() {
-  docker compose exec -T -e PGPASSWORD="$DB_PASSWORD" postgres \
-    psql -tAqX -U "$DB_USER" -d "$DB_NAME" -c "$1"
+  docker compose exec -T -e PGPASSWORD postgres \
+    psql -tAqX -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -c "$1"
 }
 
 log "Checking the postgres service…"
@@ -64,6 +65,18 @@ docker compose exec -T postgres pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/nul
   err "The postgres service is not running/ready. Start it first:  docker compose up -d postgres"
   exit 1
 }
+
+# This legacy rewrite cannot preserve compressed relations or archive jobs.
+# Check before counts, staging, or service stops; an unreadable catalog refuses.
+if ! STORAGE_KIND="$(psql_q "BEGIN READ ONLY; SET LOCAL statement_timeout='4000ms';
+SELECT CASE WHEN EXISTS(SELECT 1 FROM pg_class c JOIN pg_am a ON a.oid=c.relam
+ WHERE a.amname='columnar') OR EXISTS(SELECT 1 FROM pg_trigger WHERE tgname IN
+ ('meshinfo_archive_freeze','meshinfo_archive_freeze_truncate','meshinfo_archive_stage_guard'))
+ THEN 'blocked' ELSE 'heap_only' END; ROLLBACK;" 2>/dev/null)" || [ "$STORAGE_KIND" != heap_only ]; then
+  err "Cannot run legacy partition migration on Columnar/frozen or unverified storage."
+  err "Use scripts/manage_archive.py to cancel or restore archive jobs first; see STORAGE.md."
+  exit 1
+fi
 
 RELKIND="$(psql_q "SELECT relkind FROM pg_class WHERE relname='mqtt_messages' AND relnamespace='public'::regnamespace" | tr -d '[:space:]')"
 case "$RELKIND" in
@@ -97,10 +110,31 @@ docker compose stop meshinfo >/dev/null 2>&1 || true
 
 # --- Run the migration (one atomic transaction) ------------------------------
 log "Running the partitioning migration (atomic — rolls back fully on any error)…"
-if ! docker compose exec -T -e PGPASSWORD="$DB_PASSWORD" postgres \
+if ! docker compose exec -T -e PGPASSWORD postgres \
        psql --single-transaction -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -q <<'SQL'
 -- Make the monthly boundaries deterministic regardless of the server's TimeZone.
 SET LOCAL TIME ZONE 'UTC';
+-- Coordinate with all storage maintenance and recheck after acquiring a
+-- recursive parent lock. No DDL happens if a conversion raced preflight.
+DO $guard$
+BEGIN
+    IF NOT pg_try_advisory_xact_lock(5567948084246103631::bigint) THEN
+        RAISE EXCEPTION 'Storage maintenance is busy';
+    END IF;
+END $guard$;
+SET LOCAL lock_timeout='100ms';
+LOCK TABLE public.mqtt_messages IN ACCESS EXCLUSIVE MODE NOWAIT;
+DO $guard$
+BEGIN
+    IF EXISTS(SELECT 1 FROM pg_class c JOIN pg_am a ON a.oid=c.relam WHERE a.amname='columnar')
+       OR EXISTS(SELECT 1 FROM pg_trigger WHERE tgname IN
+         ('meshinfo_archive_freeze','meshinfo_archive_freeze_truncate','meshinfo_archive_stage_guard')) THEN
+        RAISE EXCEPTION 'Columnar or frozen archive history requires the archive tools';
+    END IF;
+    IF (SELECT relkind FROM pg_class WHERE oid='public.mqtt_messages'::regclass) <> 'r' THEN
+        RAISE EXCEPTION 'mqtt_messages changed since migration preflight';
+    END IF;
+END $guard$;
 -- 1. Move the existing table + its objects aside (frees the canonical names).
 ALTER TABLE mqtt_messages RENAME TO mqtt_messages_old;
 DROP TRIGGER IF EXISTS trg_mqtt_messages_extract_node_ids ON mqtt_messages_old;

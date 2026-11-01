@@ -16,7 +16,9 @@ RUN apt-get update \
 
 # The official Citus trixie repository has no PG18/14.1 arm64 binary package.
 # Build the exact same upstream release on arm64 instead of guessing a URL or
-# running an amd64 binary through emulation. Build tools stay out of runtime.
+# running an amd64 binary through emulation. The upstream top-level columnar /
+# install-columnar targets build only the standalone AM and its generated SQL;
+# distributed Citus is not required. Build tools stay out of runtime.
 FROM postgres-base AS build-arm64
 ADD --checksum=sha256:e174ed00efba74aaf5a9da87f770f6a7e11274066cce8449d804bc6b17df6ff8 \
     https://codeload.github.com/citusdata/citus/tar.gz/refs/tags/v14.1.0 \
@@ -29,8 +31,8 @@ RUN apt-get update \
     && tar -xzf /tmp/citus.tar.gz --strip-components=1 -C /src \
     && cd /src \
     && PG_CONFIG=/usr/lib/postgresql/18/bin/pg_config ./configure --without-libcurl \
-    && make -j2 with_llvm=no \
-    && make with_llvm=no DESTDIR=/out install
+    && make -j2 with_llvm=no columnar \
+    && make with_llvm=no DESTDIR=/out install-columnar
 
 FROM postgres-base AS install-arm64
 RUN apt-get update \

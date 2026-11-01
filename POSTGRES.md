@@ -168,8 +168,18 @@ DETAIL: The data directory was initialized by PostgreSQL version 16,
         which is not compatible with this version 18.x.
 ```
 
-When a MeshInfo release bumps the `postgres` image major version, run the
-included migration script once. It dumps the database with a temporary
+The legacy migration below supports **heap-only installations**. It refuses a
+Columnar extension, compressed tables, frozen archive jobs, or an old server it
+cannot inspect, before stopping services or removing a volume. Start the original
+compatible database image first if it is unavailable. With Columnar history, keep
+the current volume and extension-capable image: use the manifest-aware restore
+procedure below for same-major recovery. A PostgreSQL major upgrade requires a
+separately validated extension/image and migration procedure; the current restore
+tool intentionally requires matching major versions. Do not bypass this guard
+or use a plain SQL dump as a substitute for captured Columnar options.
+
+When a MeshInfo release bumps the `postgres` image major version, heap-only
+installations can run the included migration script once. It dumps the database with a temporary
 container of the *old* version, recreates the volume, and restores into the
 *new* version — using only official `postgres` images.
 
@@ -214,7 +224,11 @@ maintenance runs at partition scale, not table scale. The app
 (`ensure_mqtt_partitions`) keeps next month's partition created ahead of
 the rollover.
 
-Databases created before partitioning landed need a **one-time conversion**:
+Databases created before partitioning landed need a **one-time conversion**.
+The legacy converter refuses compressed or frozen archive storage before stopping
+the app and rechecks under the shared maintenance lock before changing tables.
+Already partitioned heap installations remain a no-op:
+
 
 ```sh
 bash scripts/migrate-mqtt-partitioning.sh
@@ -323,7 +337,12 @@ byte-for-byte. Every original copy remains reconstructible afterwards —
 message rebuilt from its reception row.
 
 This is a **one-time, manual migration** — run it once after deploying dedup,
-and it is done forever:
+and it is done forever. It coordinates with the shared storage maintenance lock
+and refuses any compressed or frozen archive history before staging or modifying
+receptions. Perform legacy dedup compaction before Columnar conversion, or use
+the guarded archive controls to cancel unfinished work and restore completed
+months to heap first. `--dry-run` performs no table or data writes:
+
 
 ```sh
 docker compose exec meshinfo \
@@ -428,9 +447,11 @@ Its architecture-specific Citus inputs are:
 | arm64 | [Official Citus v14.1.0 source](https://codeload.github.com/citusdata/citus/tar.gz/refs/tags/v14.1.0), compiled in a separate build stage | `e174ed00efba74aaf5a9da87f770f6a7e11274066cce8449d804bc6b17df6ff8` |
 
 The official trixie repository does not provide a PG18/14.1 arm64 binary package.
-The arm64 image therefore builds the same source release, without native-CPU or
-AVX2 compiler flags, and keeps its compiler/development packages out of the
-runtime image. Other architectures fail the image build explicitly. The native
+The arm64 image therefore builds the same source release using its official
+[`columnar` and `install-columnar` targets](https://github.com/citusdata/citus/blob/v14.1.0/Makefile),
+which install the standalone AM and generated extension SQL without compiling
+the distributed extension. It uses no native-CPU or AVX2 compiler flags and
+keeps its compiler/development packages out of the runtime image. Other architectures fail the image build explicitly. The native
 `Columnar native restore` CI matrix builds both amd64 and arm64 and exercises
 real backup/restore behavior. **An arm64 deployment requires a successful native
 arm64 CI run for the exact revision being deployed**; an amd64 test or emulated

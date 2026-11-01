@@ -134,10 +134,10 @@ every expired record has already been removed.
 ## Lossless index packing
 
 Small JSON payloads did not benefit from lowering TOAST targets in our measured
-traffic sample. This release does not claim to compress those payloads or create
-a separate cold archive. All retained data stays in the same PostgreSQL tables,
-with its existing identities, search, pagination, and reception reconstruction.
-Lossless index packing reduces overhead; forever retention still grows forever.
+traffic sample. Index packing reduces index overhead only; it does not compress
+those payloads. The optional Columnar archive described below compresses complete
+canonical packet partitions while preserving access through the same table and
+API. These are separate controls. Forever retention still grows forever.
 
 Fresh schemas use ascending single-column time indexes. PostgreSQL supports
 newest-first results through backward scans; multi-column index order is left
@@ -282,12 +282,199 @@ manifests are preserved. Existing installations should inventory and manually
 review legacy dumps after verifying their replacement; they are not silently
 deleted during upgrade and will otherwise continue occupying space.
 
-For a restore drill, check the archive against its manifest SHA-256, restore it
-into a **new empty test database** with `pg_restore --exit-on-error --no-owner
---no-privileges`, then check records, constraints, sequences, packet links and
-reconstructed copies through MeshInfo. Remove only that disposable database
-after inspection. The integration tests in `tests/test_backup_integration.py`
-provide a repeatable guarded example using tiny synthetic data.
+For a restore drill, keep the archive and its manifest together and use
+`scripts/restore_database.py` against a **new empty test database**, as described
+in [POSTGRES.md](POSTGRES.md#restore-to-an-empty-database). Then check records,
+constraints, sequences, packet links and reconstructed copies through MeshInfo.
+Direct `pg_restore` remains suitable for legacy heap-only backups, but does not
+restore the captured Columnar settings before data loading. Remove only the
+disposable database after inspection.
+
+## Lossless Columnar archive: deployment and recovery
+
+The optional archive converts closed **canonical packet** months from heap to
+Citus Columnar within the existing PostgreSQL volume. Recent packets and gateway
+receptions remain heap tables. The `mqtt_messages` parent still returns both
+forms through ordinary SQL; packet IDs, exact payload text, ingestion times,
+pagination and gateway-copy reconstruction keep the same API contract. There is
+no archive download or restore step for a historical query. This preserves access,
+but does not promise identical query latency for every filter: measure the
+queries important to your deployment before converting its larger months.
+
+Archive age and retention lifetime are independent:
+
+| Intent | Archive policy | Retention policy |
+| --- | --- | --- |
+| Keep everything; compress closed older months | `enabled=true`, chosen `after_months` | `months=0` |
+| Keep six months; compress the older part of that window | For example, `after_months=1` | `enabled=true`, `months=6` |
+| Preview without converting or deleting | `enabled=false` | `enabled=false` |
+
+Both ages use complete UTC calendar months and server ingestion time. An archive
+age of one month preserves the current month and at least the preceding month's
+window in heap storage. Retention that expires a month takes precedence over
+compressing it. Compression never extends a finite retention policy and never
+makes forever retention fit a fixed disk indefinitely.
+
+### Deploy without starting a conversion
+
+Use a tested application revision containing the archive, query, retention and
+backup changes together. The optional database image is PostgreSQL 18.6 plus
+Citus 14.1.0, with pinned inputs documented in
+[POSTGRES.md](POSTGRES.md#optional-columnar-image-backup-metadata-and-restore).
+The native architecture CI job for the exact revision must pass; a Dockerfile or
+an amd64 result alone is not arm64 validation. Do not use this overlay to change
+the major version of an existing PostgreSQL data directory.
+
+Keep `storage.archive.enabled=false` initially. Keep a verified production backup
+and its manifest on an independent destination, and perform a restore drill
+before the first production conversion. Build and install the optional image
+using the existing data volume. In the example below, add your site's Compose
+files before the Columnar overlay and replace the default database/role if needed:
+
+```sh
+dc() { docker compose -f docker-compose.yml -f docker-compose.columnar.yml "$@"; }
+dc build postgres
+dc up -d --wait postgres
+dc exec -T postgres psql -U postgres -d meshinfo -v ON_ERROR_STOP=1 \
+  -c 'CREATE EXTENSION IF NOT EXISTS citus_columnar'
+dc up -d meshinfo
+```
+
+The application image must also be the tested revision; the overlay does not
+replace or build it. Preserve any additional required preloaded extensions in
+the PostgreSQL command. The overlay mounts the database volume read-only inside
+the backend at `/var/lib/meshinfo-postgres-space`. Configure that actual volume
+for free-space checks, never an unrelated app directory:
+
+```toml
+[storage.archive]
+enabled = false
+after_months = 6
+database_filesystem = "/var/lib/meshinfo-postgres-space"
+```
+
+For external PostgreSQL, run the operator process where it can measure the actual
+data filesystem. Custom data/index/temporary tablespaces, replication slots and
+WAL archiving are outside this automatic space budget and are refused. A local
+filesystem probe cannot establish an external database's available space.
+
+```sh
+dc exec meshinfo python scripts/manage_storage.py report
+dc exec meshinfo python scripts/manage_archive.py plan
+```
+
+The first command reports capacity, table/index bytes, Columnar metadata, staging
+space and job status. The second lists monthly candidates, exclusion reasons and
+checkpoints; it is read-only. Catalog row estimates and the later bounded
+compression pilot are estimates, not guaranteed savings. Record the pre-migration
+inventory and normal ingestion/query timings before proceeding.
+
+### Convert, observe and interrupt safely
+
+Set `storage.archive.enabled=true`, choose `after_months`, and restart the backend
+to apply the configuration. The scheduler advances bounded work with the same
+advisory lock as backup, retention and index packing. To advance work manually:
+
+```sh
+dc exec meshinfo python scripts/manage_archive.py run --apply
+dc exec meshinfo python scripts/manage_archive.py run --apply --until-idle --max-cycles 100
+```
+
+A single manual cycle can exit nonzero when work remains; its JSON status and
+checkpoint distinguish partial progress from a failure. `--until-idle` is an
+explicit bounded loop, not a background daemon. Concurrent scheduler/manual
+attempts return `busy`; they do not start competing copies.
+
+Before conversion, the tool builds independent topic GIN indexes concurrently
+on each heap leaf. Existing indexes continue serving queries until all heap
+leaves have validated replacements. Only then does a short transaction remove
+the incompatible parent GIN. Preparation handles at most one build per cycle,
+with a separate timeout (default 300 seconds) and a measured free-space reserve;
+it can take longer than a normal copy cycle. An interrupted managed build is
+cleaned or repaired on retry. An unfamiliar index definition is reported for
+operator review instead of silently dropped. Archive-disabled heap-only
+installations retain normal missing-index startup repair; mixed storage never
+recreates an incompatible parent GIN.
+
+The smallest eligible month is attempted first. A bounded pilot estimates the
+replacement, retained indexes and WAL budget. The original stays attached and
+readable while a detached replacement is built and verified in committed chunks.
+Job-specific triggers freeze changes to the old month during conversion; normal
+current-month ingestion continues. Default limits are 1,000 rows/8 MiB per copy
+batch, a 10-second copy/verification cycle, three-second statements, a 64 MiB WAL
+budget and at least 1 GiB free reserve. The executor checks actual free space and
+physical staging growth as it advances. It never drops the original to manufacture
+space for its replacement.
+
+Verification compares every retained column, including text bytes and NULLs,
+then checks schema, constraints, indexes, partition bounds and job ownership
+again before a short atomic switch. Readers see the complete original or the
+complete replacement. Whole-row hashes used by external workload benchmarks
+supplement this exact in-database comparison; a row count alone is insufficient.
+The original files are reclaimed only at the successful switch. Columnar internal
+metadata, B-tree indexes, receptions, staging, WAL and other history still consume
+space, so compare total database/filesystem usage as well as compressed table size.
+
+Use `plan` and `report` to inspect `copying`, `verifying`, `ready`, `complete`,
+`blocked` or `failed` states and reasons. Cancellation or process termination
+leaves committed checkpoints resumable. Repeated interrupted copy batches are
+bounded and eventually cancel that attempt, reclaiming its owned stage while
+preserving the original. Do not manually remove journal rows, stage tables or
+freeze triggers to bypass a refusal. To discard an unfinished conversion safely:
+
+```sh
+dc exec meshinfo python scripts/manage_archive.py cancel --job JOB_UUID --apply
+```
+
+Setting archive `enabled=false` and restarting the backend cancels an unfinished
+forward conversion on the next maintenance attempt. Completed compressed months
+remain readable and compressed. A pending explicitly requested heap restoration
+continues even while automatic archiving is disabled.
+
+History queries use indexed identities and bounded candidate pages across both
+storage methods. A timeout returns HTTP 504 (`history_query_timeout`); an
+unavailable query returns HTTP 503 (`history_unavailable`), with retry metadata.
+Failures are never reported as an empty page or a missing packet. Test older
+packet links, reception-only searches, reused mesh packet IDs, cursor ties and
+normal recent ingestion under concurrent load before accepting the deployment.
+
+### Roll back storage or recover from a backup
+
+Keep the Columnar-capable image and compatible application code installed while
+any Columnar tables remain. Disabling the archive policy stops conversion; it does
+not make a plain PostgreSQL image able to read compressed partitions. The older
+`migrate-postgres.sh` SQL-dump workflow is not a Columnar migration procedure;
+it now refuses compressed/frozen storage before stopping services or removing
+a volume. Use a verified manifest-aware restore for recovery on the same
+PostgreSQL major. Major upgrades need a separately tested migration procedure;
+the current restore tool refuses a major-version mismatch.
+
+For a deliberate return to heap storage, disable automatic archiving, restart
+the backend, cancel any unfinished forward job, and restore one completed month:
+
+```sh
+dc exec meshinfo python scripts/manage_archive.py restore \
+  --partition mqtt_messages_YYYY_MM --apply --until-idle --max-cycles 100
+```
+
+This is the same checkpointed, fully verified copy-and-switch process in reverse.
+It requires space for the expanded heap and indexes while the compressed original
+remains present. A low-space refusal preserves the source; restoration does not
+use destructive in-place rewrites. Repeat only after checking each result. Do not
+remove the extension or its image until the operator inventory and PostgreSQL
+catalog confirm that no attached or detached Columnar tables remain.
+
+Normal local/SSH backups preserve all Columnar relation options, including an
+unfinished stage, under the same exported snapshot as the dump. Keep each
+`.dump` and `.manifest.json` together and use `scripts/restore_database.py`, which
+checks the exact extension version, applies options **before COPY**, and restores
+in a single transaction. Missing or mismatched metadata refuses the restore.
+Restored jobs resolve new object OIDs only after validating names, schema and
+job-specific guards; a logical restore cannot blindly reuse old OIDs. Preserve
+the original database role for an in-progress job; an ownership change requires
+operator review and can be resolved by cancelling the validated unfinished job
+and starting a new attempt. See [POSTGRES.md](POSTGRES.md#restore-to-an-empty-database)
+for the commands and independent-clone backup identity requirements.
 
 ## Verification record
 

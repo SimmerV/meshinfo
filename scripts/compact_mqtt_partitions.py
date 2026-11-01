@@ -44,6 +44,7 @@ from storage.db.uplink_dedup import (  # noqa: E402
     reception_template,
 )
 from utils import normalize_node_id  # noqa: E402
+from storage.db.retention_executor import maintenance_lock  # noqa: E402
 
 BATCH = 5000
 
@@ -212,9 +213,35 @@ async def find_eligible_months(conn: asyncpg.Connection) -> List[str]:
     return sorted(months)
 
 
+LEGACY_HEAP_SQL = """SELECT NOT (
+    EXISTS(SELECT 1 FROM pg_class c JOIN pg_am a ON a.oid=c.relam WHERE a.amname='columnar')
+    OR EXISTS(SELECT 1 FROM pg_trigger WHERE tgname IN
+       ('meshinfo_archive_freeze','meshinfo_archive_freeze_truncate','meshinfo_archive_stage_guard')))
+"""
+
+
 async def compact_month(conn: asyncpg.Connection, month: str, window: float,
                         dry_run: bool, force_wipe: bool,
                         drop_original: bool = False) -> bool:
+    """Never rewrite mixed/frozen history or overlap another maintenance job."""
+    if (len(month) != 7 or month[4] != "_" or not (month[:4]+month[5:]).isdigit()
+            or not 1 <= int(month[5:]) <= 12):
+        raise ValueError("Expected month YYYY_MM")
+    if conn.is_in_transaction():
+        raise ValueError("Legacy compaction requires its own maintenance connection")
+    async with maintenance_lock(conn) as acquired:
+        if not acquired:
+            print(f"[{month}] refusing: another storage maintenance operation is active")
+            return False
+        if await conn.fetchval(LEGACY_HEAP_SQL, timeout=4) is not True:
+            print(f"[{month}] refusing: Columnar/frozen history requires scripts/manage_archive.py; see STORAGE.md")
+            return False
+        return await _compact_month_locked(conn, month, window, dry_run, force_wipe, drop_original)
+
+
+async def _compact_month_locked(conn: asyncpg.Connection, month: str, window: float,
+                                dry_run: bool, force_wipe: bool,
+                                drop_original: bool = False) -> bool:
     part = f"mqtt_messages_{month}"
     staging = f"{part}_compact"
     old = f"{part}_precompact"
@@ -251,11 +278,11 @@ async def compact_month(conn: asyncpg.Connection, month: str, window: float,
     merger = Merger(window)
     topic_cache: Dict[str, int] = {}
 
-    await conn.execute(f"DROP TABLE IF EXISTS {staging}")
-    await conn.execute(
-        f"CREATE TABLE {staging} (LIKE mqtt_messages INCLUDING DEFAULTS INCLUDING STORAGE)")
-
     if not dry_run:
+        await conn.execute(f"DROP TABLE IF EXISTS {staging}")
+        await conn.execute(
+            f"CREATE TABLE {staging} (LIKE mqtt_messages INCLUDING DEFAULTS INCLUDING STORAGE)")
+
         # A fresh receptions partition for the month; compaction is its only writer.
         exists = await conn.fetchval("SELECT to_regclass($1)", recv_part)
         if exists is None:
@@ -304,10 +331,10 @@ async def compact_month(conn: asyncpg.Connection, month: str, window: float,
     # ── verify ────────────────────────────────────────────────────────
     if s["source"] != src_count:
         print(f"[{month}] ABORT: streamed {s['source']} rows but partition has {src_count}")
-        await conn.execute(f"DROP TABLE {staging}")
+        if not dry_run:
+            await conn.execute(f"DROP TABLE {staging}")
         return False
     if dry_run:
-        await conn.execute(f"DROP TABLE {staging}")
         print(f"[{month}] dry run complete — nothing written")
         return True
     staging_count = await conn.fetchval(f"SELECT count(*) FROM {staging}")
@@ -323,6 +350,10 @@ async def compact_month(conn: asyncpg.Connection, month: str, window: float,
         f"ALTER TABLE {staging} ADD CONSTRAINT {staging}_range CHECK "
         f"(created_at >= TIMESTAMPTZ '{lo}' AND created_at < TIMESTAMPTZ '{hi}')")
     async with conn.transaction():
+        await conn.execute("SET LOCAL lock_timeout='100ms'")
+        await conn.execute("LOCK TABLE public.mqtt_messages IN ACCESS EXCLUSIVE MODE NOWAIT")
+        if await conn.fetchval(LEGACY_HEAP_SQL, timeout=4) is not True:
+            raise RuntimeError("Storage format changed during legacy compaction; original remains attached")
         await conn.execute(f"ALTER TABLE mqtt_messages DETACH PARTITION {part}")
         await conn.execute(f"ALTER TABLE {part} RENAME TO {old}")
         await conn.execute(f"ALTER TABLE {staging} RENAME TO {part}")

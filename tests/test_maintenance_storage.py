@@ -13,7 +13,7 @@ import maintenance
 from storage.db import maintenance_connection, maintenance_status, retention_executor
 
 
-@pytest.mark.parametrize("operation", ["retention", "compression", "backup"])
+@pytest.mark.parametrize("operation", ["retention", "compression", "archive", "backup"])
 def test_status_is_saved_as_one_bounded_operation_record(operation):
     connection = SimpleNamespace(execute=AsyncMock())
     detail = {"status": "partial", "scopes": {"packets": {"status": "blocked"}}}
@@ -136,7 +136,7 @@ def install_runner(monkeypatch, *, outcome=None, execution_error=None, index_err
     @asynccontextmanager
     async def dedicated(actual_storage, config, *, application_name):
         assert actual_storage is storage
-        assert application_name in {"meshinfo-retention-control", "meshinfo-compression-control"}
+        assert application_name in {"meshinfo-retention-control", "meshinfo-compression-control", "meshinfo-archive-control"}
         async with control.acquire(timeout=3) as conn:
             yield conn
 
@@ -357,6 +357,49 @@ def test_cancelled_index_preparation_closes_dedicated_connection(monkeypatch):
         asyncio.run(maintenance.run_retention({}, storage))
     assert storage.control.released
     enforce.assert_not_awaited()
+    save.assert_not_awaited()
+
+
+def test_archive_waits_for_retention_without_borrowing_the_application_pool(monkeypatch):
+    from storage.db import archive_control
+
+    async def scenario():
+        storage, connection, _, _, save = install_runner(monkeypatch)
+        storage.pool = SingleConnectionPool()
+        started, finish = asyncio.Event(), asyncio.Event()
+        preceding = asyncio.get_running_loop().create_future()
+
+        async def controlled(actual, config):
+            assert actual is connection
+            started.set()
+            await finish.wait()
+            return {"status": "copying", "rows_copied": 1000}
+
+        monkeypatch.setattr(archive_control, 'run_archive_work', controlled)
+        task = asyncio.create_task(maintenance.run_archive({}, storage, after=preceding))
+        await asyncio.sleep(0)
+        assert not started.is_set()
+        preceding.set_result({"status": "complete"})
+        try:
+            await asyncio.wait_for(started.wait(), 1)
+            for _ in range(3):
+                async with storage.pool.acquire() as application:
+                    assert application is not connection
+        finally:
+            finish.set()
+        result = await asyncio.wait_for(task, 1)
+        save.assert_awaited_once_with(connection, 'archive', result)
+        assert storage.control.released
+    asyncio.run(scenario())
+
+
+def test_cancelled_archive_closes_its_control_connection(monkeypatch):
+    from storage.db import archive_control
+    storage, _, _, _, save = install_runner(monkeypatch)
+    monkeypatch.setattr(archive_control, 'run_archive_work', AsyncMock(side_effect=asyncio.CancelledError()))
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(maintenance.run_archive({}, storage))
+    assert storage.control.released
     save.assert_not_awaited()
 
 

@@ -13,6 +13,9 @@ on:
       - 'storage/db/storage_report.py'
       - 'config.py'
       - 'scripts/sample_columnar_history.py'
+      - 'scripts/migrate-*.sh'
+      - 'scripts/compact_mqtt_partitions.py'
+      - 'tests/test_legacy_storage*.py'
       - 'tests/test_archive*.py'
       - 'scripts/restore_database.py'
       - 'scripts/verify_columnar_backup_restore.py'
@@ -29,6 +32,9 @@ on:
       - 'storage/db/storage_report.py'
       - 'config.py'
       - 'scripts/sample_columnar_history.py'
+      - 'scripts/migrate-*.sh'
+      - 'scripts/compact_mqtt_partitions.py'
+      - 'tests/test_legacy_storage*.py'
       - 'tests/test_archive*.py'
       - 'scripts/restore_database.py'
       - 'scripts/verify_columnar_backup_restore.py'
@@ -63,10 +69,13 @@ jobs:
             # Public check annotations remain readable without access to GitHub's
             # authenticated log-download API. This build has no secret inputs.
             python3 - "$RUNNER_TEMP/columnar-build.log" <<'PYCODE'
-          import pathlib, sys
-          detail = pathlib.Path(sys.argv[1]).read_text(errors='replace')[-10000:]
-          detail = detail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-          print('::error title=Native Columnar image build::' + detail)
+          import pathlib, re, sys
+          lines = pathlib.Path(sys.argv[1]).read_text(errors='replace').splitlines()
+          failures = [i for i, line in enumerate(lines) if re.search(r'(fatal error:|error:|No rule to make|undefined reference|E: Unable|E: Version)', line, re.I)]
+          excerpts = ['\n'.join(lines[max(0, i-2):i+4]) for i in failures[:8]] or ['\n'.join(lines[-20:])]
+          for number, detail in enumerate(excerpts):
+              detail = detail[:3500].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title=Native Columnar image build {number+1}::' + detail)
           PYCODE
             exit "$result"
           fi
@@ -101,7 +110,8 @@ jobs:
             columnar-native-ci python3 -m pytest -q -p no:cacheprovider \
             tests/test_archive_integration.py tests/test_archive_application_integration.py \
             tests/test_archive_catalog_integration.py tests/test_archive.py \
-            tests/test_archive_catalog.py tests/test_columnar_backup.py
+            tests/test_archive_catalog.py tests/test_columnar_backup.py \
+            tests/test_legacy_storage_guards.py tests/test_legacy_storage_integration.py
       - name: Remove the isolated cluster and anonymous data volume
         if: always()
         run: |
