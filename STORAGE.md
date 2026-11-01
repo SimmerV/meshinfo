@@ -305,7 +305,7 @@ Archive age and retention lifetime are independent:
 
 | Intent | Archive policy | Retention policy |
 | --- | --- | --- |
-| Keep everything; compress closed older months | `enabled=true`, chosen `after_months` | `months=0` |
+| Keep everything; compress closed older months | `enabled=true`, chosen `after_months` | `enabled=false`, or every effective family lifetime is `0` |
 | Keep six months; compress the older part of that window | For example, `after_months=1` | `enabled=true`, `months=6` |
 | Preview without converting or deleting | `enabled=false` | `enabled=false` |
 
@@ -476,6 +476,11 @@ then checks schema, constraints, indexes, partition bounds and job ownership
 again before a short atomic switch. Readers see the complete original or the
 complete replacement. Whole-row hashes used by external workload benchmarks
 supplement this exact in-database comparison; a row count alone is insufficient.
+Planner statistics for the payload stage and topic stage have separate durable
+checkpoints. If the second bounded `ANALYZE` times out or is interrupted, the
+first successful step does not repeat. Both must complete before the switch.
+Validated relation-identity changes after logical restore invalidate these
+statistics checkpoints so the restored physical tables are analyzed again.
 The original files are reclaimed only at the successful switch. Columnar internal
 metadata, B-tree indexes, receptions, staging, WAL and other history still consume
 space, so compare total database/filesystem usage as well as compressed table size.
@@ -527,12 +532,27 @@ dc exec meshinfo python scripts/manage_archive.py restore \
   --partition mqtt_messages_YYYY_MM --apply --until-idle --max-cycles 100
 ```
 
+If the cycle limit is reached while that job is still active, advance its
+existing checkpoint with `manage_archive.py run --apply --until-idle
+--max-cycles 100`. The `restore` command starts a new job and reports `busy` when
+one is already active; the scheduler also continues an existing heap-restoration
+job while automatic archiving is disabled.
+
 This is the same checkpointed, fully verified copy-and-switch process in reverse.
 It requires space for the expanded heap and indexes while the compressed original
 remains present. A low-space refusal preserves the source; restoration does not
 use destructive in-place rewrites. Repeat only after checking each result. Do not
 remove the extension or its image until the operator inventory and PostgreSQL
 catalog confirm that no attached or detached Columnar tables remain.
+
+Returning all months to heap does not uninstall `citus_columnar`; the legacy
+major-upgrade tool still refuses while that extension is installed. If returning
+to an ordinary PostgreSQL image, first verify that no Columnar relations or
+unfinished archive guards remain, then remove the unused extension with
+`DROP EXTENSION citus_columnar RESTRICT`. Investigate any remaining dependency
+instead of using `CASCADE`. Keep the compatible image available for retained
+Columnar backups. This changes the table storage format; a PostgreSQL major
+upgrade still requires its own verified backup and migration procedure.
 
 Normal local/SSH backups preserve all Columnar relation options, including an
 unfinished stage, under the same exported snapshot as the dump. Keep each

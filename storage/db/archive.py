@@ -112,10 +112,16 @@ CREATE TABLE IF NOT EXISTS public.storage_archive_jobs (
     inflight_bytes BIGINT, aborted_bytes BIGINT NOT NULL DEFAULT 0,
     abort_count INTEGER NOT NULL DEFAULT 0,
     analyzed BOOLEAN NOT NULL DEFAULT false,
+    stage_analyzed BOOLEAN NOT NULL DEFAULT false,
+    topic_analyzed BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(), finished_at TIMESTAMPTZ
 );
 ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS analyzed BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS stage_analyzed BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS topic_analyzed BOOLEAN NOT NULL DEFAULT false;
+UPDATE public.storage_archive_jobs SET stage_analyzed=true,topic_analyzed=true
+    WHERE analyzed AND NOT (stage_analyzed AND topic_analyzed);
 ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS source_method TEXT NOT NULL DEFAULT 'heap';
 ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS target_method TEXT NOT NULL DEFAULT 'columnar';
 ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS previous_guard_job UUID;
@@ -658,6 +664,7 @@ async def _job(conn, job_id):
 
 
 async def _validate_job(conn, job):
+    previous_topic_oid = job.get("topic_stage_oid")
     source_oid = await conn.fetchval("SELECT to_regclass($1)::oid", _q(job["source_name"]))
     stage_oid = await conn.fetchval("SELECT to_regclass($1)::oid", _q(job["stage_name"]))
     if source_oid is None or stage_oid is None:
@@ -670,10 +677,7 @@ async def _validate_job(conn, job):
         await archive_topics.validate_parent(conn)
         await archive_topics.validate_stage(conn,job)
     if job.get("target_method") == "topics":
-        if (source_oid,stage_oid) != (job["source_oid"],job["stage_oid"]):
-            await conn.execute("UPDATE public.storage_archive_jobs SET source_oid=$2,stage_oid=$3 WHERE job_id=$1",
-                               job["job_id"],source_oid,stage_oid)
-            job["source_oid"],job["stage_oid"] = source_oid,stage_oid
+        await _rebind_job_identity(conn,job,source_oid,stage_oid,previous_topic_oid)
         return
     stage = await conn.fetchrow("""SELECT a.amname,c.reltablespace,c.relrowsecurity,c.relforcerowsecurity,
         c.relhasrules,c.relacl::text,pg_get_userbyid(c.relowner) AS owner,
@@ -735,10 +739,20 @@ async def _validate_job(conn, job):
             await _options(conn, job["stage_name"], options)
     # Names, semantic schema, UUID guard arguments and ownership markers survive
     # pg_dump/restore; OIDs do not. Rebind only after validating those identities.
-    if (source_oid, stage_oid) != (job["source_oid"], job["stage_oid"]):
-        await conn.execute("UPDATE public.storage_archive_jobs SET source_oid=$2,stage_oid=$3 WHERE job_id=$1",
-                           job["job_id"], source_oid, stage_oid)
-        job["source_oid"], job["stage_oid"] = source_oid, stage_oid
+    await _rebind_job_identity(conn,job,source_oid,stage_oid,previous_topic_oid)
+
+
+async def _rebind_job_identity(conn,job,source_oid,stage_oid,previous_topic_oid):
+    if ((source_oid,stage_oid) == (job["source_oid"],job["stage_oid"])
+            and previous_topic_oid == job.get("topic_stage_oid")):
+        return
+    # Logical restore preserves the journal but recreates physical relations.
+    # Their copied progress flags do not establish new planner statistics.
+    await conn.execute("""UPDATE public.storage_archive_jobs SET source_oid=$2,stage_oid=$3,
+        analyzed=false,stage_analyzed=false,topic_analyzed=false WHERE job_id=$1""",
+        job["job_id"],source_oid,stage_oid)
+    job.update(source_oid=source_oid,stage_oid=stage_oid,
+               analyzed=False,stage_analyzed=False,topic_analyzed=False)
 
 
 async def _batch(conn, name, last_id, last_time, policy, *, topics_only=False, build_topic_index=False):
@@ -960,18 +974,29 @@ async def _cancel_locked(conn, job, policy):
 
 
 async def _analyze_stage(conn, job, policy):
+    """Commit statistics for at most one physical relation per bounded step."""
+    separate_topic = bool(job.get("topic_stage_name") and job["topic_stage_name"] != job["stage_name"])
+    stage_done = bool(job.get("stage_analyzed"))
+    topic_done = bool(job.get("topic_analyzed")) or not separate_topic
+    relation = job["stage_name"] if not stage_done else job.get("topic_stage_name") if not topic_done else None
     async with conn.transaction():
         await _settings(conn, policy)
         seconds = min(policy.analyze_seconds, policy.cycle_seconds-.5)
         await conn.execute(f"SET LOCAL statement_timeout='{math.ceil(seconds*1000)}ms'")
-        if job.get("target_method", "columnar") == "heap":
+        if not stage_done and job.get("target_method", "columnar") == "heap":
             for index in await conn.fetch("""SELECT c.oid FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid
                     JOIN pg_am a ON a.oid=c.relam WHERE i.indrelid=$1 AND a.amname='gin'""", job["stage_oid"]):
                 await conn.fetchval("SELECT gin_clean_pending_list($1::oid::regclass)", index["oid"])
-        await conn.execute(f"ANALYZE {_q(job['stage_name'])}", timeout=seconds+.25)
-        if job.get("topic_stage_name") and job["topic_stage_name"] != job["stage_name"]:
-            await conn.execute(f"ANALYZE {_q(job['topic_stage_name'])}",timeout=seconds+.25)
-        await conn.execute("UPDATE public.storage_archive_jobs SET analyzed=true,updated_at=clock_timestamp() WHERE job_id=$1", job["job_id"])
+        if relation is not None:
+            await conn.execute(f"ANALYZE {_q(relation)}",timeout=seconds+.25)
+            if not stage_done:
+                stage_done = True
+            else:
+                topic_done = True
+        await conn.execute("""UPDATE public.storage_archive_jobs SET stage_analyzed=$2,topic_analyzed=$3,
+            analyzed=($2 AND $3),blocked_reason=NULL,updated_at=clock_timestamp() WHERE job_id=$1""",
+            job["job_id"],stage_done,topic_done)
+    job.update(stage_analyzed=stage_done,topic_analyzed=topic_done,analyzed=stage_done and topic_done)
 
 
 async def cancel_archive(conn, job, *, config=None):

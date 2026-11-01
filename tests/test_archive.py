@@ -9,7 +9,7 @@ import pytest
 
 from storage.db.archive import (
     ArchiveBlocked, ArchivePolicy, _batch, _exact_equal, _free, _guarded,
-    _recover_inflight, archive_policy, _copy_batch_policy,
+    _recover_inflight, archive_policy, _copy_batch_policy, _rebind_job_identity,
 )
 
 
@@ -136,3 +136,20 @@ def test_interrupted_copy_accounts_retained_physical_space_once():
     assert len(conn.calls) == 1
     assert job["aborted_bytes"] == 24576 and job["abort_count"] == 1
     assert job["inflight_bytes"] is None
+
+
+def test_identity_rebind_invalidates_statistics_even_when_only_topic_oid_changed():
+    class Connection:
+        calls = []
+
+        async def execute(self, query, *arguments):
+            self.calls.append((query,arguments))
+
+    job = {"job_id":uuid.uuid4(),"source_oid":10,"stage_oid":20,"topic_stage_oid":30,
+           "analyzed":True,"stage_analyzed":True,"topic_analyzed":True}
+    conn = Connection()
+    asyncio.run(_rebind_job_identity(conn,job,10,20,30))
+    assert not conn.calls and job["analyzed"]
+    asyncio.run(_rebind_job_identity(conn,job,10,20,29))
+    assert len(conn.calls) == 1 and conn.calls[0][1] == (job["job_id"],10,20)
+    assert not any(job[key] for key in ("analyzed","stage_analyzed","topic_analyzed"))

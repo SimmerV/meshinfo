@@ -109,10 +109,146 @@ async def create_paused_job(conn):
     source = next(row for row in plan["partitions"] if row["eligible"])
     async with archive.maintenance_lock(conn) as acquired:
         assert acquired
-        job_id = await archive._start(conn, source, policy, FREE)
+        job_id = await archive._start(conn, source, policy, FREE,target_method=source.get("target_method","columnar"))
         job = await archive._job(conn, job_id)
         await archive._copy_chunk(conn, job, policy, FREE)
     return await archive._job(conn, job_id)
+
+
+async def create_ready_job(conn):
+    """Reach exact verification without consuming either statistics step."""
+    job = await create_paused_job(conn)
+    return await finish_verifying(conn,job)
+
+
+async def finish_verifying(conn,job,config=POLICY):
+    policy = archive.archive_policy(config)
+    async with archive.maintenance_lock(conn) as acquired:
+        assert acquired
+        for _ in range(40):
+            if job["phase"] == "copying":
+                await archive._copy_chunk(conn,job,policy,FREE)
+            elif job["phase"] == "verifying":
+                await archive._verify_chunk(conn,job,policy)
+            else:
+                assert job["phase"] == "ready" and not job["analyzed"]
+                return job
+            job = await archive._job(conn,job["job_id"])
+    raise AssertionError("Small archive fixture did not reach verification")
+
+
+@pytest.mark.parametrize("interruption", [TimeoutError,asyncio.CancelledError])
+def test_analyze_checkpoints_each_relation_and_resumes_after_second_interruption(interruption):
+    async def scenario():
+        async with fixture() as (conn,expected):
+            job = await create_ready_job(conn)
+            policy = archive.archive_policy(POLICY)
+
+            class AnalyzeProbe:
+                fail_topic = True
+                calls = []
+
+                def __getattr__(self,name):
+                    return getattr(conn,name)
+
+                async def execute(self,sql,*args,**kwargs):
+                    if sql.startswith("ANALYZE "):
+                        self.calls.append(sql)
+                        if self.fail_topic and sql == "ANALYZE "+archive._q(job["topic_stage_name"]):
+                            raise interruption()
+                    return await conn.execute(sql,*args,**kwargs)
+
+            probe = AnalyzeProbe()
+            await archive._analyze_stage(probe,job,policy)
+            job = await archive._job(conn,job["job_id"])
+            assert job["stage_analyzed"] and not job["topic_analyzed"] and not job["analyzed"]
+            assert probe.calls == ["ANALYZE "+archive._q(job["stage_name"])]
+            with pytest.raises(archive.ArchiveBlocked,match="not fully verified"):
+                await archive._cutover(conn,job,policy,FREE)
+            with pytest.raises(interruption):
+                await archive._analyze_stage(probe,job,policy)
+            job = await archive._job(conn,job["job_id"])
+            assert job["stage_analyzed"] and not job["topic_analyzed"] and not job["analyzed"]
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+            probe.fail_topic = False
+            await archive._analyze_stage(probe,job,policy)
+            assert job["stage_analyzed"] and job["topic_analyzed"] and job["analyzed"]
+            assert probe.calls == ["ANALYZE "+archive._q(job["stage_name"]),
+                                   "ANALYZE "+archive._q(job["topic_stage_name"]),
+                                   "ANALYZE "+archive._q(job["topic_stage_name"])]
+            await until_done(conn)
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+    asyncio.run(scenario())
+
+
+def test_analyze_journal_upgrade_preserves_completed_and_partial_progress():
+    async def scenario():
+        async with fixture() as (conn,_expected):
+            job = await create_ready_job(conn)
+            for completed in (True,False):
+                await conn.execute("UPDATE public.storage_archive_jobs SET analyzed=$2 WHERE job_id=$1",job["job_id"],completed)
+                await conn.execute("ALTER TABLE public.storage_archive_jobs DROP COLUMN stage_analyzed, DROP COLUMN topic_analyzed")
+                await archive.ensure_archive_schema(conn)
+                flags = await conn.fetchrow("SELECT analyzed,stage_analyzed,topic_analyzed FROM public.storage_archive_jobs WHERE job_id=$1",job["job_id"])
+                assert tuple(flags) == (completed,completed,completed)
+            await conn.execute("UPDATE public.storage_archive_jobs SET stage_analyzed=true WHERE job_id=$1",job["job_id"])
+            await archive.ensure_archive_schema(conn)
+            flags = await conn.fetchrow("SELECT analyzed,stage_analyzed,topic_analyzed FROM public.storage_archive_jobs WHERE job_id=$1",job["job_id"])
+            assert tuple(flags) == (False,True,False)
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("changed_oid", ["source_oid","stage_oid","topic_stage_oid"])
+def test_validated_restored_identity_resets_all_statistics_checkpoints(changed_oid):
+    async def scenario():
+        async with fixture() as (conn,_expected):
+            job = await create_ready_job(conn)
+            policy = archive.archive_policy(POLICY)
+            await archive._analyze_stage(conn,job,policy)
+            await archive._analyze_stage(conn,job,policy)
+            assert job["analyzed"]
+            await conn.execute(f"UPDATE public.storage_archive_jobs SET {changed_oid}=0 WHERE job_id=$1",job["job_id"])
+            job = await archive._job(conn,job["job_id"])
+            async with conn.transaction():
+                await archive._validate_job(conn,job)
+            assert not any(job[key] for key in ("analyzed","stage_analyzed","topic_analyzed"))
+            flags = await conn.fetchrow("SELECT analyzed,stage_analyzed,topic_analyzed FROM public.storage_archive_jobs WHERE job_id=$1",job["job_id"])
+            assert tuple(flags) == (False,False,False)
+            await until_done(conn)
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("target", ["heap","topics"])
+def test_single_stage_restore_and_topic_backfill_analyze_only_once(target):
+    async def scenario():
+        async with fixture() as (conn,_expected):
+            await until_done(conn)
+            config = POLICY
+            if target == "topics":
+                await conn.execute("DROP TABLE public.mqtt_archive_topics_1901_01")
+                job = await create_ready_job(conn)
+            else:
+                config = RESTORE_POLICY
+                result = await archive.start_restore_archive(conn,"mqtt_messages_1901_01",config,free_bytes=FREE)
+                assert result["status"] == "copying"
+                job = await finish_verifying(conn,await archive._job(conn,uuid.UUID(result["job_id"])),config)
+            calls = []
+
+            class AnalyzeProbe:
+                def __getattr__(self,name):
+                    return getattr(conn,name)
+
+                async def execute(self,sql,*args,**kwargs):
+                    if sql.startswith("ANALYZE "):
+                        calls.append(sql)
+                    return await conn.execute(sql,*args,**kwargs)
+
+            await archive._analyze_stage(AnalyzeProbe(),job,archive.archive_policy(config))
+            assert job["target_method"] == target
+            assert all(job[key] for key in ("analyzed","stage_analyzed","topic_analyzed"))
+            assert calls == ["ANALYZE "+archive._q(job["stage_name"])]
+            await until_done(conn,config)
+    asyncio.run(scenario())
 
 
 def test_cancel_resume_guard_and_exact_atomic_cutover(monkeypatch):
