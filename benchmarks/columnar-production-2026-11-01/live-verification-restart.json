@@ -1,0 +1,40 @@
+{
+  "before": {
+    "job_id": "acda41a2-24f4-4592-abee-9610a7c4a131",
+    "phase": "verifying",
+    "rows_copied": 14544219,
+    "rows_verified": 1937000,
+    "source_oid": "16698",
+    "stage_oid": "944254",
+    "topic_stage_oid": "944241",
+    "inflight_bytes": null,
+    "abort_count": 0,
+    "source_frozen": true
+  },
+  "after_cli_stop": {
+    "job_id": "acda41a2-24f4-4592-abee-9610a7c4a131",
+    "phase": "verifying",
+    "rows_copied": 14544219,
+    "rows_verified": 1938000,
+    "source_oid": "16698",
+    "stage_oid": "944254",
+    "topic_stage_oid": "944241",
+    "inflight_bytes": null,
+    "abort_count": 0,
+    "source_frozen": true
+  },
+  "after_backend_restart": {
+    "job_id": "acda41a2-24f4-4592-abee-9610a7c4a131",
+    "phase": "verifying",
+    "rows_copied": 14544219,
+    "rows_verified": 2012000,
+    "source_oid": "16698",
+    "stage_oid": "944254",
+    "topic_stage_oid": "944241",
+    "inflight_bytes": null,
+    "abort_count": 0,
+    "source_frozen": true
+  },
+  "checkpoint_never_decreased": true,
+  "source_and_replacement_oids_unchanged": true
+}

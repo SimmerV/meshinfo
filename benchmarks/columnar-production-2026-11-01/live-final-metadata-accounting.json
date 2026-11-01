@@ -1,0 +1,71 @@
+{
+  "utc": "2026-11-01T08:32:59.545812+00:00",
+  "relations": [
+    {
+      "schema_name": "columnar_internal",
+      "relname": "chunk",
+      "relkind": "r",
+      "total_bytes": 587874304
+    },
+    {
+      "schema_name": "columnar_internal",
+      "relname": "chunk_group",
+      "relkind": "r",
+      "total_bytes": 19718144
+    },
+    {
+      "schema_name": "columnar_internal",
+      "relname": "options",
+      "relkind": "r",
+      "total_bytes": 57344
+    },
+    {
+      "schema_name": "columnar_internal",
+      "relname": "storageid_seq",
+      "relkind": "S",
+      "total_bytes": 8192
+    },
+    {
+      "schema_name": "columnar_internal",
+      "relname": "stripe",
+      "relkind": "r",
+      "total_bytes": 30572544
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_archive_topics_2026_07",
+      "relkind": "r",
+      "total_bytes": 683114496
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_archive_topics_2026_08",
+      "relkind": "r",
+      "total_bytes": 2764849152
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_archive_topics_2026_09",
+      "relkind": "r",
+      "total_bytes": 175702016
+    },
+    {
+      "schema_name": "public",
+      "relname": "storage_archive_jobs",
+      "relkind": "r",
+      "total_bytes": 573440
+    },
+    {
+      "schema_name": "public",
+      "relname": "storage_identity",
+      "relkind": "r",
+      "total_bytes": 24576
+    },
+    {
+      "schema_name": "public",
+      "relname": "storage_maintenance_status",
+      "relkind": "r",
+      "total_bytes": 32768
+    }
+  ]
+}

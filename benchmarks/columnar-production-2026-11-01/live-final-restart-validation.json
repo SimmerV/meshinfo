@@ -1,0 +1,119 @@
+{
+  "started_utc": "2026-11-01T08:36:11.803582+00:00",
+  "first_page_limit_ms": 1000,
+  "cache_note": "PostgreSQL restarted, resetting shared buffers. Host page cache untouched. Normal backend startup/health ran before first measured historical request; no historical data preflight or monitor ran after restart before measurement.",
+  "steps": [
+    {
+      "name": "graceful_backend_stop",
+      "elapsed_ms": 904.574
+    },
+    {
+      "name": "postgres_restart",
+      "elapsed_ms": 583.368
+    },
+    {
+      "name": "backend_start",
+      "elapsed_ms": 947.413
+    }
+  ],
+  "all_checks_passed": false,
+  "before": {
+    "postgres": {
+      "id": "b1200e70384cef2f61dc72be35944e198fe43c52ed1d353c5ba48e6121a42b51",
+      "image_id": "sha256:9110413970ad4b277973703d1c4f52d572af39714bdfce717ea82c62c31853a4",
+      "running": true,
+      "health": "healthy",
+      "exit_code": 0,
+      "oom_killed": false,
+      "mounts": [
+        {
+          "name": "meshinfo_meshinfo_pgdata",
+          "destination": "/var/lib/postgresql"
+        }
+      ]
+    },
+    "backend": {
+      "id": "b0615cc8d73a8c34aa6c1bbf98d0078ec274037d9c7f12f8b643422084764525",
+      "image_id": "sha256:2efdf6ff83b36dc430a94c4216bb331f3bc29e46aef9be670fe0ec0f4d7d523d",
+      "running": true,
+      "health": "healthy",
+      "exit_code": 0,
+      "oom_killed": false,
+      "mounts": [
+        {
+          "name": "meshinfo_meshinfo_pgdata",
+          "destination": "/var/lib/meshinfo-postgres-space"
+        }
+      ]
+    }
+  },
+  "postgres_started_before": "2026-11-01 04:19:56.884271+00",
+  "backend_stopped": {
+    "id": "b0615cc8d73a8c34aa6c1bbf98d0078ec274037d9c7f12f8b643422084764525",
+    "image_id": "sha256:2efdf6ff83b36dc430a94c4216bb331f3bc29e46aef9be670fe0ec0f4d7d523d",
+    "running": false,
+    "health": "unhealthy",
+    "exit_code": 0,
+    "oom_killed": false,
+    "mounts": [
+      {
+        "name": "meshinfo_meshinfo_pgdata",
+        "destination": "/var/lib/meshinfo-postgres-space"
+      }
+    ]
+  },
+  "page_samples": [
+    {
+      "elapsed_ms": 1013.425,
+      "status": 200,
+      "matches_baseline": true,
+      "response_sha256": "7950f9fab4171603ecf240cf2ff2aad7048c4418f47002c4eb0086c3a9a02864"
+    },
+    {
+      "elapsed_ms": 15.167,
+      "status": 200,
+      "matches_baseline": true,
+      "response_sha256": "7950f9fab4171603ecf240cf2ff2aad7048c4418f47002c4eb0086c3a9a02864"
+    },
+    {
+      "elapsed_ms": 14.194,
+      "status": 200,
+      "matches_baseline": true,
+      "response_sha256": "7950f9fab4171603ecf240cf2ff2aad7048c4418f47002c4eb0086c3a9a02864"
+    }
+  ],
+  "postgres_started_after": "2026-11-01 08:36:13.959374+00",
+  "after": {
+    "postgres": {
+      "id": "b1200e70384cef2f61dc72be35944e198fe43c52ed1d353c5ba48e6121a42b51",
+      "image_id": "sha256:9110413970ad4b277973703d1c4f52d572af39714bdfce717ea82c62c31853a4",
+      "running": true,
+      "health": "healthy",
+      "exit_code": 0,
+      "oom_killed": false,
+      "mounts": [
+        {
+          "name": "meshinfo_meshinfo_pgdata",
+          "destination": "/var/lib/postgresql"
+        }
+      ]
+    },
+    "backend": {
+      "id": "b0615cc8d73a8c34aa6c1bbf98d0078ec274037d9c7f12f8b643422084764525",
+      "image_id": "sha256:2efdf6ff83b36dc430a94c4216bb331f3bc29e46aef9be670fe0ec0f4d7d523d",
+      "running": true,
+      "health": "healthy",
+      "exit_code": 0,
+      "oom_killed": false,
+      "mounts": [
+        {
+          "name": "meshinfo_meshinfo_pgdata",
+          "destination": "/var/lib/meshinfo-postgres-space"
+        }
+      ]
+    }
+  },
+  "all_response_checks_passed": true,
+  "first_page_latency_passed": false,
+  "finished_utc": "2026-11-01T08:36:26.386637+00:00"
+}

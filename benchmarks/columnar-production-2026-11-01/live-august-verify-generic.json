@@ -1,0 +1,382 @@
+{
+  "read_only": true,
+  "query_values_omitted": true,
+  "captured_at": "2026-11-01T08:04:42.312881+00:00",
+  "limits": {
+    "explain_analyze_max": 2,
+    "statement_ms": 5000,
+    "lock_ms": 100,
+    "work_mem": "4MB",
+    "parallel_workers": 0
+  },
+  "query_shape": "nonfirst explicit composite lower/upper bounds plus logically redundant scalar ID envelope",
+  "memory_units": "KiB; PostgreSQL reports ceil(bytes/1024)",
+  "cases": [
+    {
+      "case": "first_generic",
+      "planning_ms": 270.451,
+      "execution_ms": 23.219,
+      "wall_ms": 294.814,
+      "planning": {
+        "Shared Hit Blocks": 9768,
+        "Shared Read Blocks": 18,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0,
+        "Memory Used": 52367,
+        "Memory Allocated": 57369
+      },
+      "plan": {
+        "Node Type": "Aggregate",
+        "Startup Cost": 18892.03,
+        "Total Cost": 18892.04,
+        "Plan Rows": 1,
+        "Plan Width": 1,
+        "Actual Startup Time": 22.57,
+        "Actual Total Time": 22.572,
+        "Actual Rows": 1.0,
+        "Actual Loops": 1,
+        "Shared Hit Blocks": 5562,
+        "Shared Read Blocks": 24,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0,
+        "Plans": [
+          {
+            "Node Type": "Index Scan",
+            "Parent Relationship": "InitPlan",
+            "Scan Direction": "Forward",
+            "Startup Cost": 0.43,
+            "Total Cost": 14843.02,
+            "Plan Rows": 8080,
+            "Plan Width": 651,
+            "Actual Startup Time": 0.031,
+            "Actual Total Time": 0.649,
+            "Actual Rows": 1000.0,
+            "Actual Loops": 1,
+            "Rows Removed by Index Recheck": 0,
+            "Shared Hit Blocks": 98,
+            "Shared Read Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "relation_role": "source_heap",
+            "index_kind": "primary_key",
+            "generic_index_condition": "((id >= $1) AND (id <= $3) AND (ROW(id, created_at) > ROW($1, $2)) AND (ROW(id, created_at) <= ROW($3, $4)))"
+          },
+          {
+            "Node Type": "Limit",
+            "Parent Relationship": "InitPlan",
+            "Startup Cost": 0.43,
+            "Total Cost": 3420.78,
+            "Plan Rows": 808,
+            "Plan Width": 169,
+            "Actual Startup Time": 1.112,
+            "Actual Total Time": 14.405,
+            "Actual Rows": 1000.0,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 5464,
+            "Shared Read Blocks": 24,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Index Scan",
+                "Parent Relationship": "Outer",
+                "Scan Direction": "Forward",
+                "Startup Cost": 0.43,
+                "Total Cost": 34203.87,
+                "Plan Rows": 8080,
+                "Plan Width": 169,
+                "Actual Startup Time": 1.111,
+                "Actual Total Time": 14.177,
+                "Actual Rows": 1000.0,
+                "Actual Loops": 1,
+                "Rows Removed by Index Recheck": 0,
+                "Shared Hit Blocks": 5464,
+                "Shared Read Blocks": 24,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "relation_role": "payload_stage_columnar",
+                "index_kind": "primary_key",
+                "generic_index_condition": "((id >= $1) AND (id <= $3) AND (ROW(id, created_at) > ROW($1, $2)) AND (ROW(id, created_at) <= ROW($3, $4)))"
+              }
+            ]
+          },
+          {
+            "Node Type": "Merge Join",
+            "Parent Relationship": "Outer",
+            "Join Type": "Full",
+            "Startup Cost": 0.0,
+            "Total Cost": 224.23,
+            "Plan Rows": 8080,
+            "Plan Width": 338,
+            "Actual Startup Time": 1.178,
+            "Actual Total Time": 19.974,
+            "Actual Rows": 1000.0,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 5562,
+            "Shared Read Blocks": 24,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "CTE Scan",
+                "Parent Relationship": "Outer",
+                "Startup Cost": 0.0,
+                "Total Cost": 161.6,
+                "Plan Rows": 8080,
+                "Plan Width": 169,
+                "Actual Startup Time": 0.039,
+                "Actual Total Time": 2.066,
+                "Actual Rows": 1000.0,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 98,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              },
+              {
+                "Node Type": "Materialize",
+                "Parent Relationship": "Inner",
+                "Startup Cost": 0.0,
+                "Total Cost": 18.18,
+                "Plan Rows": 808,
+                "Plan Width": 169,
+                "Actual Startup Time": 1.133,
+                "Actual Total Time": 16.643,
+                "Actual Rows": 1000.0,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 5464,
+                "Shared Read Blocks": 24,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "CTE Scan",
+                    "Parent Relationship": "Outer",
+                    "Startup Cost": 0.0,
+                    "Total Cost": 16.16,
+                    "Plan Rows": 808,
+                    "Plan Width": 169,
+                    "Actual Startup Time": 1.119,
+                    "Actual Total Time": 16.336,
+                    "Actual Rows": 1000.0,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 5464,
+                    "Shared Read Blocks": 24,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "reused_generic",
+      "planning_ms": 0.03,
+      "execution_ms": 20.433,
+      "wall_ms": 30.374,
+      "planning": {
+        "Shared Hit Blocks": 0,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0,
+        "Memory Used": 11,
+        "Memory Allocated": 32
+      },
+      "plan": {
+        "Node Type": "Aggregate",
+        "Startup Cost": 18892.03,
+        "Total Cost": 18892.04,
+        "Plan Rows": 1,
+        "Plan Width": 1,
+        "Actual Startup Time": 20.331,
+        "Actual Total Time": 20.333,
+        "Actual Rows": 1.0,
+        "Actual Loops": 1,
+        "Shared Hit Blocks": 5517,
+        "Shared Read Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0,
+        "Plans": [
+          {
+            "Node Type": "Index Scan",
+            "Parent Relationship": "InitPlan",
+            "Scan Direction": "Forward",
+            "Startup Cost": 0.43,
+            "Total Cost": 14843.02,
+            "Plan Rows": 8080,
+            "Plan Width": 651,
+            "Actual Startup Time": 0.026,
+            "Actual Total Time": 0.579,
+            "Actual Rows": 1000.0,
+            "Actual Loops": 1,
+            "Rows Removed by Index Recheck": 0,
+            "Shared Hit Blocks": 98,
+            "Shared Read Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "relation_role": "source_heap",
+            "index_kind": "primary_key",
+            "generic_index_condition": "((id >= $1) AND (id <= $3) AND (ROW(id, created_at) > ROW($1, $2)) AND (ROW(id, created_at) <= ROW($3, $4)))"
+          },
+          {
+            "Node Type": "Limit",
+            "Parent Relationship": "InitPlan",
+            "Startup Cost": 0.43,
+            "Total Cost": 3420.78,
+            "Plan Rows": 808,
+            "Plan Width": 169,
+            "Actual Startup Time": 0.159,
+            "Actual Total Time": 12.804,
+            "Actual Rows": 1000.0,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 5419,
+            "Shared Read Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Index Scan",
+                "Parent Relationship": "Outer",
+                "Scan Direction": "Forward",
+                "Startup Cost": 0.43,
+                "Total Cost": 34203.87,
+                "Plan Rows": 8080,
+                "Plan Width": 169,
+                "Actual Startup Time": 0.158,
+                "Actual Total Time": 12.572,
+                "Actual Rows": 1000.0,
+                "Actual Loops": 1,
+                "Rows Removed by Index Recheck": 0,
+                "Shared Hit Blocks": 5419,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "relation_role": "payload_stage_columnar",
+                "index_kind": "primary_key",
+                "generic_index_condition": "((id >= $1) AND (id <= $3) AND (ROW(id, created_at) > ROW($1, $2)) AND (ROW(id, created_at) <= ROW($3, $4)))"
+              }
+            ]
+          },
+          {
+            "Node Type": "Merge Join",
+            "Parent Relationship": "Outer",
+            "Join Type": "Full",
+            "Startup Cost": 0.0,
+            "Total Cost": 224.23,
+            "Plan Rows": 8080,
+            "Plan Width": 338,
+            "Actual Startup Time": 0.198,
+            "Actual Total Time": 17.737,
+            "Actual Rows": 1000.0,
+            "Actual Loops": 1,
+            "Shared Hit Blocks": 5517,
+            "Shared Read Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "CTE Scan",
+                "Parent Relationship": "Outer",
+                "Startup Cost": 0.0,
+                "Total Cost": 161.6,
+                "Plan Rows": 8080,
+                "Plan Width": 169,
+                "Actual Startup Time": 0.027,
+                "Actual Total Time": 1.697,
+                "Actual Rows": 1000.0,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 98,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0
+              },
+              {
+                "Node Type": "Materialize",
+                "Parent Relationship": "Inner",
+                "Startup Cost": 0.0,
+                "Total Cost": 18.18,
+                "Plan Rows": 808,
+                "Plan Width": 169,
+                "Actual Startup Time": 0.167,
+                "Actual Total Time": 14.807,
+                "Actual Rows": 1000.0,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 5419,
+                "Shared Read Blocks": 0,
+                "Temp Read Blocks": 0,
+                "Temp Written Blocks": 0,
+                "Plans": [
+                  {
+                    "Node Type": "CTE Scan",
+                    "Parent Relationship": "Outer",
+                    "Startup Cost": 0.0,
+                    "Total Cost": 16.16,
+                    "Plan Rows": 808,
+                    "Plan Width": 169,
+                    "Actual Startup Time": 0.165,
+                    "Actual Total Time": 14.467,
+                    "Actual Rows": 1000.0,
+                    "Actual Loops": 1,
+                    "Shared Hit Blocks": 5419,
+                    "Shared Read Blocks": 0,
+                    "Temp Read Blocks": 0,
+                    "Temp Written Blocks": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "exact_boolean": true,
+  "cache_note": "Same frozen1000-row cohort and repeatable-read snapshot. No data/OS cache reset; normal verification and ingestion continue.",
+  "unchanged_semantics": [
+    "all canonical columns",
+    "materialized source and stage",
+    "stage limit n+1",
+    "full composite-key outer join",
+    "exact count n",
+    "NULL-safe values and UTF8 bytea text comparisons"
+  ],
+  "limitations": [
+    "Only a nonfirst full cohort is measured; first/tail/reused-ID/missing/extra tests remain required before implementation."
+  ],
+  "journal": {
+    "phase": "verifying",
+    "rows_copied": 14544219,
+    "rows_verified": 1041000
+  },
+  "cohort": {
+    "rows": 1000,
+    "logical_bytes": 720528,
+    "selection_ms": 16.661,
+    "identities_sha256": "ee7ea223acb375bef7a6c7e905eb422c9592c0e67032f94973240af2d07bb14d"
+  },
+  "before_counts": {
+    "generic_plans": 0,
+    "custom_plans": 0
+  },
+  "boolean_fetch_ms": 17.477,
+  "after_counts": {
+    "generic_plans": 3,
+    "custom_plans": 0
+  },
+  "all_checks_passed": true
+}

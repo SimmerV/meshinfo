@@ -1,0 +1,508 @@
+{
+  "format_version": 1,
+  "scope": "Two selected approximately210-second monitoring intervals on the same active job, before and after the verifier deployment. Different row ranges and existing caches; observational progress rates, not a controlled throughput benchmark or completion proof.",
+  "source_values_omitted": true,
+  "intervals": {
+    "before": {
+      "source_file": "live-migration-6.jsonl",
+      "source_snapshot_bytes": 536336,
+      "source_snapshot_sha256": "3256042f2d56f3eb6b8b32768746cb764411cd594f6d24b21039de97734e0730",
+      "samples": [
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 1444000,
+          "utc": "2026-11-01T08:10:13.861792+00:00",
+          "database_filesystem_free_bytes": 4235116544,
+          "wal_bytes": 1056964608,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 95805440,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 505933824,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 1479000,
+          "utc": "2026-11-01T08:10:43.863038+00:00",
+          "database_filesystem_free_bytes": 4207075328,
+          "wal_bytes": 1056964608,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 95805440,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 506470400,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 1515000,
+          "utc": "2026-11-01T08:11:13.865345+00:00",
+          "database_filesystem_free_bytes": 4204830720,
+          "wal_bytes": 1056964608,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 95821824,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 526602240,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 1551000,
+          "utc": "2026-11-01T08:11:43.863694+00:00",
+          "database_filesystem_free_bytes": 4204077056,
+          "wal_bytes": 1056964608,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 95850496,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 506847232,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 1587000,
+          "utc": "2026-11-01T08:12:13.859335+00:00",
+          "database_filesystem_free_bytes": 4203450368,
+          "wal_bytes": 1056964608,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 95735808,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 551444480,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 1624000,
+          "utc": "2026-11-01T08:12:43.865593+00:00",
+          "database_filesystem_free_bytes": 4206678016,
+          "wal_bytes": 1056964608,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 95834112,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 506847232,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 1659000,
+          "utc": "2026-11-01T08:13:13.870679+00:00",
+          "database_filesystem_free_bytes": 4197523456,
+          "wal_bytes": 1056964608,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 95846400,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 506564608,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 1694000,
+          "utc": "2026-11-01T08:13:43.860424+00:00",
+          "database_filesystem_free_bytes": 4194398208,
+          "wal_bytes": 1056964608,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 95899648,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 506601472,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        }
+      ],
+      "elapsed_seconds": 209.998632,
+      "verified_rows_advanced": 250000,
+      "observed_rows_per_second": 1190.4839456287507
+    },
+    "after": {
+      "source_file": "live-migration-7.jsonl",
+      "source_snapshot_bytes": 43265,
+      "source_snapshot_sha256": "ecdfc8a26f7224d6b5cff2b5f85b6c5fa881c9559b75e42f3c396e8ca2910c07",
+      "samples": [
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 2027000,
+          "utc": "2026-11-01T08:17:12.968242+00:00",
+          "database_filesystem_free_bytes": 4195225600,
+          "wal_bytes": 1056964608,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 101801984,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 447057920,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 2144000,
+          "utc": "2026-11-01T08:17:42.969595+00:00",
+          "database_filesystem_free_bytes": 4195127296,
+          "wal_bytes": 1056964608,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 103886848,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 469962752,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 2969000,
+          "utc": "2026-11-01T08:18:12.970911+00:00",
+          "database_filesystem_free_bytes": 4211789824,
+          "wal_bytes": 1040187392,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 131768320,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 574464000,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 3920000,
+          "utc": "2026-11-01T08:18:42.968071+00:00",
+          "database_filesystem_free_bytes": 4211757056,
+          "wal_bytes": 1040187392,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 135127040,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 587468800,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 4860000,
+          "utc": "2026-11-01T08:19:12.968242+00:00",
+          "database_filesystem_free_bytes": 4211609600,
+          "wal_bytes": 1040187392,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 132042752,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 597712896,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 5796000,
+          "utc": "2026-11-01T08:19:42.972205+00:00",
+          "database_filesystem_free_bytes": 4211527680,
+          "wal_bytes": 1040187392,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 132042752,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 607289344,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 6734000,
+          "utc": "2026-11-01T08:20:12.969076+00:00",
+          "database_filesystem_free_bytes": 4211195904,
+          "wal_bytes": 1040187392,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 132042752,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 631365632,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        },
+        {
+          "phase": "verifying",
+          "rows_copied": 14544219,
+          "rows_verified": 7679000,
+          "utc": "2026-11-01T08:20:42.981211+00:00",
+          "database_filesystem_free_bytes": 4210987008,
+          "wal_bytes": 1040187392,
+          "blocked_reason_present": false,
+          "cleanup_requested": false,
+          "services": {
+            "backend": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 132046848,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            },
+            "postgres": {
+              "status": "running",
+              "health": "healthy",
+              "memory": {
+                "working_set_bytes": 634322944,
+                "oom_events": 0,
+                "oom_kills": 0
+              }
+            }
+          }
+        }
+      ],
+      "elapsed_seconds": 210.012969,
+      "verified_rows_advanced": 5652000,
+      "observed_rows_per_second": 26912.62366754122
+    }
+  },
+  "same_job_both_intervals": true
+}

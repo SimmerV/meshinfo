@@ -1,0 +1,55 @@
+{
+  "operation": "actual SnapshotMetadata.start/close; no dump or backup file created",
+  "statement_seconds": 5,
+  "read_only": true,
+  "start_ms": 266.263,
+  "metadata": {
+    "schema": 2,
+    "postgres_major": 18,
+    "extension": "14.1-1",
+    "relations": [
+      {
+        "schema": "public",
+        "name": "mqtt_messages_2026_07",
+        "chunk_group_row_limit": 1000,
+        "stripe_row_limit": 150000,
+        "compression_level": 3,
+        "compression": "zstd",
+        "geometry": {
+          "row_count": 2844321,
+          "max_stripe_rows": 93,
+          "max_chunk_group_rows": 93
+        }
+      },
+      {
+        "schema": "public",
+        "name": "mqtt_messages_2026_08",
+        "chunk_group_row_limit": 1000,
+        "stripe_row_limit": 150000,
+        "compression_level": 3,
+        "compression": "zstd",
+        "geometry": {
+          "row_count": 14544219,
+          "max_stripe_rows": 93,
+          "max_chunk_group_rows": 93
+        }
+      },
+      {
+        "schema": "public",
+        "name": "mqtt_messages_2026_09",
+        "chunk_group_row_limit": 1000,
+        "stripe_row_limit": 150000,
+        "compression_level": 3,
+        "compression": "zstd",
+        "geometry": {
+          "row_count": 706383,
+          "max_stripe_rows": 93,
+          "max_chunk_group_rows": 93
+        }
+      }
+    ]
+  },
+  "snapshot_exported": true,
+  "close_ms": 2.779,
+  "session_closed": true
+}

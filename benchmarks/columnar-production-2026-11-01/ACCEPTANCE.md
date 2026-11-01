@@ -264,3 +264,179 @@ passed at 07:37:44 UTC, including both mixed and plain reader steps.
 `native-ci-3796e38.json` preserves that exact-head result separately from the
 implementation revision's CI evidence. Neither validation changes the live
 deployment status recorded above.
+
+## Deployed verifier and node-reader checkpoint (2026-11-01 08:21 UTC)
+
+The node candidate's earlier undeployed status is historical. Revision
+`61d44bdd762f6e89f2b83de13ccdf77ccb602e1a`, including that reader change and the
+verifier improvements, was deployed at approximately 08:17 UTC. August's
+14,544,219 rows had been copied, but verification and cutover remained unfinished.
+
+The original read-only diagnostic reports remain unchanged:
+
+| Diagnostic | First/current | Off/reused |
+| --- | ---: | ---: |
+| JIT comparison execution | 473.182 ms | 22.656 ms |
+| JIT compilation within current execution | 415.328 ms | none |
+| Generic comparison planning | 270.451 ms | 0.030 ms |
+| Generic comparison execution | 23.219 ms | 20.433 ms |
+| Generic planning allocation | 57,369 KiB | 32 KiB |
+
+`live-august-verify-jit.json` uses one frozen 1,000-row cohort and two EXPLAIN
+executions. It does not expose the aggregate's Boolean value, so it is not
+presented as a separate equality-result proof. `live-august-verify-generic.json`
+uses a different frozen 1,000-row cohort, records an actual true equality result,
+and confirms three generic executions with no custom plans. Its index condition
+contains parameter placeholders only. The diagnostic covers a nonfirst full
+cohort; first/tail/reused-ID/missing/extra cases belong to the integration tests.
+The two reports are not a paired full-workload benchmark. Initial planning and
+its approximately 56 MiB allocation remain visible.
+
+`live-verification-restart.json` preserves the same job UUID and source/payload/
+helper catalog identities across CLI shutdown and backend restart. Copied rows
+remain 14,544,219; verified rows advance 1,937,000 → 1,938,000 → 2,012,000; abort
+counts remain zero and the source remains frozen. This is a graceful-restart
+witness, not a power-loss or crash test.
+
+`live-optimized-verification-observation.json` exports only selected progress and
+resource facts from the same job's monitor segments, omitting source/request
+values, container identifiers and host process IDs. The 08:10:13–08:13:43 interval
+advanced 250,000 verified rows in approximately 210 seconds; the 08:17:12–08:20:42
+interval advanced 5,652,000 in approximately 210 seconds. Different ranges,
+existing caches, diagnostics and concurrent ingestion prevent treating those
+observed rates as a controlled throughput guarantee.
+
+`live-query-during-optimized-verification.json` preserves all 15 sequential HTTP
+cases: every status is 200 and every baseline hash matches. July node samples
+were 290.914/21.448/24.047 ms, and September's were 127.265/21.807/20.189 ms.
+August remained heap; its node samples were 77.043/13.385/258.923 ms. Retaining
+these slower samples matters: three requests do not establish p95, and this
+report cannot establish final August compressed-query performance. The original
+August topic/text baseline HTTP status remains unrecorded.
+
+The separately recorded local runs are:
+
+- `isolated-jit-verification-regressions.txt`: 15 passed, 41 deselected in
+  8.24 seconds, covering the preceding scoped-JIT change.
+- `isolated-generic-verifier-regressions.txt`: the isolated PostgreSQL validation
+  suite passed 210 tests in 86.24 seconds after the exact-bound generic verifier change.
+- `backend-verifier-regressions.txt`: 1,000 passed, 191 skipped, one existing
+  warning in 25.96 seconds. Its absolute workspace path is redacted; results
+  are unchanged. Skips and deselections are not passes, and totals are not added.
+
+Exact-head native amd64/arm64 [CI for `61d44bd`](https://github.com/SimmerV/meshinfo/actions/runs/41288089813)
+and [CI for `0dc2128`](https://github.com/SimmerV/meshinfo/actions/runs/41287318063)
+report completed success. Both architectures passed backup/restore, checkpoint
+lifecycle, mixed readers and plain-PostgreSQL reader steps. The corresponding
+`native-ci-*.json` artifacts preserve the API responses' timestamps, which are
+approximately one hour ahead of the local host clock at observation. No local
+deployment ordering or elapsed time is inferred from those remote timestamps.
+
+`verifier-deployment-provenance.json` binds scope, revisions, source-file times
+and hashes. This checkpoint adds eleven artifacts while preserving all 34 prior
+artifact digests and their failed gates. Final August verification/cutover, net
+filesystem savings and full-history performance acceptance remain subsequent
+work; the checkpoint does not assert production readiness.
+
+## Completed live conversion and storage ledger (2026-11-01 08:33 UTC)
+
+The earlier unfinished-August checkpoints are historical. The completed journal
+records 2,844,321 July rows, 14,544,219 August rows and 706,383 September rows,
+each copied and verified: **18,094,923 total**. August completed at 08:24:54 UTC.
+`live-after-august-final.json` records all three packet partitions as Columnar
+and no active copy/verification job. The exact row totals independently agree
+with the geometry captured by `live-final-snapshot-start.json`; catalog
+`estimated_rows` values are approximate and are not used for this count.
+
+`live-final-storage-accounting.json` derives the following ledger from original
+inventories. All payload/helper indexes and all Columnar metadata allocations
+are included. Shared journal/identity/maintenance relations are conservatively
+charged in full once, even where they predate this conversion.
+
+| Component | Bytes |
+| --- | ---: |
+| Cold canonical table data | 1,837,105,152 |
+| Cold canonical indexes | 4,513,300,480 |
+| Canonical-topic helper table data | 1,334,812,672 |
+| Canonical-topic helper indexes | 2,288,852,992 |
+| All Columnar metadata tables/indexes and sequence | 638,230,528 |
+| Archive journal, storage identity and maintenance state | 630,784 |
+| **Completed archive footprint** | **10,612,932,608** |
+
+`live-before.json` supplies the before-index-packing packet baseline.
+The completed jobs' measured source sizes supply the separate post-packing,
+pre-conversion baseline. Their distinction preserves the contribution from
+earlier index maintenance:
+
+| Baseline | Source bytes | Saved bytes after charging all archive overhead | Saved GiB | Reduction |
+| --- | ---: | ---: | ---: | ---: |
+| After packing, before conversion | 18,447,892,480 | 7,834,959,872 | 7.296875 | 42.4708% |
+| Before packing | 18,552,209,408 | 7,939,276,800 | 7.394028 | 42.7942% |
+
+The source baselines cover canonical packets. Cold reception tables/indexes
+remain heap and consume 8,807,284,736 bytes; their shared topic dictionary consumes
+376,832 bytes. They are excluded from both sides of the archive-replacement
+comparison and remain part of the database. The physical ledger does not claim
+a 42% reduction for the entire database.
+
+Observed database size was 29,076,661,951 bytes before this work and
+21,150,639,807 bytes in the final main inventory: 7,926,022,144 bytes (7.381683 GiB,
+27.2591%) smaller. Ingestion and index maintenance occurred between observations.
+The filesystem reports 19,080,392,704 bytes free; editor/build cache cleanup and
+test-resource removal also contributed to free space. WAL is separately reported
+as 872,415,232 bytes and is outside `pg_database_size`.
+
+The main inventory was captured at 08:30:18 UTC and supplemental metadata at
+08:32:59 UTC; overlapping helper/catalog sizes agree. These are live physical
+measurements rather than one atomic filesystem snapshot. Supplemental accounting
+includes the storage-ID sequence omitted by the main table-only inventory, plus
+the journal and shared maintenance state. No metadata bytes are counted twice.
+
+`live-final-snapshot-start.json` records actual read-only
+`SnapshotMetadata.start/close`: 266.263 ms to export the snapshot and capture three
+Columnar relations, 2.779 ms to close it. The version-2 metadata records Zstandard
+level 3, maximum stripe/chunk groups of 93 rows, and the exact verified row total.
+No backup file or full-history restore was created by this operation; the earlier
+isolated restore proofs retain their separately stated workload scope.
+
+`live-query-final-all-archived.json` preserves 15 fixed cases with three HTTP
+samples each. All statuses are 200 and every baseline digest matches. Medians
+range from 5.016 to 129.103 ms, but first-request latency remains material:
+
+| Case | All observed samples (ms) |
+| --- | --- |
+| July page | 883.282, 15.055, 14.133 |
+| July node | 1,540.354, 23.025, 22.104 |
+| July topic/text | 994.225, 86.849, 80.747 |
+| August literal topic | 821.187, 122.619, 109.024 |
+
+The original August topic/text baseline status remains unrecorded. Responses
+remain correct in these samples, but neither median values nor hash agreement
+erase the slow requests. This is not a concurrent-load p95 test or proof of a
+250 ms bound. Final planning-memory/load assessment is pending; completed
+conversion and measured savings do not alone establish production readiness.
+
+The later predeclared live load check in `live-final-concurrent-reads.json` is
+also retained byte-for-byte. Two workers ran for 60 seconds, each limited to two
+requests per second, after one warmup of each fixed case. Normal ingestion
+continued; warming every statement on every pooled connection was not assumed.
+All **236 responses matched** their baseline, but
+`indexed_250ms_p95_gate` is explicitly **false**. July page/copy/node p95 values
+were 616.157/642.660/1,590.004 ms; August copy/node values were
+533.767/1,438.814 ms. September topic/text also had an 812.235 ms sample.
+Each case has 15–16 observations, making the nearest-rank p95 its maximum.
+Medians of roughly 7–124 ms do not turn this into a passing result. This evidence
+motivates further first-plan latency/memory work; it is not relabeled as accepted.
+
+`live-final-restart-validation.json` records the later clean restart. The backend
+stopped gracefully, PostgreSQL restarted, and both services became healthy with
+the same container/image/volume identities and no OOM. PostgreSQL shared buffers
+were reset; the host page cache remained intact. Normal application startup ran
+before the historical request, but no historical-data preflight or monitor
+warmed that request after restart. All three response hashes matched. Latencies
+were **1,013.425/15.167/14.194 ms**: the first exceeded the predeclared 1,000 ms
+limit, so both `first_page_latency_passed` and `all_checks_passed` remain false.
+Opaque infrastructure identities and fixed in-container mount destinations are
+retained to substantiate continuity; no source messages or credentials are
+included. This additional failed result does not replace or relax either prior
+latency gate.

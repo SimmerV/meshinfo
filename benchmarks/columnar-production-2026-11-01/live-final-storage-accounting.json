@@ -1,0 +1,214 @@
+{
+  "format_version": 1,
+  "unit_note": "All stored sizes are bytes; displayed GiB means2^30bytes.",
+  "measurement_times_utc": {
+    "before_index_packing": "2026-11-01 03:55:31.545171+00:00",
+    "completed_main_inventory": "2026-11-01T08:30:18.42661+00:00",
+    "supplemental_metadata_inventory": "2026-11-01T08:32:59.545812+00:00"
+  },
+  "inventory_note": "Physical relation sizes are captured while ingestion continues. Overlapping metadata/helper sizes agree between the two final inventories. This is not an atomic whole-filesystem snapshot.",
+  "cold_months": [
+    "2026-07",
+    "2026-08",
+    "2026-09"
+  ],
+  "completed_verified_packet_rows": 18094923,
+  "exact_verified_rows_by_relation": {
+    "mqtt_messages_2026_09": 706383,
+    "mqtt_messages_2026_07": 2844321,
+    "mqtt_messages_2026_08": 14544219
+  },
+  "estimated_rows_note": "Catalog estimated_rows is not used for exact counts; completed verification checkpoints agree with independently captured Columnar snapshot geometry.",
+  "archive_components": {
+    "canonical_packets_with_indexes": {
+      "bytes": 6350405632,
+      "relations": [
+        {
+          "schema": "public",
+          "name": "mqtt_messages_2026_07",
+          "total_bytes": 1116413952
+        },
+        {
+          "schema": "public",
+          "name": "mqtt_messages_2026_08",
+          "total_bytes": 4875591680
+        },
+        {
+          "schema": "public",
+          "name": "mqtt_messages_2026_09",
+          "total_bytes": 358400000
+        }
+      ]
+    },
+    "canonical_topic_helpers_with_indexes": {
+      "bytes": 3623665664,
+      "relations": [
+        {
+          "schema": "public",
+          "name": "mqtt_archive_topics_2026_07",
+          "total_bytes": 683114496
+        },
+        {
+          "schema": "public",
+          "name": "mqtt_archive_topics_2026_08",
+          "total_bytes": 2764849152
+        },
+        {
+          "schema": "public",
+          "name": "mqtt_archive_topics_2026_09",
+          "total_bytes": 175702016
+        }
+      ]
+    },
+    "all_columnar_metadata_with_indexes_and_sequence": {
+      "bytes": 638230528,
+      "relations": [
+        {
+          "schema": "columnar_internal",
+          "name": "chunk",
+          "total_bytes": 587874304
+        },
+        {
+          "schema": "columnar_internal",
+          "name": "chunk_group",
+          "total_bytes": 19718144
+        },
+        {
+          "schema": "columnar_internal",
+          "name": "options",
+          "total_bytes": 57344
+        },
+        {
+          "schema": "columnar_internal",
+          "name": "storageid_seq",
+          "total_bytes": 8192
+        },
+        {
+          "schema": "columnar_internal",
+          "name": "stripe",
+          "total_bytes": 30572544
+        }
+      ]
+    },
+    "all_archive_and_shared_maintenance_journals_with_indexes": {
+      "bytes": 630784,
+      "relations": [
+        {
+          "schema": "public",
+          "name": "storage_archive_jobs",
+          "total_bytes": 573440
+        },
+        {
+          "schema": "public",
+          "name": "storage_identity",
+          "total_bytes": 24576
+        },
+        {
+          "schema": "public",
+          "name": "storage_maintenance_status",
+          "total_bytes": 32768
+        }
+      ]
+    }
+  },
+  "archive_total_bytes": 10612932608,
+  "comparisons": {
+    "before_index_packing": {
+      "source_partitions": [
+        {
+          "name": "mqtt_messages_2026_07",
+          "bytes": 2949726208
+        },
+        {
+          "name": "mqtt_messages_2026_08",
+          "bytes": 14780743680
+        },
+        {
+          "name": "mqtt_messages_2026_09",
+          "bytes": 821739520
+        }
+      ],
+      "source_total_bytes": 18552209408,
+      "archive_including_all_overhead_bytes": 10612932608,
+      "saved_bytes": 7939276800,
+      "saved_percent": 42.79423881759582
+    },
+    "after_index_packing_before_conversion": {
+      "source_partitions": [
+        {
+          "name": "mqtt_messages_2026_09",
+          "bytes": 792969216
+        },
+        {
+          "name": "mqtt_messages_2026_07",
+          "bytes": 2950692864
+        },
+        {
+          "name": "mqtt_messages_2026_08",
+          "bytes": 14704230400
+        }
+      ],
+      "source_total_bytes": 18447892480,
+      "archive_including_all_overhead_bytes": 10612932608,
+      "saved_bytes": 7834959872,
+      "saved_percent": 42.47075854596481
+    }
+  },
+  "accounting_policy": "Charge all payload/helper relations including their indexes, all Columnar metadata tables/indexes/storage-ID sequence, and all archive/shared-maintenance journals once. Do not apportion shared catalog bytes by month or subtract preexisting metadata allocations; this conservatively charges them all to the archive. Sources are canonical packet partition sizes only.",
+  "unchanged_or_remaining_history": {
+    "cold_receptions_with_indexes_bytes": 8807284736,
+    "shared_reception_topic_dictionary_with_indexes_bytes": 376832,
+    "note": "Receptions and their shared topic dictionary remain queryable heap data. They are excluded from both canonical-packet source baselines and archive-replacement savings, and still consume space in the whole database."
+  },
+  "whole_database_observation": {
+    "before_bytes": 29076661951,
+    "after_bytes": 21150639807,
+    "observed_reduction_bytes": 7926022144,
+    "observed_reduction_percent": 27.259051115829372,
+    "note": "Observed whole-database change includes ingestion and earlier index maintenance; it is distinct from attributable cold archive replacement savings."
+  },
+  "filesystem_observation": {
+    "free_bytes": 19080392704,
+    "wal_bytes": 872415232,
+    "note": "Free space also reflects separately removed editor/build caches and temporary test resources. Do not attribute its increase solely to database compression. WAL is outside pg_database_size and is reported separately."
+  },
+  "snapshot_metadata_validation": {
+    "schema_version": 2,
+    "relations": 3,
+    "row_total": 18094923,
+    "max_stripe_rows": 93,
+    "max_chunk_group_rows": 93,
+    "compression": "zstd",
+    "compression_level": 3,
+    "start_ms": 266.263,
+    "close_ms": 2.779,
+    "snapshot_exported": true,
+    "session_closed": true,
+    "scope": "Actual read-only SnapshotMetadata.start/close on completed live history; no full dump, backup file or full-history restore performed."
+  },
+  "full_live_conversion_complete": true,
+  "final_performance_acceptance_complete": false,
+  "production_readiness_claimed": false,
+  "source_artifacts": {
+    "live-before.json": {
+      "bytes": 1564,
+      "sha256": "e07f3d20ec46329d33daa641260f8ca912e570090dba702026f8d4e4b658da14",
+      "source_file_modified_utc": "2026-11-01T03:55:31.544458+00:00"
+    },
+    "live-after-august-final.json": {
+      "bytes": 8461,
+      "sha256": "f425cf1cfb04ee9849b427222548f82d9b1281339e01352995da7d23092de309",
+      "source_file_modified_utc": "2026-11-01T08:30:18.561386+00:00"
+    },
+    "live-final-metadata-accounting.json": {
+      "bytes": 1585,
+      "sha256": "5474b628acb7e485607348ffdd7ae8ec07dd27a9b0443ae6dbaaabb7bcb8e3fe",
+      "source_file_modified_utc": "2026-11-01T08:32:59.559573+00:00"
+    },
+    "live-final-snapshot-start.json": {
+      "bytes": 1423,
+      "sha256": "4281ab4f1c22415ec961373ae2345957fc883488565988f862c0ec829649a17e",
+      "source_file_modified_utc": "2026-11-01T08:33:02.199643+00:00"
+    }
+  }
+}

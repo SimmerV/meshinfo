@@ -1,0 +1,298 @@
+{
+  "timestamp": "2026-11-01T08:30:18.42661+00:00",
+  "database_bytes": 21150639807,
+  "wal_bytes": 872415232,
+  "relations": [
+    {
+      "schema_name": "columnar_internal",
+      "relname": "chunk",
+      "method": "heap",
+      "estimated_rows": 1857850,
+      "table_bytes": 507502592,
+      "index_bytes": 80371712,
+      "total_bytes": 587874304
+    },
+    {
+      "schema_name": "columnar_internal",
+      "relname": "chunk_group",
+      "method": "heap",
+      "estimated_rows": 192435,
+      "table_bytes": 11755520,
+      "index_bytes": 7962624,
+      "total_bytes": 19718144
+    },
+    {
+      "schema_name": "columnar_internal",
+      "relname": "options",
+      "method": "heap",
+      "estimated_rows": 5,
+      "table_bytes": 40960,
+      "index_bytes": 16384,
+      "total_bytes": 57344
+    },
+    {
+      "schema_name": "columnar_internal",
+      "relname": "stripe",
+      "method": "heap",
+      "estimated_rows": 192431,
+      "table_bytes": 18153472,
+      "index_bytes": 12419072,
+      "total_bytes": 30572544
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_archive_topics_2026_07",
+      "method": "heap",
+      "estimated_rows": 2844268,
+      "table_bytes": 248971264,
+      "index_bytes": 434143232,
+      "total_bytes": 683114496
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_archive_topics_2026_08",
+      "method": "heap",
+      "estimated_rows": 14545395,
+      "table_bytes": 1022918656,
+      "index_bytes": 1741930496,
+      "total_bytes": 2764849152
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_archive_topics_2026_09",
+      "method": "heap",
+      "estimated_rows": 706383,
+      "table_bytes": 62922752,
+      "index_bytes": 112779264,
+      "total_bytes": 175702016
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_messages_2026_07",
+      "method": "columnar",
+      "estimated_rows": 3789204,
+      "table_bytes": 327401472,
+      "index_bytes": 789012480,
+      "total_bytes": 1116413952
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_messages_2026_08",
+      "method": "columnar",
+      "estimated_rows": 81979944,
+      "table_bytes": 1385250816,
+      "index_bytes": 3490340864,
+      "total_bytes": 4875591680
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_messages_2026_09",
+      "method": "columnar",
+      "estimated_rows": 706383,
+      "table_bytes": 124452864,
+      "index_bytes": 233947136,
+      "total_bytes": 358400000
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_messages_2026_10",
+      "method": "heap",
+      "estimated_rows": 328559,
+      "table_bytes": 242319360,
+      "index_bytes": 133562368,
+      "total_bytes": 375881728
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_messages_2026_11",
+      "method": "heap",
+      "estimated_rows": 11640,
+      "table_bytes": 8855552,
+      "index_bytes": 5914624,
+      "total_bytes": 14770176
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_messages_2026_12",
+      "method": "heap",
+      "estimated_rows": -1,
+      "table_bytes": 8192,
+      "index_bytes": 81920,
+      "total_bytes": 90112
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_messages_2027_01",
+      "method": "heap",
+      "estimated_rows": -1,
+      "table_bytes": 8192,
+      "index_bytes": 81920,
+      "total_bytes": 90112
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_messages_default",
+      "method": "heap",
+      "estimated_rows": -1,
+      "table_bytes": 8192,
+      "index_bytes": 81920,
+      "total_bytes": 90112
+    },
+    {
+      "schema_name": "public",
+      "relname": "mqtt_topics",
+      "method": "heap",
+      "estimated_rows": 1404,
+      "table_bytes": 180224,
+      "index_bytes": 196608,
+      "total_bytes": 376832
+    },
+    {
+      "schema_name": "public",
+      "relname": "packet_receptions_2026_07",
+      "method": "heap",
+      "estimated_rows": 8289174,
+      "table_bytes": 1215799296,
+      "index_bytes": 994246656,
+      "total_bytes": 2210045952
+    },
+    {
+      "schema_name": "public",
+      "relname": "packet_receptions_2026_08",
+      "method": "heap",
+      "estimated_rows": 16276622,
+      "table_bytes": 2485018624,
+      "index_bytes": 1913790464,
+      "total_bytes": 4398809088
+    },
+    {
+      "schema_name": "public",
+      "relname": "packet_receptions_2026_09",
+      "method": "heap",
+      "estimated_rows": 7040645,
+      "table_bytes": 1241866240,
+      "index_bytes": 956563456,
+      "total_bytes": 2198429696
+    },
+    {
+      "schema_name": "public",
+      "relname": "packet_receptions_2026_10",
+      "method": "heap",
+      "estimated_rows": 3086123,
+      "table_bytes": 441704448,
+      "index_bytes": 336928768,
+      "total_bytes": 778633216
+    },
+    {
+      "schema_name": "public",
+      "relname": "packet_receptions_2026_11",
+      "method": "heap",
+      "estimated_rows": 113748,
+      "table_bytes": 15638528,
+      "index_bytes": 11517952,
+      "total_bytes": 27156480
+    },
+    {
+      "schema_name": "public",
+      "relname": "packet_receptions_2026_12",
+      "method": "heap",
+      "estimated_rows": -1,
+      "table_bytes": 8192,
+      "index_bytes": 16384,
+      "total_bytes": 24576
+    },
+    {
+      "schema_name": "public",
+      "relname": "packet_receptions_2027_01",
+      "method": "heap",
+      "estimated_rows": -1,
+      "table_bytes": 8192,
+      "index_bytes": 16384,
+      "total_bytes": 24576
+    },
+    {
+      "schema_name": "public",
+      "relname": "packet_receptions_default",
+      "method": "heap",
+      "estimated_rows": -1,
+      "table_bytes": 8192,
+      "index_bytes": 16384,
+      "total_bytes": 24576
+    }
+  ],
+  "jobs": [
+    {
+      "job_id": "6edf6bf0-c73f-41e2-ab1d-01341419ac38",
+      "source_name": "mqtt_messages_2026_09",
+      "target_method": "columnar",
+      "phase": "complete",
+      "rows_copied": 706383,
+      "rows_verified": 706383,
+      "source_bytes": 792969216,
+      "estimated_stage_bytes": 899711483,
+      "admission_mode": "strict",
+      "admission_free_bytes": null,
+      "cleanup_requested": false,
+      "cleanup_stage_dropped": false,
+      "cleanup_topics_dropped": false,
+      "created_at": "2026-11-01T05:19:59.020564+00:00",
+      "updated_at": "2026-11-01T05:44:34.094728+00:00",
+      "finished_at": "2026-11-01T05:44:34.094728+00:00"
+    },
+    {
+      "job_id": "e10bd068-5e1a-45d3-ac33-6234f3fe5a00",
+      "source_name": "mqtt_messages_2026_07",
+      "target_method": "columnar",
+      "phase": "cancelled",
+      "rows_copied": 288858,
+      "rows_verified": 0,
+      "source_bytes": 2950692864,
+      "estimated_stage_bytes": 3105347885,
+      "admission_mode": "strict",
+      "admission_free_bytes": null,
+      "cleanup_requested": false,
+      "cleanup_stage_dropped": false,
+      "cleanup_topics_dropped": false,
+      "created_at": "2026-11-01T05:44:34.841785+00:00",
+      "updated_at": "2026-11-01T06:18:30.12928+00:00",
+      "finished_at": "2026-11-01T05:48:34.330827+00:00"
+    },
+    {
+      "job_id": "d48a208a-adaf-4c62-a331-02e0c042b7e5",
+      "source_name": "mqtt_messages_2026_07",
+      "target_method": "columnar",
+      "phase": "complete",
+      "rows_copied": 2844321,
+      "rows_verified": 2844321,
+      "source_bytes": 2950692864,
+      "estimated_stage_bytes": 3105347885,
+      "admission_mode": "strict",
+      "admission_free_bytes": 9499844608,
+      "cleanup_requested": false,
+      "cleanup_stage_dropped": false,
+      "cleanup_topics_dropped": false,
+      "created_at": "2026-11-01T06:18:31.133215+00:00",
+      "updated_at": "2026-11-01T06:46:24.678494+00:00",
+      "finished_at": "2026-11-01T06:46:24.678494+00:00"
+    },
+    {
+      "job_id": "acda41a2-24f4-4592-abee-9610a7c4a131",
+      "source_name": "mqtt_messages_2026_08",
+      "target_method": "columnar",
+      "phase": "complete",
+      "rows_copied": 14544219,
+      "rows_verified": 14544219,
+      "source_bytes": 14704230400,
+      "estimated_stage_bytes": 16659584042,
+      "admission_mode": "guarded",
+      "admission_free_bytes": 12882919424,
+      "cleanup_requested": false,
+      "cleanup_stage_dropped": false,
+      "cleanup_topics_dropped": false,
+      "created_at": "2026-11-01T07:02:02.19121+00:00",
+      "updated_at": "2026-11-01T08:24:54.327394+00:00",
+      "finished_at": "2026-11-01T08:24:54.327394+00:00"
+    }
+  ],
+  "filesystem_free_bytes": 19080392704
+}

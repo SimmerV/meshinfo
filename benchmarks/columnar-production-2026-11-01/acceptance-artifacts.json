@@ -137,6 +137,82 @@
     "native-ci-3796e38.json": {
       "bytes": 7675,
       "sha256": "7a29bf1e7a6ae84a93e843780641067a44f8d4a273b20708295ee6b0118bb2eb"
+    },
+    "live-august-verify-jit.json": {
+      "bytes": 14098,
+      "sha256": "b00f3132ce42d073d6ce22038982aee274deb87e4c12b464a594b0f79d187a51"
+    },
+    "live-august-verify-generic.json": {
+      "bytes": 13305,
+      "sha256": "501e95b8cf6e87d0875860fda9beaca44ac10e951b176577f02b434f3fbd3741"
+    },
+    "live-verification-restart.json": {
+      "bytes": 1075,
+      "sha256": "fa7eb4daeba29dd6a0dfca8a3e58e4428ab4288186ecc794b3784b37ac5cb22a"
+    },
+    "live-query-during-optimized-verification.json": {
+      "bytes": 5323,
+      "sha256": "24870bdd9dc639a3cab3584e51c7dd94c72842d0d12f54f5d9b778a6fce4fed0"
+    },
+    "native-ci-0dc2128.json": {
+      "bytes": 7939,
+      "sha256": "279dde0647a31f53269455dd60d01d586ac659297525b28ecc4fedc9d5139c34"
+    },
+    "native-ci-61d44bd.json": {
+      "bytes": 7939,
+      "sha256": "7b9f6e02bbaf8e22b16207fd53e2455f384dbf23fee5340eb85fcfc3dda30ec4"
+    },
+    "isolated-jit-verification-regressions.txt": {
+      "bytes": 114,
+      "sha256": "9f764108731fc4dd2111f7046529ff70cbe6c39a453e52d753bdb00a67f5e3aa"
+    },
+    "isolated-generic-verifier-regressions.txt": {
+      "bytes": 271,
+      "sha256": "1010df4bce45a0ca945c9dcd478d1894df45df41b71c4290f56f362f86a9b37f"
+    },
+    "backend-verifier-regressions.txt": {
+      "bytes": 1788,
+      "sha256": "d7eb4155724f27a9cadaccc8d7f7a33a4e6541d0838e45301de8632295eb6004"
+    },
+    "live-optimized-verification-observation.json": {
+      "bytes": 15714,
+      "sha256": "26feeacc33c9d75ee13974ece280c1cfeed727f62663d3e4279fe914994acb10"
+    },
+    "verifier-deployment-provenance.json": {
+      "bytes": 5221,
+      "sha256": "3ab9a090f0b5c950c48b73749f2fec87de01958bc9cb9a67f34406c671336de2"
+    },
+    "live-before.json": {
+      "bytes": 1564,
+      "sha256": "e07f3d20ec46329d33daa641260f8ca912e570090dba702026f8d4e4b658da14"
+    },
+    "live-after-august-final.json": {
+      "bytes": 8461,
+      "sha256": "f425cf1cfb04ee9849b427222548f82d9b1281339e01352995da7d23092de309"
+    },
+    "live-final-metadata-accounting.json": {
+      "bytes": 1585,
+      "sha256": "5474b628acb7e485607348ffdd7ae8ec07dd27a9b0443ae6dbaaabb7bcb8e3fe"
+    },
+    "live-final-snapshot-start.json": {
+      "bytes": 1423,
+      "sha256": "4281ab4f1c22415ec961373ae2345957fc883488565988f862c0ec829649a17e"
+    },
+    "live-query-final-all-archived.json": {
+      "bytes": 5317,
+      "sha256": "6ac49f23e080ec17268d0c0af371daf2e4f13916950eafd3f09b71f8832f445e"
+    },
+    "live-final-storage-accounting.json": {
+      "bytes": 7407,
+      "sha256": "bd9851b3896b4c2bcdb0d4c325667efd664835c0ce1697a328dfb291a7f4fbac"
+    },
+    "live-final-concurrent-reads.json": {
+      "bytes": 34776,
+      "sha256": "cc140227971c1781d82cdd361ff476cb2879586ea6bf96afcc92f9daab40a1fc"
+    },
+    "live-final-restart-validation.json": {
+      "bytes": 3679,
+      "sha256": "74a35a3c2df624e28450838786a45b3d1bc716d4d7f09a97c109618166551f56"
     }
   }
 }

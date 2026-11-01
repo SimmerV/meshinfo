@@ -1,0 +1,216 @@
+{
+  "phase": "after",
+  "cases": [
+    {
+      "name": "month_07_page",
+      "samples_ms": [
+        883.282,
+        15.055,
+        14.133
+      ],
+      "status": 200,
+      "digest": "028ea7695455b928bc159a8d88d49574ea9eeb7605bbac69b14daf7d0094b815",
+      "count": 50,
+      "median_ms": 15.055,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_07_copies",
+      "samples_ms": [
+        5.829,
+        5.016,
+        4.872
+      ],
+      "status": 200,
+      "digest": "d18663d28e67d81d7ffba58923e90e62ed6333f60238f7311974c6a062851b06",
+      "count": 0,
+      "median_ms": 5.016,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_07_node",
+      "samples_ms": [
+        1540.354,
+        23.025,
+        22.104
+      ],
+      "status": 200,
+      "digest": "5b5d0828b349517a6a6f6209809a2e3c1d9cf73c1b8402a3aa9273272a382ffa",
+      "count": 50,
+      "median_ms": 23.025,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_07_topic",
+      "samples_ms": [
+        89.114,
+        38.443,
+        38.699
+      ],
+      "status": 200,
+      "digest": "39081f797773d4b09e95aced852090c65e7889446278eaad4fd7617322f7bbb1",
+      "count": 50,
+      "median_ms": 38.699,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_07_topic_search",
+      "samples_ms": [
+        994.225,
+        86.849,
+        80.747
+      ],
+      "status": 200,
+      "digest": "39081f797773d4b09e95aced852090c65e7889446278eaad4fd7617322f7bbb1",
+      "count": 50,
+      "median_ms": 86.849,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_08_page",
+      "samples_ms": [
+        15.308,
+        13.378,
+        13.979
+      ],
+      "status": 200,
+      "digest": "7950f9fab4171603ecf240cf2ff2aad7048c4418f47002c4eb0086c3a9a02864",
+      "count": 50,
+      "median_ms": 13.979,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_08_copies",
+      "samples_ms": [
+        9.143,
+        7.338,
+        4.968
+      ],
+      "status": 200,
+      "digest": "f0c0167e6f74bbe782a35287c085286c916057e1aeb20c1741d1c26bfbe0d43f",
+      "count": 0,
+      "median_ms": 7.338,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_08_node",
+      "samples_ms": [
+        26.89,
+        28.152,
+        24.268
+      ],
+      "status": 200,
+      "digest": "5a739df81ebaec0608a1f1a13ee254c3f192e627c52fe30fc3378fb2f1b73a56",
+      "count": 50,
+      "median_ms": 26.89,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_08_topic",
+      "samples_ms": [
+        821.187,
+        122.619,
+        109.024
+      ],
+      "status": 200,
+      "digest": "fd6855708243d0b0f9bce5547ee02da033a8944b8b8258a84b76b6f64a5f9c6e",
+      "count": 50,
+      "median_ms": 122.619,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_08_topic_search",
+      "samples_ms": [
+        148.547,
+        129.103,
+        124.245
+      ],
+      "status": 200,
+      "digest": "fd6855708243d0b0f9bce5547ee02da033a8944b8b8258a84b76b6f64a5f9c6e",
+      "count": 50,
+      "median_ms": 129.103,
+      "baseline_status": null,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_09_page",
+      "samples_ms": [
+        23.517,
+        14.309,
+        14.894
+      ],
+      "status": 200,
+      "digest": "a0632a5dfd9179f4e55da4faac43fdd52c720e8f93facc9c1f39a528a655f266",
+      "count": 50,
+      "median_ms": 14.894,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_09_copies",
+      "samples_ms": [
+        8.044,
+        5.678,
+        5.513
+      ],
+      "status": 200,
+      "digest": "a7bb4cd61a60b4ccb483c572e0342defa2078202652f75b41bf3aa0a1a6ece62",
+      "count": 0,
+      "median_ms": 5.678,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_09_node",
+      "samples_ms": [
+        120.156,
+        24.12,
+        20.07
+      ],
+      "status": 200,
+      "digest": "d3f1fbe00ee592d0eeb5ba34f87b94cf4ba008fbceb971a19cd1884f54ba6c99",
+      "count": 50,
+      "median_ms": 24.12,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_09_topic",
+      "samples_ms": [
+        57.92,
+        26.821,
+        23.921
+      ],
+      "status": 200,
+      "digest": "36552130284115382c210251ecd18f83971c18e39bb83d429b0fd43284cfd0fd",
+      "count": 50,
+      "median_ms": 26.821,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    },
+    {
+      "name": "month_09_topic_search",
+      "samples_ms": [
+        58.584,
+        31.115,
+        33.621
+      ],
+      "status": 200,
+      "digest": "36552130284115382c210251ecd18f83971c18e39bb83d429b0fd43284cfd0fd",
+      "count": 50,
+      "median_ms": 33.621,
+      "baseline_status": 200,
+      "response_matches_baseline": true
+    }
+  ],
+  "cache_note": "Sequential HTTP requests; no OS or PostgreSQL cache flush; services ingesting normally."
+}

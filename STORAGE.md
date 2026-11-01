@@ -1290,3 +1290,121 @@ It strengthens selective sender/recipient index-plan assertions; production
 source is unchanged from `54f8fd7`. Its separate local PostgreSQL rerun passed
 **one test in 13.89 seconds**. This adds an index-use regression check without
 changing the deployment or live-acceptance status above.
+
+### Deployed verification checkpoint, 2026-11-01 08:21 UTC
+
+Revision `61d44bdd762f6e89f2b83de13ccdf77ccb602e1a` was deployed at approximately
+08:17 UTC, including the previously tested node-reader fix. The verifier now
+avoids JIT compilation for its bounded comparisons and reuses parameterized
+plans with exact composite-key bounds. Exact canonical-column comparisons,
+NULL and text-byte handling, missing/extra-row detection and checkpoint rules
+remain required; this changes planning rather than weakening verification.
+
+The read-only 1,000-row JIT diagnostic measured **415.328 ms** of compilation
+within **473.182 ms** execution; disabling JIT reduced execution to **22.656 ms**.
+A separate 1,000-row generic-plan diagnostic measured first/reused planning of
+**270.451/0.030 ms**, execution of **23.219/20.433 ms**, and an actual successful
+equality result. Fresh planning still allocated about **56 MiB**. The diagnostics
+use different cohorts and warm caches; they do not establish a full-table
+speedup. Selected live monitoring intervals recorded **250,000 rows verified in
+210 seconds** before deployment and **5,652,000 in 210 seconds** afterward.
+These are observational progress rates on different row ranges while ingestion
+continued, not a controlled throughput guarantee.
+
+The graceful restart preserved the same job, source/replacement relation
+identities and **14,544,219 copied rows**. The verification checkpoint advanced
+from **1,937,000** before stopping the CLI, to **1,938,000** after it stopped,
+and **2,012,000** after the backend restart; the abort count remained zero.
+This proves checkpoint preservation through that graceful restart, separately
+from earlier crash-recovery tests.
+
+All 15 sampled live HTTP cases still returned 200 with matching baseline hashes.
+July node requests took **290.914/21.448/24.047 ms**; September took
+**127.265/21.807/20.189 ms**. The slower first requests remain relevant. August
+was still served from heap and its node samples were **77.043/13.385/258.923 ms**.
+Three sequential requests are not a p95 measurement or an all-compressed
+acceptance run.
+
+The isolated PostgreSQL validation suite passed **210 tests in 86.24 seconds**;
+the separate backend run passed **1,000 tests with 191 skipped in 25.96 seconds**. Exact-head
+amd64 and arm64 [CI for `61d44bd`](https://github.com/SimmerV/meshinfo/actions/runs/41288089813)
+and [the preceding JIT revision](https://github.com/SimmerV/meshinfo/actions/runs/41287318063)
+report success, including backup/restore, lifecycle, mixed readers and the
+plain-PostgreSQL cases. Their API timestamps are approximately one hour ahead of
+the local host clock; the evidence preserves those values and uses exact commit
+and job conclusions rather than remote timestamps for local chronology.
+The [deployment evidence](benchmarks/columnar-production-2026-11-01/verifier-deployment-provenance.json)
+retains diagnostics, restart/progress observations and test logs. August
+verification and final storage/read acceptance were still unfinished at this
+checkpoint; no production-readiness or final savings claim follows yet.
+
+### Completed conversion and physical accounting, 2026-11-01 08:33 UTC
+
+July, August and September are now converted, with **18,094,923 canonical packet
+rows copied and verified**. August completed at 08:24:54 UTC with **14,544,219
+rows**. This supersedes the unfinished-conversion status in the earlier dated
+checkpoints; their diagnostic and performance limitations remain part of the
+record. Completed journal counts agree with independently captured Columnar
+snapshot geometry. PostgreSQL's approximate row estimates are not used as exact
+counts.
+
+The archive footprint includes the supporting structures needed for searchable
+history. All shared Columnar metadata and maintenance journals are charged once,
+including allocated overhead from earlier work; none is hidden or apportioned
+away from the archive:
+
+| Completed archive component | Bytes | GiB |
+| --- | ---: | ---: |
+| Canonical packet tables and indexes | 6,350,405,632 | 5.914 |
+| Canonical-topic helpers and indexes | 3,623,665,664 | 3.375 |
+| All Columnar metadata, indexes and storage-ID sequence | 638,230,528 | 0.594 |
+| Archive journal and shared maintenance metadata | 630,784 | 0.001 |
+| **Total** | **10,612,932,608** | **9.884** |
+
+Compared with the **18,447,892,480-byte** source partitions measured after index
+packing and before conversion, this saves **7,834,959,872 bytes — 7.297 GiB, or
+42.47%**. The separate before-packing baseline was **18,552,209,408 bytes**;
+including that earlier index maintenance, the reduction is **7,939,276,800 bytes —
+7.394 GiB, or 42.79%**. These percentages describe the canonical-packet archive,
+not the entire database. Cold reception tables and indexes still occupy
+**8,807,284,736 bytes (8.202 GiB)** and remain available as heap data.
+
+The observed whole database decreased from **29,076,661,951** to
+**21,150,639,807 bytes**, a **7.382 GiB (27.26%)** reduction while ingestion and
+other maintenance continued. The final inventory reports **19,080,392,704 bytes
+(17.770 GiB) free** and **872,415,232 bytes of WAL**. Filesystem headroom also
+benefited from separately removed editor/build caches and test resources; its
+increase is not attributed solely to compression. GiB here means 2³⁰ bytes.
+
+Actual snapshot metadata capture succeeded for all three completed Columnar
+relations in **266.263 ms**, with **2.779 ms** to close the exported snapshot.
+It records the exact 18,094,923-row total, Zstandard level 3, and maximum stripe
+and chunk groups of 93 rows. This exercised the real backup metadata operation;
+it did not create a full-history dump or perform a full-history restore.
+
+The first all-archived HTTP matrix returned 200 and matching baseline hashes for
+all 15 cases. Median samples ranged from **5.016 to 129.103 ms**, but first July
+page/node/topic-search requests took **883.282/1,540.354/994.225 ms**, and the first
+August topic request took **821.187 ms**. These slower results are preserved;
+they prevent a claim that every request meets the 250 ms target. Three sequential
+samples do not establish p95 or performance under concurrent fresh planning.
+The [physical accounting ledger](benchmarks/columnar-production-2026-11-01/live-final-storage-accounting.json)
+and original inventories document the savings. Final load, planning-memory and
+production-readiness assessment remain pending.
+
+The subsequent declared 60-second, two-worker HTTP check returned **236/236
+matching responses**, but **failed the indexed 250 ms p95 gate**. New pooled
+connections still incurred slow first plans: July page/copy/node p95 values were
+**616.157/642.660/1,590.004 ms**. Each case had only 15–16 observations, so the
+reported nearest-rank p95 equals its maximum. The original failed report is
+preserved as [live-final-concurrent-reads.json](benchmarks/columnar-production-2026-11-01/live-final-concurrent-reads.json).
+Correct responses and low medians do not override this failure; first-plan
+latency and memory remain unresolved acceptance work at this checkpoint.
+
+A subsequent clean PostgreSQL restart preserved the same containers, images and
+data volume, returned both services to healthy status, and matched the baseline
+response hashes without an OOM. The first page took **1,013.425 ms**, so it
+**failed the declared 1,000 ms limit**; subsequent requests took
+**15.167/14.194 ms**. PostgreSQL's shared buffers were reset, while the host page
+cache remained intact. The [restart report](benchmarks/columnar-production-2026-11-01/live-final-restart-validation.json)
+preserves this failed gate separately from its passing data/identity checks.

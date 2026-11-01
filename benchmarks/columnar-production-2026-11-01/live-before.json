@@ -1,0 +1,63 @@
+{
+  "database_bytes": 29076661951,
+  "canonical_partitions": [
+    {
+      "relname": "mqtt_messages_2026_07",
+      "estimated_rows": 2844321,
+      "table_bytes": 2005024768,
+      "index_bytes": 944701440,
+      "total_bytes": 2949726208
+    },
+    {
+      "relname": "mqtt_messages_2026_08",
+      "estimated_rows": 14532983,
+      "table_bytes": 10812096512,
+      "index_bytes": 3968647168,
+      "total_bytes": 14780743680
+    },
+    {
+      "relname": "mqtt_messages_2026_09",
+      "estimated_rows": 706383,
+      "table_bytes": 521723904,
+      "index_bytes": 300015616,
+      "total_bytes": 821739520
+    },
+    {
+      "relname": "mqtt_messages_2026_10",
+      "estimated_rows": 316869,
+      "table_bytes": 242319360,
+      "index_bytes": 144973824,
+      "total_bytes": 387293184
+    },
+    {
+      "relname": "mqtt_messages_2026_11",
+      "estimated_rows": 4986,
+      "table_bytes": 4063232,
+      "index_bytes": 2842624,
+      "total_bytes": 6905856
+    },
+    {
+      "relname": "mqtt_messages_2026_12",
+      "estimated_rows": -1,
+      "table_bytes": 8192,
+      "index_bytes": 81920,
+      "total_bytes": 90112
+    },
+    {
+      "relname": "mqtt_messages_2027_01",
+      "estimated_rows": -1,
+      "table_bytes": 8192,
+      "index_bytes": 81920,
+      "total_bytes": 90112
+    },
+    {
+      "relname": "mqtt_messages_default",
+      "estimated_rows": -1,
+      "table_bytes": 8192,
+      "index_bytes": 81920,
+      "total_bytes": 90112
+    }
+  ],
+  "filesystem_free_bytes": 3547639808,
+  "timestamp": "2026-11-01 03:55:31.545171+00:00"
+}

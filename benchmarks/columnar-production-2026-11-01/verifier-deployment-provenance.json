@@ -1,0 +1,102 @@
+{
+  "format_version": 1,
+  "recorded_date_utc": "2026-11-01",
+  "jit_implementation_revision": "0dc2128119eca74412550df916d2ecb82b77d9b8",
+  "deployed_revision": "61d44bdd762f6e89f2b83de13ccdf77ccb602e1a",
+  "deployment_local_utc": "2026-11-01T08:17:00+00:00",
+  "deployment_time_precision": "minute; root-coordinated deployment report",
+  "node_fix_now_deployed": true,
+  "full_live_conversion_complete": false,
+  "august_source_access_method_at_checkpoint": "heap",
+  "diagnostic_scope": "Two1000-row frozen cohorts with read-only repeatable-read snapshots. JIT comparison uses EXPLAIN only and does not separately evaluate the Boolean result. Generic comparison includes an actual true Boolean result, first/reused plan counters and exact parameterized composite index bounds. The two diagnostics use different cohorts and must not be treated as a paired full-workload speedup.",
+  "restart_scope": "Same job UUID, unchanged source/payload/helper relation identities and14,544,219 copied rows; verification checkpoint advances across graceful CLI stop/backend restart; abort count remains0. This is not a crash or power-loss proof.",
+  "live_http_scope": "Three sequential requests per15fixed cases while verifying August replacement. July/September are compressed; August source remains heap. All15hashes match baseline, allHTTP200. First requests and slower August samples remain in original report; no p95 or final all-compressed acceptance claim.",
+  "separate_test_runs": [
+    {
+      "artifact": "isolated-jit-verification-regressions.txt",
+      "passed": 15,
+      "deselected": 41,
+      "duration_seconds": 8.24
+    },
+    {
+      "artifact": "isolated-generic-verifier-regressions.txt",
+      "passed": 210,
+      "duration_seconds": 86.24
+    },
+    {
+      "artifact": "backend-verifier-regressions.txt",
+      "passed": 1000,
+      "skipped": 191,
+      "warnings": 1,
+      "duration_seconds": 25.96
+    }
+  ],
+  "native_ci": {
+    "0dc2128": {
+      "run_id": 41287318063,
+      "exact_head_success": true,
+      "amd64_success": true,
+      "arm64_success": true
+    },
+    "61d44bd": {
+      "run_id": 41288089813,
+      "exact_head_success": true,
+      "amd64_success": true,
+      "arm64_success": true
+    },
+    "timestamp_note": "GitHub API timestamps are approximately one hour ahead of the local host clock. Preserved verbatim in CI artifacts; not used to derive local deployment order or elapsed time. Status assertions use exact head SHA and completed job/step conclusions."
+  },
+  "privacy_audit": "Source packet/topic values, bound parameter values and credentials excluded. Restart retains opaque job UUID and numeric catalog identities. Diagnostic generic index condition contains parameter placeholders only. Monitor exports only selected progress/resource facts, omitting source names, latest-ingest IDs, container IDs, host PIDs and requests. Earlier artifacts are unchanged.",
+  "artifacts": {
+    "live-august-verify-jit.json": {
+      "bytes": 14098,
+      "sha256": "b00f3132ce42d073d6ce22038982aee274deb87e4c12b464a594b0f79d187a51",
+      "source_file_modified_utc": "2026-11-01T07:58:32.763461+00:00"
+    },
+    "live-august-verify-generic.json": {
+      "bytes": 13305,
+      "sha256": "501e95b8cf6e87d0875860fda9beaca44ac10e951b176577f02b434f3fbd3741",
+      "source_file_modified_utc": "2026-11-01T08:04:42.801140+00:00"
+    },
+    "live-verification-restart.json": {
+      "bytes": 1075,
+      "sha256": "fa7eb4daeba29dd6a0dfca8a3e58e4428ab4288186ecc794b3784b37ac5cb22a",
+      "source_file_modified_utc": "2026-11-01T08:17:12.773152+00:00"
+    },
+    "live-query-during-optimized-verification.json": {
+      "bytes": 5323,
+      "sha256": "24870bdd9dc639a3cab3584e51c7dd94c72842d0d12f54f5d9b778a6fce4fed0",
+      "source_file_modified_utc": "2026-11-01T08:17:57.004142+00:00"
+    },
+    "native-ci-0dc2128.json": {
+      "bytes": 7939,
+      "sha256": "279dde0647a31f53269455dd60d01d586ac659297525b28ecc4fedc9d5139c34",
+      "source_file_modified_utc": "2026-11-01T08:20:45.557053+00:00"
+    },
+    "native-ci-61d44bd.json": {
+      "bytes": 7939,
+      "sha256": "7b9f6e02bbaf8e22b16207fd53e2455f384dbf23fee5340eb85fcfc3dda30ec4",
+      "source_file_modified_utc": "2026-11-01T08:20:46.196068+00:00"
+    },
+    "isolated-jit-verification-regressions.txt": {
+      "bytes": 114,
+      "sha256": "9f764108731fc4dd2111f7046529ff70cbe6c39a453e52d753bdb00a67f5e3aa",
+      "source_file_modified_utc": "2026-11-01T08:03:35.300197+00:00"
+    },
+    "isolated-generic-verifier-regressions.txt": {
+      "bytes": 271,
+      "sha256": "1010df4bce45a0ca945c9dcd478d1894df45df41b71c4290f56f362f86a9b37f",
+      "source_file_modified_utc": "2026-11-01T08:14:15.409382+00:00"
+    },
+    "backend-verifier-regressions.txt": {
+      "bytes": 1788,
+      "sha256": "d7eb4155724f27a9cadaccc8d7f7a33a4e6541d0838e45301de8632295eb6004",
+      "source_file_modified_utc": "2026-11-01T08:15:56.665492+00:00",
+      "redaction": "Absolute workspace path replaced with <workspace>; test output otherwise unchanged."
+    },
+    "live-optimized-verification-observation.json": {
+      "bytes": 15714,
+      "sha256": "26feeacc33c9d75ee13974ece280c1cfeed727f62663d3e4279fe914994acb10"
+    }
+  }
+}
