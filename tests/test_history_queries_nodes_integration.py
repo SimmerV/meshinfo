@@ -137,6 +137,26 @@ async def exercise():
                     cold=[node for node in nodes(plan) if node.get("Relation Name")=="packets_cold"
                           and node.get("Actual Loops",0)>0]
                     assert cold and all(node["Node Type"]=="Index Scan" for node in cold)
+                    constrained_keys=set()
+                    visited=0
+                    for scan in cold:
+                        condition=scan.get("Index Cond","")
+                        leading=await conn.fetchval("SELECT pg_get_indexdef(c.oid,1,true) "
+                            "FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
+                            "WHERE n.nspname=$1 AND c.relname=$2",schema,scan["Index Name"])
+                        assert leading in {"from_node_id","to_node_id"}
+                        # An Index Scan over time/PK followed by node filtering
+                        # is not evidence of a selective node lookup. The node
+                        # parameter must constrain the leading B-tree key.
+                        assert leading in condition and "$1" in condition and "=" in condition
+                        constrained_keys.add(leading)
+                        visited+=(scan["Actual Rows"]+scan.get("Rows Removed by Filter",0)
+                                  +scan.get("Rows Removed by Index Recheck",0))*scan["Actual Loops"]
+                    assert constrained_keys == {"from_node_id","to_node_id"}
+                    # Common pages may inspect a timestamp tie group and skip
+                    # self-addressed recipient duplicates. Rare/absent nodes
+                    # must visit only their matching identities, not all56k.
+                    assert visited <= (512 if node==COMMON else 1 if node==RARE else 0)
             assert await conn.fetchrow("SELECT current_setting('plan_cache_mode') AS plan,"
                 "current_setting('columnar.enable_custom_scan') AS scan") == initial
         await interruptions(storage,initial)
