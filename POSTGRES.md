@@ -439,21 +439,68 @@ implementation.
 
 The image pins the official multi-architecture PostgreSQL manifest
 `sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6`.
-Its architecture-specific Citus inputs are:
+Both amd64 and arm64 now use the same upstream source and local planner patch:
 
-| Architecture | Verified upstream input | SHA-256 |
+| Input | Source | SHA-256 |
 | --- | --- | --- |
-| amd64 | [Official Debian trixie PG18 package, 14.1.0.citus-1](https://packagecloud.io/citusdata/community/debian/pool/trixie/main/p/citus/postgresql-18-citus-14.1_14.1.0.citus-1_amd64.deb) | `1e78be38f6c145bac49d622d71def8f1b9a3826d98dffe946e9aed3e0cac1b09` |
-| arm64 | [Official Citus v14.1.0 source](https://codeload.github.com/citusdata/citus/tar.gz/refs/tags/v14.1.0), compiled in a separate build stage | `e174ed00efba74aaf5a9da87f770f6a7e11274066cce8449d804bc6b17df6ff8` |
+| Citus release | [Official v14.1.0 tarball](https://codeload.github.com/citusdata/citus/tar.gz/refs/tags/v14.1.0) | `e174ed00efba74aaf5a9da87f770f6a7e11274066cce8449d804bc6b17df6ff8` |
+| Planner patch v1 | [Reviewed local patch](patches/citus-14.1.0-planner-costing.patch) | `aed027459fac59a1333ace33d181c3e323bf5917293bfeded1b023fc292ea6b9` |
 
-The official trixie repository does not provide a PG18/14.1 arm64 binary package.
-The arm64 image therefore builds the same source release using its official
+The build verifies both hashes and applies the patch with zero fuzz. The patch
+preserves upstream cost formulas, using a summary local to one planner-hook
+invocation instead of repeatedly loading stripe metadata for every candidate
+path. It releases temporary metadata after deriving that summary. It introduces
+no persistent cache, storage format, SQL extension-version or GUC change.
+
+The shared source stage uses the official
 [`columnar` and `install-columnar` targets](https://github.com/citusdata/citus/blob/v14.1.0/Makefile),
 which install the standalone AM and generated extension SQL without compiling
-the distributed extension. It uses no native-CPU or AVX2 compiler flags and
-keeps its compiler/development packages out of the runtime image. Other architectures fail the image build explicitly. The native
-`Columnar native restore` CI matrix builds both amd64 and arm64 and exercises
-real backup/restore behavior. **An arm64 deployment requires a successful native
+the distributed extension. Both architectures use no native-CPU or AVX2 compiler
+flags. Compilation defaults to **one job**; `COLUMNAR_BUILD_JOBS` accepts only
+1 or 2, and native CI explicitly selects 2. Compiler/development packages remain
+outside the runtime image. Unsupported architectures fail the build explicitly.
+
+The default `final` target installs the patched extension. Its OCI version stays
+`18.6-citus14.1.0`, while `io.meshinfo.columnar.planner-patch=planner-costing-v1`
+and `io.meshinfo.columnar.patch-sha256` identify the exact local change. The
+installed patch and its checksum are also available in
+`/usr/share/meshinfo-columnar/`. To inspect this provenance:
+
+```bash
+docker image inspect --format '{{index .Config.Labels "io.meshinfo.columnar.patch-sha256"}}' \
+  meshinfo-postgres-columnar:18.6-citus14.1.0
+```
+
+The explicit `unpatched` target builds the same pinned source with the same
+toolchain, without applying the patch. The default build shares its already
+compiled objects and rebuilds the changed files, so building both targets reuses
+the expensive work:
+
+```bash
+docker build -f Dockerfile.postgres-columnar --target unpatched \
+  -t meshinfo-postgres-columnar:18.6-citus14.1.0-unpatched .
+docker build -f Dockerfile.postgres-columnar \
+  -t meshinfo-postgres-columnar:18.6-citus14.1.0-planner-v1 .
+```
+
+The unpatched target's label is `io.meshinfo.columnar.planner-patch=none`.
+It is a source-build comparison, not a claim of binary identity with the earlier
+official amd64 Debian package. That earlier package was
+`postgresql-18-citus-14.1_14.1.0.citus-1_amd64.deb`, SHA-256
+`1e78be38f6c145bac49d622d71def8f1b9a3826d98dffe946e9aed3e0cac1b09`.
+Retain the previously deployed image by immutable ID or a separate rollback tag
+before adopting a replacement; do not delete its data volume. Rolling back to
+an image without the Columnar extension cannot read compressed history.
+
+The native `Columnar native restore` CI matrix builds both targets on amd64 and
+arm64. A separate isolated baseline server has the same memory, CPU and shared
+buffer limits as the patched server. The paired synthetic fixture checks full
+estimated-plan/cost and result parity across custom-scan/planner flags, empty/
+single/many stripes, multiple indexes and transaction visibility. It refuses
+missing extensions, cleans its owned schemas and exports a source-free report.
+The workflow also exercises real backup/restore and the existing application
+reader/lifecycle cases, and always removes its test containers and volumes.
+**An arm64 deployment requires a successful native
 arm64 CI run for the exact revision being deployed**; an amd64 test or emulated
 build is not evidence of native arm64 runtime compatibility. No arm64 validation
 is implied merely by this Dockerfile existing.

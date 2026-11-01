@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'Dockerfile.postgres-columnar'
+      - 'patches/**'
       - 'docker-compose.columnar.yml'
       - 'storage/backup*.py'
       - 'storage/columnar*.py'
@@ -23,10 +24,12 @@ on:
       - 'scripts/benchmark_history_read_plans.py'
       - 'scripts/restore_database.py'
       - 'scripts/verify_columnar_backup_restore.py'
+      - 'scripts/verify_columnar_planner_costs.py'
       - '.github/workflows/columnar.yml'
   push:
     paths:
       - 'Dockerfile.postgres-columnar'
+      - 'patches/**'
       - 'docker-compose.columnar.yml'
       - 'storage/backup*.py'
       - 'storage/columnar*.py'
@@ -46,6 +49,7 @@ on:
       - 'scripts/benchmark_history_read_plans.py'
       - 'scripts/restore_database.py'
       - 'scripts/verify_columnar_backup_restore.py'
+      - 'scripts/verify_columnar_planner_costs.py'
       - '.github/workflows/columnar.yml'
   workflow_dispatch:
 
@@ -70,7 +74,7 @@ jobs:
       - name: Build the production image on its native architecture
         run: |
           set +e
-          docker build --progress=plain --file Dockerfile.postgres-columnar --tag columnar-native-ci . 2>&1 | tee "$RUNNER_TEMP/columnar-build.log"
+          docker build --progress=plain --build-arg COLUMNAR_BUILD_JOBS=2 --file Dockerfile.postgres-columnar --tag columnar-native-ci . 2>&1 | tee "$RUNNER_TEMP/columnar-build.log"
           result=${PIPESTATUS[0]}
           set -e
           if [ "$result" -ne 0 ]; then
@@ -87,6 +91,14 @@ jobs:
           PYCODE
             exit "$result"
           fi
+      - name: Build the unpatched baseline from the same compiled source stage
+        run: |
+          docker build --progress=plain --build-arg COLUMNAR_BUILD_JOBS=2 \
+            --file Dockerfile.postgres-columnar --target unpatched \
+            --tag columnar-unpatched-native-ci .
+          test "$(docker image inspect --format '{{.Architecture}}' columnar-unpatched-native-ci)" = '${{ matrix.arch }}'
+          test "$(docker image inspect --format '{{index .Config.Labels "io.meshinfo.columnar.planner-patch"}}' columnar-native-ci)" = planner-costing-v1
+          test "$(docker image inspect --format '{{index .Config.Labels "io.meshinfo.columnar.planner-patch"}}' columnar-unpatched-native-ci)" = none
       - name: Start an isolated test cluster without published ports
         run: |
           test "$(docker image inspect --format '{{.Architecture}}' columnar-native-ci)" = '${{ matrix.arch }}'
@@ -108,6 +120,49 @@ jobs:
         run: |
           docker exec -u 0 columnar-native-ci sh -c \
             'apt-get update && apt-get install -y --no-install-recommends python3 python3-asyncpg python3-pytest python3-requests && rm -rf /var/lib/apt/lists/*'
+      - name: Compare native planner costs and results with the unpatched release
+        run: |
+          docker exec columnar-native-ci createdb -U postgres meshinfo_planner_test
+          docker exec columnar-native-ci psql -U postgres -d meshinfo_planner_test \
+            -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION citus_columnar;'
+          docker run -d --name columnar-unpatched-native-ci --network columnar-native-ci \
+            --label io.meshinfo.archive-test=true --memory 768m --cpus 2 --shm-size 128m \
+            -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=meshinfo_planner_test \
+            columnar-unpatched-native-ci postgres -c shared_preload_libraries=citus_columnar \
+            -c shared_buffers=64MB -c max_connections=20
+          ready=false
+          for attempt in $(seq 1 60); do
+            if docker exec columnar-unpatched-native-ci pg_isready -h 127.0.0.1 -U postgres -q; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = true
+          docker exec columnar-unpatched-native-ci psql -U postgres -d meshinfo_planner_test \
+            -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION citus_columnar;'
+          docker exec -w /work columnar-native-ci python3 -m pytest -q -p no:cacheprovider \
+            tests/test_columnar_planner_costs.py
+          set +e
+          docker exec -w /work \
+            -e MESHINFO_PLANNER_BASELINE_DSN=postgresql://postgres@columnar-unpatched-native-ci:5432/meshinfo_planner_test \
+            -e MESHINFO_PLANNER_PATCHED_DSN=postgresql://postgres@127.0.0.1:5432/meshinfo_planner_test \
+            columnar-native-ci python3 scripts/verify_columnar_planner_costs.py \
+            --baseline-dsn-env MESHINFO_PLANNER_BASELINE_DSN \
+            --patched-dsn-env MESHINFO_PLANNER_PATCHED_DSN \
+            --output /tmp/columnar-planner-costs.json
+          result=$?
+          set -e
+          docker cp columnar-native-ci:/tmp/columnar-planner-costs.json "$RUNNER_TEMP/columnar-planner-costs.json" || true
+          exit "$result"
+      - name: Preserve the source-free native planner comparison
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: columnar-planner-cost-parity-${{ matrix.arch }}
+          path: ${{ runner.temp }}/columnar-planner-costs.json
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Verify actual backup, settings before COPY, staging and rollback
         run: |
           docker exec -w /work columnar-native-ci \
@@ -171,5 +226,5 @@ jobs:
       - name: Remove the isolated cluster and anonymous data volume
         if: always()
         run: |
-          docker rm -fv columnar-plain-native-ci columnar-native-ci || true
+          docker rm -fv columnar-unpatched-native-ci columnar-plain-native-ci columnar-native-ci || true
           docker network rm columnar-native-ci || true

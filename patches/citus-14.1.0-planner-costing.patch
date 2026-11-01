@@ -1,0 +1,410 @@
+--- a/src/backend/columnar/columnar_customscan.c
++++ b/src/backend/columnar/columnar_customscan.c
+@@ -71,39 +71,56 @@
+ } ColumnarScanState;
+ 
+ 
++/*
++ * Scalar stripe metadata shared by every path costed in one relation-path
++ * hook invocation. This is neither a session cache nor part of a stored plan.
++ */
++typedef struct ColumnarPlannerStats
++{
++	uint64 rowCount;
++	uint64 stripeCount;
++	uint64 totalStripeSize;
++	uint32 maxColumnCount;
++} ColumnarPlannerStats;
++
++
+ typedef bool (*PathPredicate)(Path *path);
+ 
+ 
+ /* functions to cost paths in-place */
+-static void CostColumnarPaths(PlannerInfo *root, RelOptInfo *rel, Oid relationId);
++static void CostColumnarPaths(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
++							  const ColumnarPlannerStats *stats);
+ static void CostColumnarIndexPath(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
+-								  IndexPath *indexPath);
+-static void CostColumnarSeqPath(RelOptInfo *rel, Oid relationId, Path *path);
+-static void CostColumnarScan(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
++								  IndexPath *indexPath, const ColumnarPlannerStats *stats);
++static void CostColumnarSeqPath(RelOptInfo *rel, Oid relationId, Path *path,
++								const ColumnarPlannerStats *stats);
++static void CostColumnarScan(PlannerInfo *root, RelOptInfo *rel,
+ 							 CustomPath *cpath, int numberOfColumnsRead,
+-							 int nClauses);
++							 int nClauses, const ColumnarPlannerStats *stats);
+ 
+ /* functions to add new paths */
+ static void AddColumnarScanPaths(PlannerInfo *root, RelOptInfo *rel,
+-								 RangeTblEntry *rte);
++								 RangeTblEntry *rte, const ColumnarPlannerStats *stats);
+ static void AddColumnarScanPath(PlannerInfo *root, RelOptInfo *rel,
+-								RangeTblEntry *rte, Relids required_relids);
++								RangeTblEntry *rte, Relids required_relids,
++								const ColumnarPlannerStats *stats);
+ 
+ /* helper functions to be used when costing paths or altering them */
+ static void RemovePathsByPredicate(RelOptInfo *rel, PathPredicate removePathPredicate);
+ static bool IsNotIndexPath(Path *path);
+ static Cost ColumnarIndexScanAdditionalCost(PlannerInfo *root, RelOptInfo *rel,
+-											Oid relationId, IndexPath *indexPath);
++											Oid relationId, IndexPath *indexPath,
++											const ColumnarPlannerStats *stats);
+ static int RelationIdGetNumberOfAttributes(Oid relationId);
+-static Cost ColumnarPerStripeScanCost(RelOptInfo *rel, Oid relationId,
+-									  int numberOfColumnsRead);
+-static uint64 ColumnarTableStripeCount(Oid relationId);
++static Cost ColumnarPerStripeScanCost(RelOptInfo *rel, int numberOfColumnsRead,
++									  const ColumnarPlannerStats *stats);
++static ColumnarPlannerStats ReadColumnarPlannerStats(Relation relation);
+ static Path * CreateColumnarSeqScanPath(PlannerInfo *root, RelOptInfo *rel,
+-										Oid relationId);
++										Oid relationId, const ColumnarPlannerStats *stats);
+ static void AddColumnarScanPathsRec(PlannerInfo *root, RelOptInfo *rel,
+ 									RangeTblEntry *rte, Relids paramRelids,
+ 									Relids candidateRelids,
+-									int depthLimit);
++									int depthLimit, const ColumnarPlannerStats *stats);
+ 
+ /* hooks and callbacks */
+ static void ColumnarSetRelPathlistHook(PlannerInfo *root, RelOptInfo *rel, Index rti,
+@@ -321,9 +338,21 @@
+ 		 * Before doing that, we first re-cost all the existing paths so that
+ 		 * add_path makes correct cost comparisons when appending our SeqPath.
+ 		 */
+-		CostColumnarPaths(root, rel, rte->relid);
+-
+-		Path *seqPath = CreateColumnarSeqScanPath(root, rel, rte->relid);
++		/*
++		 * All paths for this relation use the same transaction snapshot.
++		 * Read its stripe metadata once, instead of allocating and scanning
++		 * another full list for each cost component of each candidate path.
++		 * When all costed scan types are disabled, no metadata is needed.
++		 */
++		ColumnarPlannerStats stats = { 0 };
++		if (enable_indexscan || enable_seqscan || EnableColumnarCustomScan)
++		{
++			stats = ReadColumnarPlannerStats(relation);
++		}
++
++		CostColumnarPaths(root, rel, rte->relid, &stats);
++
++		Path *seqPath = CreateColumnarSeqScanPath(root, rel, rte->relid, &stats);
+ 		add_path(rel, seqPath);
+ 
+ 		if (EnableColumnarCustomScan)
+@@ -344,7 +373,7 @@
+ 			 * SeqPath thinking that its cost would be equal to ColumnarCustomScan.
+ 			 */
+ 			RemovePathsByPredicate(rel, IsNotIndexPath);
+-			AddColumnarScanPaths(root, rel, rte);
++			AddColumnarScanPaths(root, rel, rte, &stats);
+ 		}
+ 	}
+ 	RelationClose(relation);
+@@ -412,14 +441,15 @@
+  * table with relationId.
+  */
+ static Path *
+-CreateColumnarSeqScanPath(PlannerInfo *root, RelOptInfo *rel, Oid relationId)
++CreateColumnarSeqScanPath(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
++						 const ColumnarPlannerStats *stats)
+ {
+ 	/* columnar doesn't support parallel scan */
+ 	int parallelWorkers = 0;
+ 
+ 	Relids requiredOuter = rel->lateral_relids;
+ 	Path *path = create_seqscan_path(root, rel, requiredOuter, parallelWorkers);
+-	CostColumnarSeqPath(rel, relationId, path);
++	CostColumnarSeqPath(rel, relationId, path, stats);
+ 	return path;
+ }
+ 
+@@ -429,7 +459,8 @@
+  * columnar table with relationId.
+  */
+ static void
+-CostColumnarPaths(PlannerInfo *root, RelOptInfo *rel, Oid relationId)
++CostColumnarPaths(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
++				  const ColumnarPlannerStats *stats)
+ {
+ 	Path *path = NULL;
+ 	foreach_declared_ptr(path, rel->pathlist)
+@@ -443,11 +474,11 @@
+ 			 * TableAmRoutine). For this reason, we only consider IndexPath's
+ 			 * here.
+ 			 */
+-			CostColumnarIndexPath(root, rel, relationId, (IndexPath *) path);
++			CostColumnarIndexPath(root, rel, relationId, (IndexPath *) path, stats);
+ 		}
+ 		else if (path->pathtype == T_SeqScan)
+ 		{
+-			CostColumnarSeqPath(rel, relationId, path);
++			CostColumnarSeqPath(rel, relationId, path, stats);
+ 		}
+ 	}
+ }
+@@ -459,7 +490,7 @@
+  */
+ static void
+ CostColumnarIndexPath(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
+-					  IndexPath *indexPath)
++					  IndexPath *indexPath, const ColumnarPlannerStats *stats)
+ {
+ 	if (!enable_indexscan)
+ 	{
+@@ -478,7 +509,7 @@
+ 	 * by indexAM since we should consider index traversal related costs too.
+ 	 */
+ 	Cost columnarIndexScanCost = ColumnarIndexScanAdditionalCost(root, rel, relationId,
+-																 indexPath);
++																 indexPath, stats);
+ 	indexPath->path.total_cost += columnarIndexScanCost;
+ 
+ 	ereport(DEBUG4, (errmsg("columnar table index scan costs re-estimated "
+@@ -495,10 +526,11 @@
+  */
+ static Cost
+ ColumnarIndexScanAdditionalCost(PlannerInfo *root, RelOptInfo *rel,
+-								Oid relationId, IndexPath *indexPath)
++								Oid relationId, IndexPath *indexPath,
++								const ColumnarPlannerStats *stats)
+ {
+ 	int numberOfColumnsRead = RelationIdGetNumberOfAttributes(relationId);
+-	Cost perStripeCost = ColumnarPerStripeScanCost(rel, relationId, numberOfColumnsRead);
++	Cost perStripeCost = ColumnarPerStripeScanCost(rel, numberOfColumnsRead, stats);
+ 
+ 	/*
+ 	 * We don't need to pass correct loop count to amcostestimate since we
+@@ -516,14 +548,7 @@
+ 				   &fakeIndexTotalCost, &indexSelectivity,
+ 				   &indexCorrelation, &fakeIndexPages);
+ 
+-	Relation relation = RelationIdGetRelation(relationId);
+-	if (!RelationIsValid(relation))
+-	{
+-		ereport(ERROR, (errmsg("could not open relation with OID %u", relationId)));
+-	}
+-
+-	uint64 rowCount = ColumnarTableRowCount(relation);
+-	RelationClose(relation);
++	uint64 rowCount = stats->rowCount;
+ 	double estimatedRows = rowCount * indexSelectivity;
+ 
+ 	/*
+@@ -538,7 +563,7 @@
+ 	 * to locality.
+ 	 */
+ 	double avgStripeRowCount =
+-		rowCount / (double) ColumnarTableStripeCount(relationId);
++		rowCount / (double) stats->stripeCount;
+ 	double minStripeReadCount = estimatedRows / avgStripeRowCount;
+ 
+ 	/*
+@@ -588,7 +613,8 @@
+  * relationId.
+  */
+ static void
+-CostColumnarSeqPath(RelOptInfo *rel, Oid relationId, Path *path)
++CostColumnarSeqPath(RelOptInfo *rel, Oid relationId, Path *path,
++					const ColumnarPlannerStats *stats)
+ {
+ 	if (!enable_seqscan)
+ 	{
+@@ -600,12 +626,12 @@
+ 	 * Seq scan doesn't support projection or qual pushdown, so we will read
+ 	 * all the stripes and all the columns.
+ 	 */
+-	double stripesToRead = ColumnarTableStripeCount(relationId);
++	double stripesToRead = stats->stripeCount;
+ 	int numberOfColumnsRead = RelationIdGetNumberOfAttributes(relationId);
+ 
+ 	path->startup_cost = 0;
+ 	path->total_cost = stripesToRead *
+-					   ColumnarPerStripeScanCost(rel, relationId, numberOfColumnsRead);
++					   ColumnarPerStripeScanCost(rel, numberOfColumnsRead, stats);
+ }
+ 
+ 
+@@ -1152,7 +1178,8 @@
+  * parameterized paths. See AddColumnarScanPathsRec() for discussion.
+  */
+ static void
+-AddColumnarScanPaths(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
++AddColumnarScanPaths(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte,
++					 const ColumnarPlannerStats *stats)
+ {
+ 	List *joinClauses = FindPushdownJoinClauses(root, rel);
+ 	Relids candidateRelids = FindCandidateRelids(root, rel, joinClauses);
+@@ -1163,7 +1190,7 @@
+ 	Relids paramRelids = bms_copy(rel->lateral_relids);
+ 
+ 	AddColumnarScanPathsRec(root, rel, rte, paramRelids, candidateRelids,
+-							depthLimit);
++							depthLimit, stats);
+ }
+ 
+ 
+@@ -1200,13 +1227,13 @@
+ static void
+ AddColumnarScanPathsRec(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte,
+ 						Relids paramRelids, Relids candidateRelids,
+-						int depthLimit)
++						int depthLimit, const ColumnarPlannerStats *stats)
+ {
+ 	CHECK_FOR_INTERRUPTS();
+ 	check_stack_depth();
+ 
+ 	Assert(!bms_overlap(paramRelids, candidateRelids));
+-	AddColumnarScanPath(root, rel, rte, paramRelids);
++	AddColumnarScanPath(root, rel, rte, paramRelids, stats);
+ 
+ 	/* recurse for all candidateRelids, unless we hit the depth limit */
+ 	Assert(depthLimit >= 0);
+@@ -1235,7 +1262,7 @@
+ 		tmpCandidateRelids = bms_del_member(tmpCandidateRelids, relid);
+ 
+ 		AddColumnarScanPathsRec(root, rel, rte, tmpParamRelids,
+-								tmpCandidateRelids, depthLimit);
++								tmpCandidateRelids, depthLimit, stats);
+ 	}
+ 
+ 	bms_free(tmpCandidateRelids);
+@@ -1312,7 +1339,7 @@
+  */
+ static void
+ AddColumnarScanPath(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte,
+-					Relids paramRelids)
++					Relids paramRelids, const ColumnarPlannerStats *stats)
+ {
+ 	/*
+ 	 * Must return a CustomPath, not a larger structure containing a
+@@ -1423,8 +1450,8 @@
+ 
+ 	int numberOfClausesPushed = list_length(allClauses);
+ 
+-	CostColumnarScan(root, rel, rte->relid, cpath, numberOfColumnsRead,
+-					 numberOfClausesPushed);
++	CostColumnarScan(root, rel, cpath, numberOfColumnsRead,
++					 numberOfClausesPushed, stats);
+ 
+ 
+ 	StringInfoData buf;
+@@ -1504,8 +1531,9 @@
+  * columns to read how many pages need to be read.
+  */
+ static void
+-CostColumnarScan(PlannerInfo *root, RelOptInfo *rel, Oid relationId,
+-				 CustomPath *cpath, int numberOfColumnsRead, int nClauses)
++CostColumnarScan(PlannerInfo *root, RelOptInfo *rel,
++				 CustomPath *cpath, int numberOfColumnsRead, int nClauses,
++				 const ColumnarPlannerStats *stats)
+ {
+ 	Path *path = &cpath->path;
+ 
+@@ -1518,13 +1546,13 @@
+ 	 * misleading, such as inequalities involving an uncorrelated column. So
+ 	 * we can apply the selectivity directly to the number of stripes.
+ 	 */
+-	double stripesToRead = clauseSel * ColumnarTableStripeCount(relationId);
++	double stripesToRead = clauseSel * stats->stripeCount;
+ 	stripesToRead = Max(stripesToRead, 1.0);
+ 
+ 	path->rows = rel->rows;
+ 	path->startup_cost = 0;
+ 	path->total_cost = stripesToRead *
+-					   ColumnarPerStripeScanCost(rel, relationId, numberOfColumnsRead);
++					   ColumnarPerStripeScanCost(rel, numberOfColumnsRead, stats);
+ }
+ 
+ 
+@@ -1534,25 +1562,11 @@
+  * read during scan operation.
+  */
+ static Cost
+-ColumnarPerStripeScanCost(RelOptInfo *rel, Oid relationId, int numberOfColumnsRead)
+-{
+-	Relation relation = RelationIdGetRelation(relationId);
+-	if (!RelationIsValid(relation))
+-	{
+-		ereport(ERROR, (errmsg("could not open relation with OID %u", relationId)));
+-	}
+-
+-	List *stripeList = StripesForRelfilelocator(relation);
+-	RelationClose(relation);
+-
+-	uint32 maxColumnCount = 0;
+-	uint64 totalStripeSize = 0;
+-	StripeMetadata *stripeMetadata = NULL;
+-	foreach_declared_ptr(stripeMetadata, stripeList)
+-	{
+-		totalStripeSize += stripeMetadata->dataLength;
+-		maxColumnCount = Max(maxColumnCount, stripeMetadata->columnCount);
+-	}
++ColumnarPerStripeScanCost(RelOptInfo *rel, int numberOfColumnsRead,
++						 const ColumnarPlannerStats *stats)
++{
++	uint32 maxColumnCount = stats->maxColumnCount;
++	uint64 totalStripeSize = stats->totalStripeSize;
+ 
+ 	/*
+ 	 * When no stripes are in the table we don't have a count in maxColumnCount. To
+@@ -1567,7 +1581,7 @@
+ 
+ 	double columnSelectionRatio = numberOfColumnsRead / (double) maxColumnCount;
+ 	Cost tableScanCost = (double) totalStripeSize / BLCKSZ * columnSelectionRatio;
+-	Cost perStripeScanCost = tableScanCost / list_length(stripeList);
++	Cost perStripeScanCost = tableScanCost / stats->stripeCount;
+ 
+ 	/*
+ 	 * Finally, multiply the cost of reading a single stripe by seq page read
+@@ -1587,25 +1601,29 @@
+ 
+ 
+ /*
+- * ColumnarTableStripeCount returns the number of stripes that columnar
+- * table with relationId has by using stripe metadata.
+- */
+-static uint64
+-ColumnarTableStripeCount(Oid relationId)
+-{
+-	Relation relation = RelationIdGetRelation(relationId);
+-	if (!RelationIsValid(relation))
+-	{
+-		ereport(ERROR, (errmsg("could not open relation with OID %u", relationId)));
+-	}
+-
++ * ReadColumnarPlannerStats aggregates the same visible stripe list used by
++ * the individual cost functions. Keep no metadata pointers in the summary:
++ * it lives on the hook's stack and is consumed before that hook returns.
++ */
++static ColumnarPlannerStats
++ReadColumnarPlannerStats(Relation relation)
++{
++	ColumnarPlannerStats stats = { 0 };
+ 	List *stripeList = StripesForRelfilelocator(relation);
+-	int stripeCount = list_length(stripeList);
+-	RelationClose(relation);
+-
+-	return stripeCount;
+-}
+-
++	stats.stripeCount = list_length(stripeList);
++
++	StripeMetadata *stripeMetadata = NULL;
++	foreach_declared_ptr(stripeMetadata, stripeList)
++	{
++		stats.rowCount += stripeMetadata->rowCount;
++		stats.totalStripeSize += stripeMetadata->dataLength;
++		stats.maxColumnCount = Max(stats.maxColumnCount, stripeMetadata->columnCount);
++	}
++
++	/* Also release the empty-table list before any cost function returns. */
++	list_free_deep(stripeList);
++	return stats;
++}
+ 
+ static Plan *
+ ColumnarScanPath_PlanCustomPath(PlannerInfo *root,
