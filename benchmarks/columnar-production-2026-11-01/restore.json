@@ -1,0 +1,625 @@
+{
+  "all_checks_passed": true,
+  "source_database": "meshinfo_workload_columnar_test",
+  "target_database": "meshinfo_workload_restore_52ac568204_columnar_test",
+  "target_retained": true,
+  "packet_schemas": {
+    "heap": "benchmark_heap_full_aa1b20d976",
+    "columnar": "public"
+  },
+  "shared_schema": "benchmark_shared_aa1b20d976",
+  "hot_month": "2026-10-01",
+  "free_bytes_before": 9274060800,
+  "limits": {
+    "reserve_bytes": 1073741824,
+    "maximum_growth_bytes": 1073741824,
+    "filesystem_probe": "Operator-supplied path must identify the PostgreSQL data filesystem",
+    "geometry": "Exact rows/settings and observed stripe/chunk upper bounds must survive; stripe sequence/distribution and query speed are measured separately"
+  },
+  "source_digests": {
+    "heap_packets": {
+      "rows": 104480,
+      "sha256_sum": "f70bc05ab506c44a0ae59cde445eef8bba33c67957e7f25fb013e2a9a021a2b1",
+      "sha256_xor": "3f126d7fa4cdd4b233b98b8ec736941558201544406a97e8f10d2e6e2ea11ef9"
+    },
+    "columnar_packets": {
+      "rows": 104480,
+      "sha256_sum": "f70bc05ab506c44a0ae59cde445eef8bba33c67957e7f25fb013e2a9a021a2b1",
+      "sha256_xor": "3f126d7fa4cdd4b233b98b8ec736941558201544406a97e8f10d2e6e2ea11ef9"
+    },
+    "receptions": {
+      "rows": 904472,
+      "sha256_sum": "43a58d9955401b007d7d062ae9b49b28d0049eb288aaeab306feb5db802f7a54",
+      "sha256_xor": "4530efcfe4667b33a993134d65bce18c9194a0e89b383e83ea1357959f25031e"
+    },
+    "topics": {
+      "rows": 610,
+      "sha256_sum": "7bde273e922b45ba079e2c3493ef5fc78bd10a70554dab38fb705b1ac51f7f73",
+      "sha256_xor": "10578845610a859615404927dfdc16cb087c82ad63acada93840c2716afc13bb"
+    },
+    "canonical_topic_lookup": {
+      "rows": 63800,
+      "sha256_sum": "0b14d9add5fcd8fcc67016513b98d7fb9161c613ab32a3ae577db109d6d33731",
+      "sha256_xor": "396417fb43c3f41280671934ec90dd4841a6f9b2daf54413582dd1a8ad36fbff"
+    }
+  },
+  "source": {
+    "options": [
+      {
+        "schema": "public",
+        "name": "mqtt_messages_2026_08",
+        "chunk_group_row_limit": 1000,
+        "stripe_row_limit": 150000,
+        "compression_level": 3,
+        "compression": "zstd",
+        "geometry": {
+          "row_count": 32000,
+          "max_stripe_rows": 93,
+          "max_chunk_group_rows": 93
+        }
+      },
+      {
+        "schema": "public",
+        "name": "mqtt_messages_2026_09",
+        "chunk_group_row_limit": 1000,
+        "stripe_row_limit": 150000,
+        "compression_level": 3,
+        "compression": "zstd",
+        "geometry": {
+          "row_count": 31800,
+          "max_stripe_rows": 93,
+          "max_chunk_group_rows": 93
+        }
+      }
+    ],
+    "physical_stripes": {
+      "stripes": 687,
+      "rows": 63800,
+      "chunk_groups": 687,
+      "smallest_stripe_rows": 8,
+      "largest_stripe_rows": 93
+    },
+    "partition_methods": [
+      {
+        "relname": "mqtt_messages_2026_08",
+        "amname": "columnar",
+        "bound": "FOR VALUES FROM ('2026-08-01 00:00:00+00') TO ('2026-09-01 00:00:00+00')"
+      },
+      {
+        "relname": "mqtt_messages_2026_09",
+        "amname": "columnar",
+        "bound": "FOR VALUES FROM ('2026-09-01 00:00:00+00') TO ('2026-10-01 00:00:00+00')"
+      },
+      {
+        "relname": "mqtt_messages_2026_10",
+        "amname": "heap",
+        "bound": "FOR VALUES FROM ('2026-10-01 00:00:00+00') TO ('2026-11-01 00:00:00+00')"
+      },
+      {
+        "relname": "mqtt_messages_2026_11",
+        "amname": "heap",
+        "bound": "FOR VALUES FROM ('2026-11-01 00:00:00+00') TO ('2026-12-01 00:00:00+00')"
+      }
+    ],
+    "schema_storage": {
+      "heap": {
+        "table_bytes": 77873152,
+        "index_bytes": 39469056,
+        "total_bytes": 117342208,
+        "relations": [
+          {
+            "relname": "mqtt_messages_2026_08",
+            "kind": "r",
+            "table_bytes": 23838720,
+            "index_bytes": 9912320,
+            "total_bytes": 33751040,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_2026_09",
+            "kind": "r",
+            "table_bytes": 23445504,
+            "index_bytes": 12713984,
+            "total_bytes": 36159488,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_2026_10",
+            "kind": "r",
+            "table_bytes": 23715840,
+            "index_bytes": 12959744,
+            "total_bytes": 36675584,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_2026_11",
+            "kind": "r",
+            "table_bytes": 6864896,
+            "index_bytes": 3883008,
+            "total_bytes": 10747904,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_id_seq",
+            "kind": "S",
+            "table_bytes": 8192,
+            "index_bytes": 0,
+            "total_bytes": 8192,
+            "access_method": null
+          }
+        ]
+      },
+      "columnar": {
+        "table_bytes": 46366720,
+        "index_bytes": 41156608,
+        "total_bytes": 87523328,
+        "relations": [
+          {
+            "relname": "mqtt_archive_topics_2026_08",
+            "kind": "r",
+            "table_bytes": 2351104,
+            "index_bytes": 3850240,
+            "total_bytes": 6201344,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_archive_topics_2026_09",
+            "kind": "r",
+            "table_bytes": 2875392,
+            "index_bytes": 5283840,
+            "total_bytes": 8159232,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_2026_08",
+            "kind": "r",
+            "table_bytes": 3301376,
+            "index_bytes": 6119424,
+            "total_bytes": 9420800,
+            "access_method": "columnar"
+          },
+          {
+            "relname": "mqtt_messages_2026_09",
+            "kind": "r",
+            "table_bytes": 5619712,
+            "index_bytes": 9027584,
+            "total_bytes": 14647296,
+            "access_method": "columnar"
+          },
+          {
+            "relname": "mqtt_messages_2026_10",
+            "kind": "r",
+            "table_bytes": 23715840,
+            "index_bytes": 12959744,
+            "total_bytes": 36675584,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_2026_11",
+            "kind": "r",
+            "table_bytes": 6864896,
+            "index_bytes": 3883008,
+            "total_bytes": 10747904,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_id_seq",
+            "kind": "S",
+            "table_bytes": 8192,
+            "index_bytes": 0,
+            "total_bytes": 8192,
+            "access_method": null
+          },
+          {
+            "relname": "storage_archive_jobs",
+            "kind": "r",
+            "table_bytes": 1630208,
+            "index_bytes": 32768,
+            "total_bytes": 1662976,
+            "access_method": "heap"
+          }
+        ]
+      },
+      "shared": {
+        "table_bytes": 129662976,
+        "index_bytes": 72269824,
+        "total_bytes": 201932800,
+        "relations": [
+          {
+            "relname": "packet_receptions_2026_08",
+            "kind": "r",
+            "table_bytes": 11354112,
+            "index_bytes": 6250496,
+            "total_bytes": 17604608,
+            "access_method": "heap"
+          },
+          {
+            "relname": "packet_receptions_2026_09",
+            "kind": "r",
+            "table_bytes": 63627264,
+            "index_bytes": 33554432,
+            "total_bytes": 97181696,
+            "access_method": "heap"
+          },
+          {
+            "relname": "packet_receptions_2026_10",
+            "kind": "r",
+            "table_bytes": 43958272,
+            "index_bytes": 25673728,
+            "total_bytes": 69632000,
+            "access_method": "heap"
+          },
+          {
+            "relname": "packet_receptions_2026_11",
+            "kind": "r",
+            "table_bytes": 10633216,
+            "index_bytes": 6692864,
+            "total_bytes": 17326080,
+            "access_method": "heap"
+          },
+          {
+            "relname": "topics",
+            "kind": "r",
+            "table_bytes": 81920,
+            "index_bytes": 98304,
+            "total_bytes": 180224,
+            "access_method": "heap"
+          },
+          {
+            "relname": "topics_id_seq",
+            "kind": "S",
+            "table_bytes": 8192,
+            "index_bytes": 0,
+            "total_bytes": 8192,
+            "access_method": null
+          }
+        ]
+      }
+    },
+    "columnar_metadata": {
+      "total_bytes": 2424832,
+      "relations": [
+        {
+          "nspname": "columnar_internal",
+          "relname": "chunk",
+          "bytes": 2023424
+        },
+        {
+          "nspname": "columnar_internal",
+          "relname": "chunk_group",
+          "bytes": 147456
+        },
+        {
+          "nspname": "columnar_internal",
+          "relname": "options",
+          "bytes": 24576
+        },
+        {
+          "nspname": "columnar_internal",
+          "relname": "storageid_seq",
+          "bytes": 8192
+        },
+        {
+          "nspname": "columnar_internal",
+          "relname": "stripe",
+          "bytes": 221184
+        }
+      ]
+    },
+    "database_bytes": 418772671
+  },
+  "snapshot": {
+    "bytes": 27089285,
+    "sha256": "5b4dfc4dd86cc65e600f25a5410132b84db33a055487a6fd40c0c58d8c447fce",
+    "verification": "archive_decode",
+    "seconds": 6.881077553029172
+  },
+  "restore": {
+    "status": "restored",
+    "bytes": 27089285,
+    "sha256": "5b4dfc4dd86cc65e600f25a5410132b84db33a055487a6fd40c0c58d8c447fce",
+    "manifest_verified": true,
+    "columnar_relations": 2,
+    "physical_geometry_preserved": true,
+    "geometry_note": "Snapshot physical stripe/chunk upper bounds preserved",
+    "single_transaction": true,
+    "data_loaded": true,
+    "seconds": 27.836946772993542
+  },
+  "analyze_seconds": 8.615997154032812,
+  "restored_digests": {
+    "heap_packets": {
+      "rows": 104480,
+      "sha256_sum": "f70bc05ab506c44a0ae59cde445eef8bba33c67957e7f25fb013e2a9a021a2b1",
+      "sha256_xor": "3f126d7fa4cdd4b233b98b8ec736941558201544406a97e8f10d2e6e2ea11ef9"
+    },
+    "columnar_packets": {
+      "rows": 104480,
+      "sha256_sum": "f70bc05ab506c44a0ae59cde445eef8bba33c67957e7f25fb013e2a9a021a2b1",
+      "sha256_xor": "3f126d7fa4cdd4b233b98b8ec736941558201544406a97e8f10d2e6e2ea11ef9"
+    },
+    "receptions": {
+      "rows": 904472,
+      "sha256_sum": "43a58d9955401b007d7d062ae9b49b28d0049eb288aaeab306feb5db802f7a54",
+      "sha256_xor": "4530efcfe4667b33a993134d65bce18c9194a0e89b383e83ea1357959f25031e"
+    },
+    "topics": {
+      "rows": 610,
+      "sha256_sum": "7bde273e922b45ba079e2c3493ef5fc78bd10a70554dab38fb705b1ac51f7f73",
+      "sha256_xor": "10578845610a859615404927dfdc16cb087c82ad63acada93840c2716afc13bb"
+    },
+    "canonical_topic_lookup": {
+      "rows": 63800,
+      "sha256_sum": "0b14d9add5fcd8fcc67016513b98d7fb9161c613ab32a3ae577db109d6d33731",
+      "sha256_xor": "396417fb43c3f41280671934ec90dd4841a6f9b2daf54413582dd1a8ad36fbff"
+    }
+  },
+  "restored": {
+    "options": [
+      {
+        "schema": "public",
+        "name": "mqtt_messages_2026_08",
+        "chunk_group_row_limit": 1000,
+        "stripe_row_limit": 150000,
+        "compression_level": 3,
+        "compression": "zstd",
+        "geometry": {
+          "row_count": 32000,
+          "max_stripe_rows": 93,
+          "max_chunk_group_rows": 93
+        }
+      },
+      {
+        "schema": "public",
+        "name": "mqtt_messages_2026_09",
+        "chunk_group_row_limit": 1000,
+        "stripe_row_limit": 150000,
+        "compression_level": 3,
+        "compression": "zstd",
+        "geometry": {
+          "row_count": 31800,
+          "max_stripe_rows": 93,
+          "max_chunk_group_rows": 93
+        }
+      }
+    ],
+    "physical_stripes": {
+      "stripes": 687,
+      "rows": 63800,
+      "chunk_groups": 687,
+      "smallest_stripe_rows": 8,
+      "largest_stripe_rows": 93
+    },
+    "partition_methods": [
+      {
+        "relname": "mqtt_messages_2026_08",
+        "amname": "columnar",
+        "bound": "FOR VALUES FROM ('2026-08-01 00:00:00+00') TO ('2026-09-01 00:00:00+00')"
+      },
+      {
+        "relname": "mqtt_messages_2026_09",
+        "amname": "columnar",
+        "bound": "FOR VALUES FROM ('2026-09-01 00:00:00+00') TO ('2026-10-01 00:00:00+00')"
+      },
+      {
+        "relname": "mqtt_messages_2026_10",
+        "amname": "heap",
+        "bound": "FOR VALUES FROM ('2026-10-01 00:00:00+00') TO ('2026-11-01 00:00:00+00')"
+      },
+      {
+        "relname": "mqtt_messages_2026_11",
+        "amname": "heap",
+        "bound": "FOR VALUES FROM ('2026-11-01 00:00:00+00') TO ('2026-12-01 00:00:00+00')"
+      }
+    ],
+    "schema_storage": {
+      "heap": {
+        "table_bytes": 78061568,
+        "index_bytes": 28499968,
+        "total_bytes": 106561536,
+        "relations": [
+          {
+            "relname": "mqtt_messages_2026_08",
+            "kind": "r",
+            "table_bytes": 23814144,
+            "index_bytes": 6447104,
+            "total_bytes": 30261248,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_2026_09",
+            "kind": "r",
+            "table_bytes": 23527424,
+            "index_bytes": 9609216,
+            "total_bytes": 33136640,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_2026_10",
+            "kind": "r",
+            "table_bytes": 23814144,
+            "index_bytes": 9478144,
+            "total_bytes": 33292288,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_2026_11",
+            "kind": "r",
+            "table_bytes": 6897664,
+            "index_bytes": 2965504,
+            "total_bytes": 9863168,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_id_seq",
+            "kind": "S",
+            "table_bytes": 8192,
+            "index_bytes": 0,
+            "total_bytes": 8192,
+            "access_method": null
+          }
+        ]
+      },
+      "columnar": {
+        "table_bytes": 44924928,
+        "index_bytes": 32546816,
+        "total_bytes": 77471744,
+        "relations": [
+          {
+            "relname": "mqtt_archive_topics_2026_08",
+            "kind": "r",
+            "table_bytes": 2342912,
+            "index_bytes": 3366912,
+            "total_bytes": 5709824,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_archive_topics_2026_09",
+            "kind": "r",
+            "table_bytes": 2883584,
+            "index_bytes": 4694016,
+            "total_bytes": 7577600,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_2026_08",
+            "kind": "r",
+            "table_bytes": 3301376,
+            "index_bytes": 5062656,
+            "total_bytes": 8364032,
+            "access_method": "columnar"
+          },
+          {
+            "relname": "mqtt_messages_2026_09",
+            "kind": "r",
+            "table_bytes": 5619712,
+            "index_bytes": 6955008,
+            "total_bytes": 12574720,
+            "access_method": "columnar"
+          },
+          {
+            "relname": "mqtt_messages_2026_10",
+            "kind": "r",
+            "table_bytes": 23814144,
+            "index_bytes": 9478144,
+            "total_bytes": 33292288,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_2026_11",
+            "kind": "r",
+            "table_bytes": 6897664,
+            "index_bytes": 2965504,
+            "total_bytes": 9863168,
+            "access_method": "heap"
+          },
+          {
+            "relname": "mqtt_messages_id_seq",
+            "kind": "S",
+            "table_bytes": 8192,
+            "index_bytes": 0,
+            "total_bytes": 8192,
+            "access_method": null
+          },
+          {
+            "relname": "storage_archive_jobs",
+            "kind": "r",
+            "table_bytes": 57344,
+            "index_bytes": 24576,
+            "total_bytes": 81920,
+            "access_method": "heap"
+          }
+        ]
+      },
+      "shared": {
+        "table_bytes": 129417216,
+        "index_bytes": 65544192,
+        "total_bytes": 194961408,
+        "relations": [
+          {
+            "relname": "packet_receptions_2026_08",
+            "kind": "r",
+            "table_bytes": 11264000,
+            "index_bytes": 5480448,
+            "total_bytes": 16744448,
+            "access_method": "heap"
+          },
+          {
+            "relname": "packet_receptions_2026_09",
+            "kind": "r",
+            "table_bytes": 63733760,
+            "index_bytes": 30580736,
+            "total_bytes": 94314496,
+            "access_method": "heap"
+          },
+          {
+            "relname": "packet_receptions_2026_10",
+            "kind": "r",
+            "table_bytes": 43663360,
+            "index_bytes": 23527424,
+            "total_bytes": 67190784,
+            "access_method": "heap"
+          },
+          {
+            "relname": "packet_receptions_2026_11",
+            "kind": "r",
+            "table_bytes": 10690560,
+            "index_bytes": 5865472,
+            "total_bytes": 16556032,
+            "access_method": "heap"
+          },
+          {
+            "relname": "topics",
+            "kind": "r",
+            "table_bytes": 57344,
+            "index_bytes": 90112,
+            "total_bytes": 147456,
+            "access_method": "heap"
+          },
+          {
+            "relname": "topics_id_seq",
+            "kind": "S",
+            "table_bytes": 8192,
+            "index_bytes": 0,
+            "total_bytes": 8192,
+            "access_method": null
+          }
+        ]
+      }
+    },
+    "columnar_metadata": {
+      "total_bytes": 2310144,
+      "relations": [
+        {
+          "nspname": "columnar_internal",
+          "relname": "chunk",
+          "bytes": 1982464
+        },
+        {
+          "nspname": "columnar_internal",
+          "relname": "chunk_group",
+          "bytes": 122880
+        },
+        {
+          "nspname": "columnar_internal",
+          "relname": "options",
+          "bytes": 24576
+        },
+        {
+          "nspname": "columnar_internal",
+          "relname": "storageid_seq",
+          "bytes": 8192
+        },
+        {
+          "nspname": "columnar_internal",
+          "relname": "stripe",
+          "bytes": 172032
+        }
+      ]
+    },
+    "database_bytes": 390373903
+  },
+  "source_options_unchanged": true,
+  "minimum_free_bytes": 8832172032,
+  "free_bytes_after": 8865497088
+}

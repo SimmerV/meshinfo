@@ -1,0 +1,150 @@
+{
+  "all_checks_passed": true,
+  "target_database": "meshinfo_workload_columnar_test",
+  "isolated_workload_only": true,
+  "free_bytes_before": 9331204096,
+  "partitions": [
+    {
+      "partition": "mqtt_messages_2026_08",
+      "cycles": [
+        {
+          "status": "copying",
+          "job_id": "92db3ff6-48f5-4a03-a8fd-fba994f78940",
+          "partition": "mqtt_messages_2026_08",
+          "target_method": "heap",
+          "rows_copied": 31753,
+          "rows_verified": 0,
+          "elapsed_seconds": 7.027
+        },
+        {
+          "status": "complete",
+          "job_id": "92db3ff6-48f5-4a03-a8fd-fba994f78940",
+          "partition": "mqtt_messages_2026_08",
+          "target_method": "heap",
+          "rows_copied": 32000,
+          "rows_verified": 32000,
+          "elapsed_seconds": 2.476
+        }
+      ],
+      "method_before": "columnar",
+      "request": {
+        "status": "copying",
+        "job_id": "92db3ff6-48f5-4a03-a8fd-fba994f78940",
+        "partition": "mqtt_messages_2026_08",
+        "target_method": "heap"
+      },
+      "seconds": 9.677,
+      "packet_digest": {
+        "rows": 104480,
+        "sha256_sum": "f70bc05ab506c44a0ae59cde445eef8bba33c67957e7f25fb013e2a9a021a2b1",
+        "sha256_xor": "3f126d7fa4cdd4b233b98b8ec736941558201544406a97e8f10d2e6e2ea11ef9"
+      }
+    },
+    {
+      "partition": "mqtt_messages_2026_09",
+      "cycles": [
+        {
+          "status": "copying",
+          "job_id": "f2de7d4f-f6f0-46ea-8186-417fe5f1c92b",
+          "partition": "mqtt_messages_2026_09",
+          "target_method": "heap",
+          "rows_copied": 13447,
+          "rows_verified": 0,
+          "elapsed_seconds": 7.044
+        },
+        {
+          "status": "copying",
+          "job_id": "f2de7d4f-f6f0-46ea-8186-417fe5f1c92b",
+          "partition": "mqtt_messages_2026_09",
+          "target_method": "heap",
+          "rows_copied": 25764,
+          "rows_verified": 0,
+          "elapsed_seconds": 7.019
+        },
+        {
+          "status": "ready",
+          "job_id": "f2de7d4f-f6f0-46ea-8186-417fe5f1c92b",
+          "partition": "mqtt_messages_2026_09",
+          "target_method": "heap",
+          "rows_copied": 31800,
+          "rows_verified": 31800,
+          "elapsed_seconds": 6.39
+        },
+        {
+          "status": "complete",
+          "job_id": "f2de7d4f-f6f0-46ea-8186-417fe5f1c92b",
+          "partition": "mqtt_messages_2026_09",
+          "target_method": "heap",
+          "rows_copied": 31800,
+          "rows_verified": 31800,
+          "elapsed_seconds": 0.738
+        }
+      ],
+      "method_before": "columnar",
+      "request": {
+        "status": "copying",
+        "job_id": "f2de7d4f-f6f0-46ea-8186-417fe5f1c92b",
+        "partition": "mqtt_messages_2026_09",
+        "target_method": "heap"
+      },
+      "seconds": 21.369,
+      "packet_digest": {
+        "rows": 104480,
+        "sha256_sum": "f70bc05ab506c44a0ae59cde445eef8bba33c67957e7f25fb013e2a9a021a2b1",
+        "sha256_xor": "3f126d7fa4cdd4b233b98b8ec736941558201544406a97e8f10d2e6e2ea11ef9"
+      }
+    }
+  ],
+  "limits": {
+    "reserve_bytes": 1073741824,
+    "max_seconds": 600
+  },
+  "before_digests": {
+    "packets": {
+      "rows": 104480,
+      "sha256_sum": "f70bc05ab506c44a0ae59cde445eef8bba33c67957e7f25fb013e2a9a021a2b1",
+      "sha256_xor": "3f126d7fa4cdd4b233b98b8ec736941558201544406a97e8f10d2e6e2ea11ef9"
+    },
+    "baseline_packets": {
+      "rows": 104480,
+      "sha256_sum": "f70bc05ab506c44a0ae59cde445eef8bba33c67957e7f25fb013e2a9a021a2b1",
+      "sha256_xor": "3f126d7fa4cdd4b233b98b8ec736941558201544406a97e8f10d2e6e2ea11ef9"
+    },
+    "receptions": {
+      "rows": 904472,
+      "sha256_sum": "43a58d9955401b007d7d062ae9b49b28d0049eb288aaeab306feb5db802f7a54",
+      "sha256_xor": "4530efcfe4667b33a993134d65bce18c9194a0e89b383e83ea1357959f25031e"
+    },
+    "topics": {
+      "rows": 610,
+      "sha256_sum": "7bde273e922b45ba079e2c3493ef5fc78bd10a70554dab38fb705b1ac51f7f73",
+      "sha256_xor": "10578845610a859615404927dfdc16cb087c82ad63acada93840c2716afc13bb"
+    }
+  },
+  "after_digests": {
+    "packets": {
+      "rows": 104480,
+      "sha256_sum": "f70bc05ab506c44a0ae59cde445eef8bba33c67957e7f25fb013e2a9a021a2b1",
+      "sha256_xor": "3f126d7fa4cdd4b233b98b8ec736941558201544406a97e8f10d2e6e2ea11ef9"
+    },
+    "baseline_packets": {
+      "rows": 104480,
+      "sha256_sum": "f70bc05ab506c44a0ae59cde445eef8bba33c67957e7f25fb013e2a9a021a2b1",
+      "sha256_xor": "3f126d7fa4cdd4b233b98b8ec736941558201544406a97e8f10d2e6e2ea11ef9"
+    },
+    "receptions": {
+      "rows": 904472,
+      "sha256_sum": "43a58d9955401b007d7d062ae9b49b28d0049eb288aaeab306feb5db802f7a54",
+      "sha256_xor": "4530efcfe4667b33a993134d65bce18c9194a0e89b383e83ea1357959f25031e"
+    },
+    "topics": {
+      "rows": 610,
+      "sha256_sum": "7bde273e922b45ba079e2c3493ef5fc78bd10a70554dab38fb705b1ac51f7f73",
+      "sha256_xor": "10578845610a859615404927dfdc16cb087c82ad63acada93840c2716afc13bb"
+    }
+  },
+  "seconds": 84.931,
+  "ready_for_fresh_forward_measurement": true,
+  "free_bytes_after": 9291431936,
+  "live_storage_untouched": true
+}

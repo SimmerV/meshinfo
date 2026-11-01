@@ -29,9 +29,16 @@ FROM (SELECT n.nspname AS schema,c.relname AS name,
     o.chunk_group_row_limit AS chunk_group_row_limit,
     o.stripe_row_limit AS stripe_row_limit,
     o.compression_level AS compression_level,
-    o.compression::text AS compression
+    o.compression::text AS compression,
+    json_build_object('row_count',coalesce(g.row_count,0),
+      'max_stripe_rows',coalesce(g.max_stripe_rows,0),
+      'max_chunk_group_rows',coalesce(cg.max_chunk_group_rows,0)) AS geometry
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     JOIN pg_am a ON a.oid=c.relam LEFT JOIN columnar.options o ON o.relation=c.oid
+    LEFT JOIN (SELECT relation,sum(row_count)::bigint AS row_count,max(row_count) AS max_stripe_rows
+      FROM columnar.stripe GROUP BY relation) g ON g.relation=c.oid
+    LEFT JOIN (SELECT relation,max(row_count) AS max_chunk_group_rows
+      FROM columnar.chunk_group GROUP BY relation) cg ON cg.relation=c.oid
     WHERE a.amname='columnar' AND c.relkind='r' AND c.relpersistence<>'t') settings"""
 
 
@@ -74,7 +81,7 @@ class SnapshotMetadata:
         from storage.backup import _tail
         self.proc = await asyncio.create_subprocess_exec(
             *self.prefix, "psql", "-X", "-qAt", "--set=ON_ERROR_STOP=1",
-            *connection_arguments(self.pg), env=self.environment,
+            *connection_arguments(self.pg), env={**self.environment, "PGCLIENTENCODING": "UTF8"},
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE, limit=RESTORE_METADATA_BYTES + 1024)
         self.errors = asyncio.create_task(_tail(self.proc.stderr))
@@ -103,7 +110,7 @@ class SnapshotMetadata:
                 if len(relations) != count:
                     raise ValueError
             self.snapshot = snapshot
-            self.metadata = validate_restore_metadata({"schema": 1,
+            self.metadata = validate_restore_metadata({"schema": 2,
                 "postgres_major": base["postgres_major"], "extension": base["extension"],
                 "relations": relations})
             return self
@@ -192,3 +199,26 @@ def options_assertion_sql(metadata):
           OR o.compression::text IS DISTINCT FROM x.compression)
       THEN RAISE EXCEPTION 'Columnar options do not match verified backup metadata'; END IF;
     END $meshinfo_columnar_options$;\n"""
+
+
+def geometry_assertion_sql(metadata):
+    """Verify exact row totals and physical upper bounds before outer commit."""
+    metadata = validate_restore_metadata(metadata)
+    if metadata["schema"] != 2 or not metadata["relations"]:
+        return ""
+    encoded = json.dumps(metadata["relations"], ensure_ascii=True, separators=(",", ":")).encode().hex()
+    return f"""DO $meshinfo_columnar_geometry$
+    DECLARE expected jsonb := convert_from(decode('{encoded}','hex'),'UTF8')::jsonb;
+    BEGIN
+      IF EXISTS (SELECT 1 FROM jsonb_to_recordset(expected) AS x(schema text,name text,geometry jsonb)
+        LEFT JOIN pg_namespace n ON n.nspname=x.schema
+        LEFT JOIN pg_class c ON c.relnamespace=n.oid AND c.relname=x.name
+        LEFT JOIN (SELECT relation,sum(row_count)::bigint AS rows,max(row_count) AS stripe
+          FROM columnar.stripe GROUP BY relation) s ON s.relation=c.oid
+        LEFT JOIN (SELECT relation,max(row_count) AS chunk
+          FROM columnar.chunk_group GROUP BY relation) g ON g.relation=c.oid
+        WHERE coalesce(s.rows,0) <> (x.geometry->>'row_count')::bigint
+           OR coalesce(s.stripe,0) > (x.geometry->>'max_stripe_rows')::bigint
+           OR coalesce(g.chunk,0) > (x.geometry->>'max_chunk_group_rows')::bigint)
+      THEN RAISE EXCEPTION 'Columnar restored physical geometry exceeds snapshot bounds'; END IF;
+    END $meshinfo_columnar_geometry$;\n"""

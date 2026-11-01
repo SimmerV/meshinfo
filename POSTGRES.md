@@ -472,9 +472,15 @@ and the existing `<archive>.manifest.json`. The manifest now also carries a
 bounded, checksummed `restore_metadata` object with the PostgreSQL major version,
 exact installed Columnar extension version, and the effective compression,
 compression level, stripe row limit and chunk-group row limit of **every**
-Columnar table. This includes detached or staged archive tables in other schemas.
+Columnar table. Version 2 metadata also records the snapshot's exact logical row
+count and observed maximum rows per physical stripe and chunk group. Effective
+options alone are insufficient: a table configured for 1,000-row chunks can have
+192-row physical stripes because its original writes committed in small batches.
+Combining those rows into large stripes on restore can substantially slow point
+queries even when every byte and option is preserved. The metadata includes
+detached or staged archive tables in other schemas.
 The backup's read-only metadata session exports a snapshot that `pg_dump` imports,
-so both describe the same database snapshot while the existing maintenance lock
+so options, physical bounds and data describe the same database snapshot while the existing maintenance lock
 continues to protect archive/retention operations. There are no writes to Citus
 internal catalogs. The backup role must be able to view every Columnar table's
 options (the public options view restricts these to table owners and roles with
@@ -486,7 +492,14 @@ archive decoding, timeout cleanup and local/SSH retention rules remain in force.
 The receiver verifies the metadata checksum before publishing the archive and
 manifest. Keep the manifest with the archive when moving or downloading backups.
 A standalone `pg_restore` does not apply this metadata and may silently recreate
-Columnar tables with default geometry; use the restore tool below. Archive
+Columnar tables with default geometry; use the restore tool below. New snapshots
+request UTF-8 dump encoding and quote all identifiers, including identifiers with
+Unicode, embedded quotes or newlines. Payload COPY bytes are streamed opaquely;
+no JSON parsing or reserialization occurs during restoration. Geometry-aware
+COPY identifiers must be UTF-8, which the new dump command guarantees even for
+another convertible source database encoding. Malformed/non-UTF-8 identifiers
+in an externally constructed version 2 archive are refused rather than guessed.
+Legacy heap data sections are forwarded unchanged. Archive
 readability verification remains distinct from a successful restore drill.
 
 ### Restore to an empty database
@@ -513,14 +526,25 @@ transaction in this order:
 
 1. Restore extension/schema definitions and verify the complete Columnar table inventory.
 2. Apply and verify every captured Columnar option through supported `ALTER TABLE` APIs.
-3. Load the archived rows, then restore indexes, constraints and triggers.
-4. Recheck inventory/options and commit. Any SQL, producer or verification failure rolls back.
+3. Load the archived rows, then restore indexes, constraints and triggers. For
+   version 2 Columnar metadata, split text COPY into bounded batches wrapped in
+   savepoints. Releasing a savepoint flushes a Citus stripe without committing
+   the outer restore transaction; splitting COPY statements alone does not.
+4. Recheck inventory/options, exact Columnar row totals and the recorded physical
+   upper bounds, then commit. Any SQL, producer, parser or verification failure
+   rolls back everything, including already released savepoints.
 
 The exact extension version must be available; the destination PostgreSQL major
 must match backups that carry restore metadata. Missing, mismatched or incomplete
 Columnar metadata causes refusal. Existing heap-only custom dumps, including
 legacy dumps without manifests, remain supported; they still receive an actual
 catalog check rejecting undocumented Columnar tables before data loading.
+Older version 1 Columnar manifests also remain data/options compatible, but lack
+physical bounds: the restore result explicitly reports
+`physical_geometry_preserved=false` and warns that query latency may change.
+Make a new version 2 snapshot when physical grouping needs to be retained. A true
+flag means the observed maximum stripe/chunk sizes and row totals were preserved;
+it does not promise identical file bytes, stripe membership or query timings.
 Passwords are passed through the private subprocess environment, not command
 arguments or reported errors. Restore metadata includes names/options, never
 payload copies or credentials.

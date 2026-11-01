@@ -74,6 +74,7 @@ def digest(rows):
 async def seed(conn, marker):
     require(await conn.fetchval("SELECT to_regclass('public.mqtt_messages') IS NULL"), "Crash fixture database already has history")
     require(await conn.fetchval("SELECT to_regclass('public.storage_archive_jobs') IS NULL"), "Crash fixture database already has an archive journal")
+    require(await conn.fetchval("SELECT to_regclass('public.mqtt_archive_topics') IS NULL"), "Crash fixture database already has topic lookup coverage")
     await archive.ensure_archive_schema(conn)
     async with conn.transaction():
         await conn.execute("""CREATE TABLE public.mqtt_messages (
@@ -169,7 +170,7 @@ async def run(args):
             await archive._copy_chunk(conn,job,policy,free_bytes)
         job = await archive._job(conn,job_id)
         require(0<job["rows_copied"]<512, "Expected a partial committed copy checkpoint")
-        before = await archive._size(conn,job["stage_name"])
+        before = await archive._stage_size(conn,job)
         await conn.execute("UPDATE public.storage_archive_jobs SET inflight_bytes=$2 WHERE job_id=$1",job_id,before)
         transaction = conn.transaction()
         await transaction.start()
@@ -225,9 +226,10 @@ async def run(args):
         if owned:
             owner = await conn.fetchval("SELECT obj_description(to_regclass('public.mqtt_messages'),'pg_class')")
             require(owner == marker, "Cleanup refused: fixture ownership marker changed")
-            for row in await conn.fetch("SELECT stage_name FROM public.storage_archive_jobs"):
-                await conn.execute(f"DROP TABLE IF EXISTS {archive._q(row['stage_name'])}")
-            await conn.execute("DROP TABLE public.mqtt_messages; DROP TABLE public.storage_archive_jobs")
+            for row in await conn.fetch("SELECT stage_name,topic_stage_name FROM public.storage_archive_jobs"):
+                for name in {row["stage_name"],row["topic_stage_name"]}-{None}:
+                    await conn.execute(f"DROP TABLE IF EXISTS {archive._q(name)}")
+            await conn.execute("DROP TABLE public.mqtt_messages; DROP TABLE public.mqtt_archive_topics; DROP TABLE public.storage_archive_jobs")
         await conn.close()
 
 

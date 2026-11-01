@@ -196,6 +196,33 @@ async def _expire_packets(conn, cutoff, *, max_months, tail_limit, interleaved_l
         old_oids = {r["relation_oid"] for r in old}
         old_canonical = [r for r in old if r["parent_name"] == "mqtt_messages"]
         old_receptions = [r for r in old if r["parent_name"] == "packet_receptions"]
+        # Topic lookup rows contain retained canonical text and must expire in
+        # the same transaction. Never drop a merely similarly named relation:
+        # validate the worker's ownership guards and the exact month bounds.
+        old_topics = []
+        if await conn.fetchval("SELECT to_regclass('public.mqtt_archive_topics')"):
+            from storage.db.archive_topics import attached_partition
+            from storage.db.archive import ArchiveBlocked
+
+            async def validated_helper(start, end):
+                try:
+                    return await attached_partition(conn, start, end, validate=True)
+                except ArchiveBlocked as exc:
+                    raise RetentionBlocked(str(exc)) from exc
+
+            await conn.execute('LOCK TABLE ONLY public.mqtt_archive_topics IN ACCESS EXCLUSIVE MODE NOWAIT')
+            for start, end in selected:
+                helper = await validated_helper(start, end)
+                if helper is None:
+                    continue
+                target = _quoted('public', helper['name'])
+                await conn.execute(f'LOCK TABLE ONLY {target} IN ACCESS EXCLUSIVE MODE NOWAIT')
+                current_helper = await validated_helper(start, end)
+                if current_helper is None or current_helper['oid'] != helper['oid']:
+                    raise RetentionBlocked('Topic lookup changed while acquiring expiration locks')
+                helper = dict(helper)
+                helper['total_bytes'] = await conn.fetchval('SELECT pg_total_relation_size($1::oid::regclass)', helper['oid'])
+                old_topics.append(helper)
         kept_canonical = [r for r in children if r["parent_name"] == "mqtt_messages" and r["relation_oid"] not in old_oids]
         kept_receptions = [r for r in children if r["parent_name"] == "packet_receptions" and r["relation_oid"] not in old_oids]
         identity_columns = await conn.fetch("""
@@ -266,15 +293,16 @@ async def _expire_packets(conn, cutoff, *, max_months, tail_limit, interleaved_l
                     raise RetentionBlocked("Reception cleanup affected an unexpected number of rows")
         # No CASCADE: extension/user dependencies must fail and roll back the
         # entire cohort, including any reception tail deletes above.
-        targets = ", ".join(_relation(r) for r in old_receptions + old_canonical)
+        targets = ", ".join([_relation(r) for r in old_receptions + old_canonical]
+                            + [_quoted('public', r['name']) for r in old_topics])
         await conn.execute(f"DROP TABLE {targets}")
         if await conn.fetchval("SELECT to_regclass('public.storage_archive_jobs')"):
             await conn.execute("DELETE FROM public.storage_archive_jobs WHERE phase IN ('complete','cancelled','failed') "
                                "AND source_name=ANY($1::text[])", [r['relation_name'] for r in old_canonical])
         result = _empty_scope(cutoff, "partial" if len(expired) > len(selected) else "complete")
-        result.update(partitions_dropped=[r["relation_name"] for r in old],
+        result.update(partitions_dropped=[r["relation_name"] for r in old] + [r['name'] for r in old_topics],
                       receptions_deleted=len(tails),
-                      estimated_partition_bytes_removed=sum(r["total_bytes"] for r in old))
+                      estimated_partition_bytes_removed=sum(r["total_bytes"] for r in old + old_topics))
         if result["status"] == "partial":
             result["reason"] = "Additional expired months remain for subsequent bounded runs"
         return result

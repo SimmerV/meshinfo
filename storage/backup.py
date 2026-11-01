@@ -228,6 +228,7 @@ def _dump_command(pg: Mapping[str, Any], prefix: Sequence[str], *, snapshot: str
     return (
         *prefix,
         "pg_dump", "--format=custom", "--no-owner", "--no-privileges",
+        "--encoding=UTF8", "--quote-all-identifiers",
         *(("--snapshot", snapshot) if snapshot is not None else ()),
         "--host", str(pg.get("host", "postgres")),
         "--port", str(pg.get("port", 5432)),

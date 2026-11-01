@@ -1,0 +1,142 @@
+{
+  "all_checks_passed": false,
+  "target_database": "meshinfo_workload_columnar_test",
+  "packet_schemas": {
+    "heap": "benchmark_heap_full_aa1b20d976",
+    "columnar": "public"
+  },
+  "shared_schema": "benchmark_shared_aa1b20d976",
+  "duration_seconds": 30,
+  "ingest_per_second": 5,
+  "reader_workers": 2,
+  "reads_per_second_per_worker": 5,
+  "thresholds": {
+    "read_p95_ms": 1000,
+    "write_p95_ms": 1000,
+    "columnar_to_heap_p95_ratio": 3
+  },
+  "limits": [
+    "Bounded isolated fixture; this is not production-scale capacity proof.",
+    "Hot writes use an existing fixture month; archived query windows exclude them.",
+    "PostgreSQL and OS caches may be warm. No host caches are dropped.",
+    "Relative gates use the same query on each layout under concurrent load."
+  ],
+  "ownership": {
+    "first_id": 8000001683693082624,
+    "exclusive_last_id": 8000001683693084672,
+    "created_at": "2026-10-15T00:02:23+00:00"
+  },
+  "cleanup_complete": true,
+  "write_latency": {
+    "count": 150,
+    "p50_ms": 12.611,
+    "p95_ms": 52.88,
+    "max_ms": 59.933
+  },
+  "write_errors": [],
+  "read_errors": [],
+  "read_latency": {
+    "heap": {
+      "archive_page": {
+        "count": 7,
+        "p50_ms": 11.342,
+        "p95_ms": 15.429,
+        "max_ms": 15.429
+      },
+      "archive_common_payload": {
+        "count": 8,
+        "p50_ms": 13.827,
+        "p95_ms": 55.329,
+        "max_ms": 55.329
+      },
+      "archive_absent_payload": {
+        "count": 8,
+        "p50_ms": 1084.189,
+        "p95_ms": 1100.399,
+        "max_ms": 1100.399
+      },
+      "archive_receipt_topic": {
+        "count": 8,
+        "p50_ms": 2287.483,
+        "p95_ms": 2369.472,
+        "max_ms": 2369.472
+      },
+      "archive_node": {
+        "count": 6,
+        "p50_ms": 4.215,
+        "p95_ms": 6.363,
+        "max_ms": 6.363
+      },
+      "archive_literal_topic": {
+        "count": 6,
+        "p50_ms": 6.31,
+        "p95_ms": 8.716,
+        "max_ms": 8.716
+      }
+    },
+    "columnar": {
+      "archive_page": {
+        "count": 7,
+        "p50_ms": 90.988,
+        "p95_ms": 155.125,
+        "max_ms": 155.125
+      },
+      "archive_common_payload": {
+        "count": 8,
+        "p50_ms": 74.835,
+        "p95_ms": 118.613,
+        "max_ms": 118.613
+      },
+      "archive_absent_payload": {
+        "count": 8,
+        "p50_ms": 1191.721,
+        "p95_ms": 1287.471,
+        "max_ms": 1287.471
+      },
+      "archive_receipt_topic": {
+        "count": 8,
+        "p50_ms": 2245.421,
+        "p95_ms": 2318.2,
+        "max_ms": 2318.2
+      },
+      "archive_node": {
+        "count": 6,
+        "p50_ms": 19.286,
+        "p95_ms": 62.771,
+        "max_ms": 62.771
+      },
+      "archive_literal_topic": {
+        "count": 6,
+        "p50_ms": 217.727,
+        "p95_ms": 223.812,
+        "max_ms": 223.812
+      }
+    }
+  },
+  "read_gates": {
+    "archive_page": {
+      "columnar_to_heap_p95_ratio": 10.054118867068507,
+      "passed": false
+    },
+    "archive_common_payload": {
+      "columnar_to_heap_p95_ratio": 2.143776319832276,
+      "passed": true
+    },
+    "archive_absent_payload": {
+      "columnar_to_heap_p95_ratio": 1.1700037895345234,
+      "passed": false
+    },
+    "archive_receipt_topic": {
+      "columnar_to_heap_p95_ratio": 0.9783614239796882,
+      "passed": false
+    },
+    "archive_node": {
+      "columnar_to_heap_p95_ratio": 9.865000785792864,
+      "passed": false
+    },
+    "archive_literal_topic": {
+      "columnar_to_heap_p95_ratio": 25.67829279486003,
+      "passed": false
+    }
+  }
+}

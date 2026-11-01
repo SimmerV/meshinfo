@@ -315,6 +315,46 @@ window in heap storage. Retention that expires a month takes precedence over
 compressing it. Compression never extends a finite retention policy and never
 makes forever retention fit a fixed disk indefinitely.
 
+### Canonical-topic lookup and query behavior
+
+Each archived month also has a heap partition under `mqtt_archive_topics`.
+It stores the exact canonical `(id, created_at, topic)` triples, including NULL
+topics, with a primary key, an ordered paging index and a topic trigram index.
+Payloads remain in Columnar. This additional table makes literal topic filters
+indexable despite Columnar's lack of GIN support. Its heap and index bytes are
+part of the archive estimate, actual staging budget and storage inventory;
+compression savings must include this cost.
+
+The worker copies and independently verifies those triples before attaching the
+lookup in the same transaction as the compressed packet month. Both become
+immutable under validated guards. When automatic archiving is enabled, existing
+Columnar months missing a lookup are eligible for a resumable lookup-only job,
+which takes priority over new conversions. Until a complete lookup is attached,
+queries use the canonical packet table for that month. Cancellation removes only
+the job's validated detached stage. Finite retention removes an expired month's
+lookup with its canonical history in the same transaction; verified restoration
+to heap removes the lookup at the atomic reverse switch.
+
+Literal topic filters preserve literal `%`, `_` and backslash characters. They
+use complete lookup months together with native hot/uncovered months, under one
+repeatable-read snapshot and parent locks that coordinate with conversion and
+expiration. Simple topic/date pages select bounded identities before loading
+payloads; both identity columns are checked and the requested cursor order is
+restored. Combined topic, free-text and device-reported-time filters apply all
+predicates before the final page limit, so selective matches beyond the first
+topic page are not omitted. Node pages use separately indexed sender/recipient
+branches and exclude only duplicate self-addressed results.
+
+Free-text search retains its existing ILIKE wildcard behavior and includes
+eligible gateway reception topics. Matching dictionary IDs use a bounded array;
+more than 4,096 matches switch to an exact dictionary lookup instead of growing
+that array without limit. This does not truncate search results. Planner changes
+are transaction-local: selective pages use custom plans, and only a bounded
+exact-payload fetch disables Columnar custom scans. Broad payload searches can
+still scan substantial history. Bounded result pages and statement deadlines do
+not imply identical latency to heap storage or a constant memory limit for
+arbitrarily large payloads.
+
 ### Deploy without starting a conversion
 
 Use a tested application revision containing the archive, query, retention and
@@ -406,6 +446,18 @@ budget and at least 1 GiB free reserve. The executor checks actual free space an
 physical staging growth as it advances. It never drops the original to manufacture
 space for its replacement.
 
+Small copy batches bound memory, locks and WAL per transaction; they do not bound
+the complete replacement's disk footprint. Before the switch, free space must
+cover the estimated compressed month, its retained indexes, the canonical-topic
+lookup and its indexes, the WAL allowance, and the free-space reserve. The old
+month already occupies disk and remains in place until verification succeeds.
+Smaller eligible months can finish first and release their original files to
+fund a larger conversion. If the remaining month still does not fit, reclaim
+unrelated unused files or add capacity before retrying. Lowering the reserve or
+deleting parts of the original is not a supported way to make the job fit.
+Future ingestion also needs ongoing headroom: retention limits growth, while
+keeping all history still requires eventual disk expansion even with compression.
+
 Verification compares every retained column, including text bytes and NULLs,
 then checks schema, constraints, indexes, partition bounds and job ownership
 again before a short atomic switch. Readers see the complete original or the
@@ -431,8 +483,8 @@ forward conversion on the next maintenance attempt. Completed compressed months
 remain readable and compressed. A pending explicitly requested heap restoration
 continues even while automatic archiving is disabled.
 
-History queries use indexed identities and bounded candidate pages across both
-storage methods. A timeout returns HTTP 504 (`history_query_timeout`); an
+History queries preserve their existing filters and keyset pagination across
+both storage methods. A timeout returns HTTP 504 (`history_query_timeout`); an
 unavailable query returns HTTP 503 (`history_unavailable`), with retry metadata.
 Failures are never reported as an empty page or a missing packet. Test older
 packet links, reception-only searches, reused mesh packet IDs, cursor ties and
@@ -468,7 +520,12 @@ Normal local/SSH backups preserve all Columnar relation options, including an
 unfinished stage, under the same exported snapshot as the dump. Keep each
 `.dump` and `.manifest.json` together and use `scripts/restore_database.py`, which
 checks the exact extension version, applies options **before COPY**, and restores
-in a single transaction. Missing or mismatched metadata refuses the restore.
+in a single transaction. Version 2 metadata additionally captures observed
+physical stripe/chunk row limits. The restore releases bounded COPY savepoints
+inside that transaction so short source stripes do not silently become large
+ones; failure still rolls back the whole restore. Version 1 manifests remain
+compatible but explicitly report that physical geometry and latency can change.
+Missing or mismatched metadata refuses the restore.
 Restored jobs resolve new object OIDs only after validating names, schema and
 job-specific guards; a logical restore cannot blindly reuse old OIDs. Preserve
 the original database role for an in-progress job; an ownership change requires
@@ -651,7 +708,12 @@ also now explicitly describes canonical-packet age and grouped copy expiration.
 
 ## Compressed packet-history prototype (2026-10-30)
 
-**Real payload compression is feasible; production conversion is not ready.**
+**Historical prototype record.** The results and limitations in this section
+describe the 2026-10-30 experiment before the archive worker was implemented.
+At that point, real payload compression was feasible and production conversion
+was not ready. See the [implementation and acceptance status](#columnar-implementation-and-acceptance-status-2026-11-01)
+for the subsequent work and its remaining validation gates.
+
 The earlier index packing does not compress historical packet records. This
 prototype tests PostgreSQL partitions with the standalone Citus Columnar access
 method and Zstandard compression. It adds operator experiments and reports,
@@ -810,7 +872,11 @@ instead of raising the caps. Raw fixtures, dump files, credentials, temporary
 containers, and test databases must be removed after verification. Only aggregate
 reports belong in Git.
 
-### Gates before upstream integration and production conversion
+### Historical pre-implementation gates
+
+These were the requirements identified by the prototype, not a current list of
+unimplemented features. The dated implementation status below distinguishes
+completed code and verification from deployment acceptance.
 
 1. Add an independently configured archive age while preserving forever retention
    by default. Archiving keeps history; finite retention deletes it. Support
@@ -847,3 +913,59 @@ The tested engine's
 describes mixed partitions, B-tree support, unsupported GIN indexes, append-only
 restrictions, and space retained by aborted writes. These constraints need
 explicit application support; installing the extension alone is insufficient.
+
+## Columnar implementation and acceptance status (2026-11-01)
+
+The four prototype blockers now have implementations and isolated verification.
+This entry records implementation evidence, not approval to update an arbitrary
+production deployment. Final workload latency, development deployment checks and
+native CI for the final revision must be accepted before a production rollout.
+
+| Area | Implemented behavior and verification |
+| --- | --- |
+| Policy and mixed storage | Archive age is independent of finite retention; both default to preserving existing history. Startup supports heap/Columnar leaves, validates index coverage, and avoids modifying frozen history. Actual rollover checks exercised the current month, two future months and default routing alongside compressed history. |
+| Bounded conversion | Committed checkpoints, exact row comparisons, source/stage ownership guards, conservative space/WAL checks, cancellation, reverse conversion and shared maintenance exclusion are implemented. An actual PostgreSQL process kill and restart preserved committed history and allowed checkpoint recovery. |
+| Searchable history | Canonical-topic lookup partitions, indexed node branches, combined filters, cursor ordering and reception reconstruction are verified against real heap/mixed fixtures. A 4,098-topic fixture proved dictionary overflow still finds reception-only matches outside the bounded fast-path array. |
+| Backup and recovery | Snapshot-bound manifests preserve every Columnar relation, including detached stages. Restore applies exact options before COPY and uses bounded savepoint batches inside one atomic transaction to preserve observed physical grouping limits. Local/remote receiver, rollback, large rows and restored checkpoint continuation have real database coverage. |
+
+One full backend regression run recorded **937 passed, 92 skipped**; skipped
+database suites require explicit isolated test connections and are not counted
+as database passes. A separate execution passed **39 real archive, application,
+catalog and legacy-maintenance cases**. Additional focused workload-verifier and
+recycling tests passed. These counts describe individual runs rather than a
+single combined test total.
+
+The small backup/restore fixture passed with **4,530 rows, two Columnar relations
+and eight chunk groups**, including a payload larger than 2 MiB, a detached
+stage, escaped identifiers and injected failure proving outer rollback. COPY
+rows stream in bounded fragments rather than imposing a small payload-line cap.
+
+The larger workload's final logical restore preserved **63,800 Columnar packet
+rows, 687 stripes and 687 chunk groups**. Source and restored groups both ranged
+from **8 to 93 rows**. Packet, reception and canonical-topic lookup digests
+matched exactly. The custom-format snapshot was **27,089,285 bytes**, took
+**6.88 seconds** to create, and restored in **27.84 seconds**; subsequent
+`ANALYZE` took **8.62 seconds**. These are isolated workload observations, not a
+full-history size forecast or a production recovery-time guarantee.
+
+Physical grouping is part of recovery validation because preserving only
+`columnar.options` can regroup many short writes into large stripes and slow
+indexed reads. Version 2 manifests preserve row totals and observed maximum
+stripe/chunk row counts. They do not promise identical stripe membership for
+heterogeneous sources. Version 1 manifests remain readable with an explicit
+geometry/latency warning; raw `pg_restore` does not provide these guarantees.
+
+Native amd64 and arm64 image/restore checks passed an earlier implementation
+revision. The expanded workflow now also requires production reader tests on
+both architectures, including an explicitly installed Columnar extension.
+Only a successful run for the final application/image revision establishes its
+native validation; earlier green runs do not cover later code changes.
+
+Remaining acceptance work at this checkpoint is to compare the final workload's
+forward/restored query timings under the chosen load, inspect the actual
+development deployment and its ingestion behavior, and obtain final native CI
+results. Compression is lossless and immediately queryable, but query speed
+depends on filters, physical grouping, indexes, cache state and history size.
+The operator must also retain enough space for complete replacement stages,
+ongoing ingestion and recovery. A finite retention window bounds history age;
+keeping all history still requires growing storage capacity over time.

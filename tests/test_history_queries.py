@@ -3,14 +3,16 @@
 import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import asyncpg
 import pytest
 
 from storage.db.history_queries import (
     HistoryReadError, HistoryUnavailableError, literal_topic_pattern,
-    packet_page_sql,
+    packet_page_sql, fetch_packet_page, topic_coverage_intervals, topic_candidate_sql,
+    fetch_topic_packet_page, ordered_packet_rows, packet_payload_sql,
+    topic_match_cte, TOPIC_MATCH_ARRAY_LIMIT,
 )
 from storage.db.postgres import PostgresStorage, _decode_cursor
 
@@ -25,7 +27,19 @@ def packet(identity, payload='{"from":1}', **updates):
 
 
 def storage_with_connection(connection):
+    if not hasattr(connection, "transaction"):
+        transaction = MagicMock()
+        transaction.__aenter__ = AsyncMock()
+        transaction.__aexit__ = AsyncMock(return_value=False)
+        connection.transaction = lambda **kwargs: transaction
+    if not hasattr(connection, "execute"):
+        connection.execute = AsyncMock()
+    if not hasattr(connection, "fetchval"):
+        connection.fetchval = AsyncMock(return_value=None)
     class Acquisition:
+        def __init__(self, **kwargs):
+            assert kwargs.get("timeout") == 3
+
         async def __aenter__(self):
             return connection
 
@@ -71,6 +85,84 @@ def test_request_cancellation_is_not_wrapped_or_swallowed():
         asyncio.run(storage.query_mqtt_messages())
 
 
+def test_selective_topic_planner_setting_is_local_and_rolled_back_on_failure():
+    transaction = MagicMock()
+    transaction.__aenter__ = AsyncMock()
+    transaction.__aexit__ = AsyncMock(return_value=False)
+    failure = TimeoutError()
+    connection = SimpleNamespace(transaction=lambda **kwargs: transaction,
+                                 execute=AsyncMock(), fetch=AsyncMock(side_effect=failure))
+    with pytest.raises(TimeoutError):
+        asyncio.run(fetch_packet_page(connection, "SELECT $1", "private", custom_plan=True))
+    connection.execute.assert_awaited_once_with("SET LOCAL plan_cache_mode = force_custom_plan")
+    assert transaction.__aexit__.await_args.args[1] is failure
+
+
+def test_topic_lookup_coverage_preserves_gaps_and_binds_half_open_months():
+    intervals = topic_coverage_intervals([
+        "FOR VALUES FROM ('2020-01-01 00:00:00+00') TO ('2020-02-01 00:00:00+00')",
+        "FOR VALUES FROM ('2020-02-01 00:00:00+00') TO ('2020-03-01 00:00:00+00')",
+        "FOR VALUES FROM ('2020-04-01 00:00:00+00') TO ('2020-05-01 00:00:00+00')"])
+    assert len(intervals) == 2
+    query, parameters = topic_candidate_sql(["topic ILIKE $1", "created_at <= $2"], 3, intervals)
+    assert "UNION ALL" in query and "AND NOT (" in query
+    assert "FROM mqtt_archive_topics" in query and "FROM mqtt_messages" in query
+    assert query.count("created_at <= $2") == 2 and "LIMIT $3::integer" in query
+    assert len(parameters) == 4 and "$4::timestamptz" in query and "$7::timestamptz" in query
+
+
+def test_topic_bounds_rendered_in_local_timezone_still_cover_exact_utc_month():
+    intervals = topic_coverage_intervals([
+        "FOR VALUES FROM ('2020-01-31 16:00:00-08') TO ('2020-02-29 16:00:00-08')"])
+    assert intervals == [(datetime(2020,2,1,tzinfo=timezone.utc), datetime(2020,3,1,tzinfo=timezone.utc))]
+
+
+@pytest.mark.parametrize("bound", ["DEFAULT", "FOR VALUES FROM (MINVALUE) TO (MAXVALUE)",
+    "FOR VALUES FROM ('2020-01-15') TO ('2020-02-01')",
+    "FOR VALUES FROM ('2020-01-01T00:00:00Z') TO ('2020-03-01T00:00:00Z')"])
+def test_topic_lookup_refuses_unverified_coverage_shapes(bound):
+    with pytest.raises(ValueError):
+        topic_coverage_intervals([bound])
+
+
+def test_topic_lookup_never_silently_omits_a_key_without_its_canonical_payload():
+    transaction = MagicMock()
+    transaction.__aenter__ = AsyncMock()
+    transaction.__aexit__ = AsyncMock(return_value=False)
+    connection = SimpleNamespace(transaction=lambda **kwargs: transaction, execute=AsyncMock(),
+        fetchval=AsyncMock(return_value=42), fetch=AsyncMock(side_effect=[
+            [{"bounds": "FOR VALUES FROM ('2026-01-01T00:00:00Z') TO ('2026-02-01T00:00:00Z')"}],
+            [{"id": 1, "created_at": STAMP}], []]))
+    with pytest.raises(HistoryReadError, match="could not be read"):
+        asyncio.run(fetch_topic_packet_page(connection, ["topic ILIKE $1"], ["literal", 2], 2, "0"))
+    assert transaction.__aexit__.await_args.args[0] is HistoryReadError
+
+
+def test_bound_payload_fetch_restores_cursor_order_and_checks_both_identity_columns():
+    first, second = packet(2), packet(1)
+    keys = [{"id": row["id"], "created_at": row["created_at"]} for row in (first, second)]
+    assert ordered_packet_rows(keys, [second, first]) == [first, second]
+    sql, parameters = packet_payload_sql(keys, "0")
+    assert "ORDER BY id,created_at" in sql and "wanted.created_at=mqtt_messages.created_at" in sql
+    assert parameters[0] == [2, 1] and parameters[1] == [STAMP, STAMP]
+    with pytest.raises(HistoryReadError):
+        ordered_packet_rows(keys, [first, first])
+    with pytest.raises(HistoryReadError):
+        ordered_packet_rows([keys[0], keys[0]], [first])
+
+
+def test_optional_chunk_envelopes_cover_every_key_and_keep_exact_membership_filter():
+    from scripts.benchmark_history_read_plans import envelope_payload_sql
+    ids = [1, 2, 3, *range(100, 10_000, 97)]
+    keys = [{"id": identity, "created_at": STAMP} for identity in reversed(ids)]
+    sql, parameters = envelope_payload_sql(keys, "0")
+    spans = list(zip(parameters[4::2], parameters[5::2]))
+    assert 1 <= len(spans) <= 16
+    assert all(any(low <= identity <= high for low, high in spans) for identity in ids)
+    assert "id=ANY($1::bigint[])" in sql
+    assert "wanted.created_at=mqtt_messages.created_at" in sql
+
+
 def test_search_text_and_literal_topic_are_bound_with_distinct_wildcard_semantics():
     connection = SimpleNamespace(fetch=AsyncMock(return_value=[]))
     storage = storage_with_connection(connection)
@@ -81,10 +173,24 @@ def test_search_text_and_literal_topic_are_bound_with_distinct_wildcard_semantic
     query, *parameters = connection.fetch.await_args.args
     assert search not in query and topic not in query
     assert parameters == [search, literal_topic_pattern(topic), 3]
-    assert "pr.topic_id = ANY(ARRAY(SELECT id FROM mqtt_topics" in query
+    assert "packet_topic_matches AS MATERIALIZED" in query
+    assert "SELECT cardinality(ids)>0 FROM packet_topic_matches" in query
+    assert "pr.topic_id = ANY((SELECT ids FROM packet_topic_matches)::integer[])" in query
     assert "JOIN mqtt_topics" not in query
     assert "pr.created_at >= mqtt_messages.created_at" in query
     assert "pr.created_at < mqtt_messages.created_at" in query
+
+
+def test_matching_topic_dictionary_array_has_a_hard_row_bound_and_exact_overflow_path():
+    cte = topic_match_cte(2)
+    assert f"LIMIT {TOPIC_MATCH_ARRAY_LIMIT+1}" in cte
+    assert f"count(*)>{TOPIC_MATCH_ARRAY_LIMIT} AS overflow" in cte
+    connection = SimpleNamespace(fetch=AsyncMock(return_value=[]))
+    asyncio.run(storage_with_connection(connection).query_mqtt_messages(search="%"))
+    sql = connection.fetch.await_args.args[0]
+    assert "CASE WHEN (SELECT overflow FROM packet_topic_matches) THEN EXISTS" in sql
+    assert "matched_topic.id=pr.topic_id" in sql
+    assert "matched_topic.topic ILIKE '%' || $1 || '%'" in sql
 
 
 def test_page_preserves_tied_timestamp_cursor_and_malformed_scalar_null_payloads():
@@ -152,6 +258,15 @@ def test_node_branch_plan_bounds_both_arms_and_excludes_only_self_address_duplic
     assert query.count("created_at <= $2") == 2
     with pytest.raises(ValueError, match="node reader"):
         packet_page_sql(["topic=$1"], 2, "(SELECT 0)", strategy="node_branches")
+
+
+def test_full_row_node_union_avoids_second_payload_lookup_and_bounds_each_arm():
+    query = packet_page_sql(["(from_node_id = $1 OR to_node_id = $1)", "created_at <= $2"],
+                            3, "(SELECT 0)", strategy="node_rows")
+    assert query.count("LIMIT $3::integer") == 3
+    assert "UNION ALL" in query and " JOIN " not in query
+    assert "to_node_id=$1 AND from_node_id IS DISTINCT FROM $1" in query
+    assert query.count("SELECT id,topic,payload,qos,retain,timestamp,created_at") == 3
 
 
 def test_read_plan_runner_rejects_live_target_before_opening_any_pool(monkeypatch):

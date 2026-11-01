@@ -19,6 +19,7 @@ from typing import Callable
 import uuid
 
 from storage.db.compression import GIB, MIB, MQTT_COLUMNS, quote_identifier
+from storage.db import archive_topics
 from storage.db.retention_executor import maintenance_lock
 from storage.db.storage_report import monthly_partition_bounds
 from storage.retention import complete_month_cutoff, retention_policy
@@ -94,6 +95,7 @@ CREATE TABLE IF NOT EXISTS public.storage_archive_jobs (
     job_id UUID PRIMARY KEY,
     source_oid OID NOT NULL, source_name TEXT NOT NULL,
     stage_oid OID, stage_name TEXT NOT NULL,
+    topic_stage_oid OID, topic_stage_name TEXT, topic_stage_fingerprint JSONB NOT NULL DEFAULT '{}',
     source_method TEXT NOT NULL DEFAULT 'heap', target_method TEXT NOT NULL DEFAULT 'columnar',
     previous_guard_job UUID, original_comment TEXT, target_index_signatures JSONB NOT NULL DEFAULT '[]',
     target_constraint_signatures JSONB NOT NULL DEFAULT '[]',
@@ -120,6 +122,9 @@ ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS previous_guard_
 ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS original_comment TEXT;
 ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS target_index_signatures JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS target_constraint_signatures JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS topic_stage_oid OID;
+ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS topic_stage_name TEXT;
+ALTER TABLE public.storage_archive_jobs ADD COLUMN IF NOT EXISTS topic_stage_fingerprint JSONB NOT NULL DEFAULT '{}';
 CREATE UNIQUE INDEX IF NOT EXISTS storage_archive_one_active
     ON public.storage_archive_jobs ((true)) WHERE phase IN ('copying','verifying','ready');
 CREATE OR REPLACE FUNCTION public.meshinfo_archive_freeze() RETURNS trigger
@@ -134,7 +139,7 @@ LANGUAGE plpgsql SET search_path=pg_catalog,public AS $archive$
 BEGIN
     IF current_setting('meshinfo.archive_job',true) IS DISTINCT FROM TG_ARGV[0]
        OR NOT EXISTS (SELECT 1 FROM public.storage_archive_jobs
-                      WHERE job_id=TG_ARGV[0]::uuid AND stage_oid=TG_RELID
+                      WHERE job_id=TG_ARGV[0]::uuid AND (stage_oid=TG_RELID OR topic_stage_oid=TG_RELID)
                         AND phase='copying' AND source_frozen) THEN
         RAISE EXCEPTION USING ERRCODE='55000',MESSAGE='Archive staging table is private to its copy job';
     END IF;
@@ -146,6 +151,7 @@ $archive$;
 
 async def ensure_archive_schema(conn):
     await conn.execute(ARCHIVE_SCHEMA_SQL)
+    await conn.execute(archive_topics.SCHEMA_SQL)
 
 
 def _q(name):
@@ -239,6 +245,12 @@ async def plan_archive(conn, config):
         retention = retention_policy(config)
         expires = complete_month_cutoff(now, retention.months_for("packets")) if retention.enabled else None
         leaves = await conn.fetch(_LEAVES_SQL)
+        topic_bounds = set()
+        if await conn.fetchval("SELECT to_regclass('public.mqtt_archive_topics') IS NOT NULL"):
+            for topic in await conn.fetch("""SELECT pg_get_expr(c.relpartbound,c.oid) AS bound
+                FROM pg_inherits i JOIN pg_class c ON c.oid=i.inhrelid
+                WHERE i.inhparent='public.mqtt_archive_topics'::regclass"""):
+                topic_bounds.add(monthly_partition_bounds(topic["bound"]))
         jobs = []
         failed = set()
         if await conn.fetchval("SELECT to_regclass('public.storage_archive_jobs') IS NOT NULL"):
@@ -252,14 +264,15 @@ async def plan_archive(conn, config):
     candidates = []
     for row in leaves:
         bounds = monthly_partition_bounds(row["bound"])
-        reason = ("already_archived" if row["method"] == "columnar" else
-                  "unsupported_access_method" if row["method"] != "heap" else
+        reason = ("unsupported_access_method" if row["method"] not in ("heap","columnar") else
                   "not_monthly_partition" if bounds is None else
                   "awaiting_retention" if expires is not None and bounds[1] <= expires else
                   "previous_attempt_failed_cancel_job_to_retry" if row["name"] in failed else
-                  "too_recent" if bounds[1] > cutoff else None)
-        candidates.append({**dict(row), "eligible": reason is None, "reason": reason})
-    candidates.sort(key=lambda item: (not item["eligible"], item["total_bytes"], item["name"]))
+                  "already_archived" if row["method"] == "columnar" and bounds in topic_bounds else
+                  "too_recent" if row["method"] == "heap" and bounds[1] > cutoff else None)
+        candidates.append({**dict(row), "eligible": reason is None, "reason": reason,
+                           "target_method": "topics" if row["method"] == "columnar" else "columnar"})
+    candidates.sort(key=lambda item: (not item["eligible"], item["target_method"] != "topics", item["total_bytes"], item["name"]))
     return {"enabled": policy.enabled, "after_months": policy.after_months, "jobs": jobs,
             "partitions": candidates, "note": "Catalog preview; copy requires a measured staging estimate and database-filesystem headroom."}
 
@@ -367,6 +380,13 @@ async def _size(conn, name):
     return await conn.fetchval("SELECT pg_total_relation_size($1::regclass)::bigint", _q(name))
 
 
+async def _stage_size(conn,job):
+    total = await _size(conn,job["stage_name"])
+    if job.get("topic_stage_name") and job["topic_stage_name"] != job["stage_name"]:
+        total += await _size(conn,job["topic_stage_name"])
+    return total
+
+
 async def _options(conn, name, options):
     await conn.execute(f"ALTER TABLE {_q(name)} SET (columnar.compression='zstd',"
         f"columnar.compression_level={int(options['compression_level'])},columnar.stripe_row_limit=150000,"
@@ -385,18 +405,23 @@ async def _estimate(conn, source, policy, *, target_method="columnar", extra_ind
     # Length metadata bounds transfer/memory without materializing enormous text.
     sample_method = "TABLESAMPLE SYSTEM (1) REPEATABLE (731)" if source["method"] == "heap" else ""
     sample_order = "" if source["method"] == "heap" else "ORDER BY id,created_at"
+    index_sample_limit = policy.max_wal_bytes//(4*128)-1 if extra_indexes else policy.batch_bytes
     await conn.execute(f"""WITH sample AS MATERIALIZED (
-        SELECT id,created_at,128+coalesce(octet_length(payload),0)+coalesce(octet_length(topic),0) AS n
+        SELECT id,created_at,128+coalesce(octet_length(payload),0)+coalesce(octet_length(topic),0) AS n,
+          1+coalesce(octet_length(topic),0) AS topic_bytes
         FROM {_q(source['name'])} {sample_method}
         WHERE coalesce(octet_length(payload),0)+coalesce(octet_length(topic),0)<=$1 {sample_order} LIMIT 1000),
-        bounded AS (SELECT id,created_at,sum(n) OVER (ORDER BY id,created_at) AS bytes FROM sample)
+        bounded AS (SELECT id,created_at,sum(n) OVER (ORDER BY id,created_at) AS bytes,
+          sum(topic_bytes) OVER(ORDER BY id,created_at) AS topic_bytes FROM sample)
         INSERT INTO {_q(heap)} ({_columns()}) SELECT {_columns('s')}
         FROM {_q(source['name'])} s JOIN bounded b USING(id,created_at)
-        WHERE b.bytes<=$2 ORDER BY s.id,s.created_at""", min(MIB, policy.batch_bytes), policy.batch_bytes)
+        WHERE b.bytes<=$2 AND b.topic_bytes<=$3 ORDER BY s.id,s.created_at""",
+        min(MIB, policy.batch_bytes), policy.batch_bytes,index_sample_limit)
     extra_ratio = 0
     if not await conn.fetchval(f"SELECT EXISTS(SELECT 1 FROM {_q(heap)})"):
         await conn.execute(f"INSERT INTO {_q(heap)} ({_columns()}) SELECT {_columns()} FROM {_q(source['name'])} "
-            "WHERE coalesce(octet_length(payload),0)+coalesce(octet_length(topic),0)<=$1 ORDER BY id,created_at LIMIT 1", policy.batch_bytes)
+            "WHERE coalesce(octet_length(payload),0)+coalesce(octet_length(topic),0)<=$1 "
+            "AND coalesce(octet_length(topic),0)<=$2 ORDER BY id,created_at LIMIT 1", policy.batch_bytes,index_sample_limit)
     if not await conn.fetchval(f"SELECT EXISTS(SELECT 1 FROM {_q(heap)})"):
         if await conn.fetchval(f"SELECT EXISTS(SELECT 1 FROM {_q(source['name'])})"):
             raise ArchiveBlocked("No bounded compression sample is available; increase the batch byte budget")
@@ -444,7 +469,7 @@ async def _start(conn, source, policy, free_bytes, *, target_method="columnar"):
         await _settings(conn, policy)
         await _environment(conn)
         source_method = source["method"]
-        if (source_method, target_method) not in (("heap", "columnar"), ("columnar", "heap")):
+        if (source_method, target_method) not in (("heap", "columnar"), ("columnar", "heap"), ("columnar","topics")):
             raise ArchiveBlocked("Archive conversion requires opposite supported source/target access methods")
         fingerprint = await _fingerprint(conn, source["oid"], source_method)
         previous_guard_job = None
@@ -467,7 +492,13 @@ async def _start(conn, source, policy, free_bytes, *, target_method="columnar"):
             if not extra_indexes:
                 extra_indexes = ["gin (topic gin_trgm_ops)"]
         _free(free_bytes, policy, 4*policy.batch_bytes + policy.max_wal_bytes)
-        estimated = await _estimate(conn, source, policy, target_method=target_method, extra_indexes=extra_indexes)
+        await archive_topics.validate_parent(conn)
+        if target_method in ("columnar","topics") and await archive_topics.attached_partition(conn,*bounds) is not None:
+            raise ArchiveBlocked("Canonical topic lookup already covers this source month")
+        estimated = 0 if target_method == "topics" else await _estimate(
+            conn, source, policy, target_method=target_method, extra_indexes=extra_indexes)
+        if target_method in ("columnar","topics"):
+            estimated += await archive_topics.estimate(conn,source,policy)
         _free(free_bytes, policy, estimated + policy.max_wal_bytes)
         # This brief lock drains earlier writers before installing ALWAYS guards.
         await conn.execute(f"LOCK TABLE ONLY {_q(source['name'])} IN SHARE ROW EXCLUSIVE MODE NOWAIT")
@@ -485,6 +516,17 @@ async def _start(conn, source, policy, free_bytes, *, target_method="columnar"):
             await conn.execute(f"DROP TRIGGER meshinfo_archive_freeze ON {_q(source['name'])}")
             await conn.execute(f"DROP TRIGGER meshinfo_archive_freeze_truncate ON {_q(source['name'])}")
         await _freeze(conn, source["name"], job_id)
+        if target_method in ("columnar","topics"):
+            topic_name = stage if target_method == "topics" else "meshinfo_topics_stage_"+job_id.hex[:24]
+            topic_oid, topic_fingerprint = await archive_topics.create_stage(
+                conn,topic_name,job_id,bounds,fingerprint["relation"]["owner"])
+            await conn.execute("""UPDATE public.storage_archive_jobs SET topic_stage_name=$2,topic_stage_oid=$3,
+                topic_stage_fingerprint=$4::jsonb WHERE job_id=$1""",job_id,topic_name,topic_oid,json.dumps(topic_fingerprint))
+            if target_method == "topics":
+                await conn.execute("""UPDATE public.storage_archive_jobs SET stage_oid=$2,target_index_signatures=$3::jsonb,
+                    target_constraint_signatures=$4::jsonb WHERE job_id=$1""",job_id,topic_oid,
+                    json.dumps(topic_fingerprint["indexes"]),json.dumps(topic_fingerprint["constraints"]))
+                return job_id
         # Copy exact constraints/index definitions into an empty heap first;
         # remove only unsupported GIN copies before the cheap empty conversion.
         await conn.execute(f"CREATE TABLE {_q(stage)} (LIKE {_q(source['name'])} INCLUDING ALL) USING heap")
@@ -532,6 +574,15 @@ async def _validate_job(conn, job):
         raise ArchiveBlocked("Archive source freeze guards changed or were disabled")
     if await _fingerprint(conn, source_oid, job.get("source_method", "heap")) != _json(job["schema_fingerprint"]):
         raise ArchiveBlocked("Archive source identity or schema changed")
+    if job.get("target_method", "columnar") in ("columnar","topics"):
+        await archive_topics.validate_parent(conn)
+        await archive_topics.validate_stage(conn,job)
+    if job.get("target_method") == "topics":
+        if (source_oid,stage_oid) != (job["source_oid"],job["stage_oid"]):
+            await conn.execute("UPDATE public.storage_archive_jobs SET source_oid=$2,stage_oid=$3 WHERE job_id=$1",
+                               job["job_id"],source_oid,stage_oid)
+            job["source_oid"],job["stage_oid"] = source_oid,stage_oid
+        return
     stage = await conn.fetchrow("""SELECT a.amname,c.reltablespace,c.relrowsecurity,c.relforcerowsecurity,
         c.relhasrules,c.relacl::text,pg_get_userbyid(c.relowner) AS owner,
         obj_description(c.oid,'pg_class') AS comment,
@@ -598,18 +649,25 @@ async def _validate_job(conn, job):
         job["source_oid"], job["stage_oid"] = source_oid, stage_oid
 
 
-async def _batch(conn, name, last_id, last_time, policy):
+async def _batch(conn, name, last_id, last_time, policy, *, topics_only=False, build_topic_index=False):
+    payload_size = "0" if topics_only else "coalesce(octet_length(payload),0)"
     rows = await conn.fetch(f"""SELECT id,created_at,
-        128+coalesce(octet_length(payload),0)+coalesce(octet_length(topic),0) AS logical_bytes
+        128+{payload_size}+coalesce(octet_length(topic),0) AS logical_bytes,
+        128*(1+coalesce(octet_length(topic),0)::bigint) AS topic_index_budget
         FROM {_q(name)} WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz))
         ORDER BY id,created_at LIMIT $3""", last_id, last_time, policy.batch_rows)
-    selected, size = [], 0
+    selected, size, topic_budget = [], 0, 0
     for row in rows:
-        if size + row["logical_bytes"] > policy.batch_bytes:
+        if (size + row["logical_bytes"] > policy.batch_bytes or
+                build_topic_index and topic_budget+row["topic_index_budget"] > policy.max_wal_bytes//4):
             break
         selected.append(row)
         size += row["logical_bytes"]
+        if build_topic_index:
+            topic_budget += row["topic_index_budget"]
     if rows and not selected:
+        if build_topic_index and rows[0]["topic_index_budget"] > policy.max_wal_bytes//4:
+            raise ArchiveBlocked("One canonical topic exceeds the conservative archive GIN/WAL budget; increase max_wal_mib with verified headroom")
         raise ArchiveBlocked("One history row exceeds the configured archive batch byte limit")
     return selected, size
 
@@ -617,7 +675,7 @@ async def _batch(conn, name, last_id, last_time, policy):
 async def _recover_inflight(conn, job, policy):
     if job["inflight_bytes"] is None:
         return
-    actual = await _size(conn, job["stage_name"])
+    actual = await _stage_size(conn,job)
     leaked = max(0, actual - job["inflight_bytes"])
     await conn.execute("""UPDATE public.storage_archive_jobs SET inflight_bytes=NULL,
         aborted_bytes=aborted_bytes+$2,abort_count=abort_count+1,updated_at=clock_timestamp()
@@ -632,31 +690,41 @@ async def _copy_chunk(conn, job, policy, free_bytes):
     # resolves atomically: either both rows and checkpoint exist, or neither.
     indexes = len(_json(job.get("target_index_signatures", "[]"))) or sum(
         row["amname"] != "gin" for row in _json(job["schema_fingerprint"])["indexes"])
+    if job.get("topic_stage_name") and job["topic_stage_name"] != job["stage_name"]:
+        indexes += 3
     # Budget multiple index-page images per row as well as raw column buffers.
     # The observed WAL counter is global and may also include live ingestion.
-    rows = max(1, (policy.max_wal_bytes-2*policy.batch_bytes)//(32768*max(1,indexes)))
+    # Trigram entries add work proportional to topic bytes, independently of
+    # the number of row/index-page images. Reserve a quarter of the WAL budget
+    # and bound that fanout before reading/copying text or modifying either stage.
+    gin_budget = policy.max_wal_bytes//4
+    rows = max(1, (policy.max_wal_bytes-2*policy.batch_bytes-gin_budget)//(32768*max(1,indexes)))
     batch_policy = replace(policy, batch_rows=min(policy.batch_rows, rows))
-    before = await _size(conn, job["stage_name"])
-    _free(free_bytes, policy, max(4*policy.batch_bytes+32768*indexes*batch_policy.batch_rows, min(policy.max_wal_bytes,
+    before = await _stage_size(conn,job)
+    _free(free_bytes, policy, max(4*policy.batch_bytes+32768*indexes*batch_policy.batch_rows+gin_budget, min(policy.max_wal_bytes,
           max(0, job["estimated_stage_bytes"]-before))))
     await conn.execute("UPDATE public.storage_archive_jobs SET inflight_bytes=$2,blocked_reason=NULL WHERE job_id=$1",
                        job["job_id"], before)
     async with conn.transaction():
         await _settings(conn, policy)
-        selected, logical = await _batch(conn, job["source_name"], job["last_id"], job["last_created_at"], batch_policy)
+        selected, logical = await _batch(conn, job["source_name"], job["last_id"], job["last_created_at"], batch_policy,
+                                         topics_only=job.get("target_method") == "topics",build_topic_index=True)
         if not selected:
             await conn.execute("""UPDATE public.storage_archive_jobs SET phase='verifying',inflight_bytes=NULL,
                 updated_at=clock_timestamp() WHERE job_id=$1""", job["job_id"])
             return
         last = selected[-1]
         await conn.execute("SELECT set_config('meshinfo.archive_job',$1,true)", str(job["job_id"]))
-        command = await conn.execute(f"""INSERT INTO {_q(job['stage_name'])} ({_columns()})
-            SELECT {_columns()} FROM {_q(job['source_name'])}
-            WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz))
-              AND (id,created_at)<=($3,$4) ORDER BY id,created_at""",
-            job["last_id"], job["last_created_at"], last["id"], last["created_at"])
-        if command != f"INSERT 0 {len(selected)}":
-            raise ArchiveBlocked("Frozen source changed while copying an archive chunk")
+        if job.get("target_method") != "topics":
+            command = await conn.execute(f"""INSERT INTO {_q(job['stage_name'])} ({_columns()})
+                SELECT {_columns()} FROM {_q(job['source_name'])}
+                WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz))
+                  AND (id,created_at)<=($3,$4) ORDER BY id,created_at""",
+                job["last_id"], job["last_created_at"], last["id"], last["created_at"])
+            if command != f"INSERT 0 {len(selected)}":
+                raise ArchiveBlocked("Frozen source changed while copying an archive chunk")
+        if job.get("topic_stage_name"):
+            await archive_topics.copy_chunk(conn,job,last,len(selected))
         _free(free_bytes, policy, 2*policy.batch_bytes)
         await conn.execute("""UPDATE public.storage_archive_jobs SET last_id=$2,last_created_at=$3,
             rows_copied=rows_copied+$4,copied_logical_bytes=copied_logical_bytes+$5,inflight_bytes=NULL,
@@ -675,7 +743,10 @@ def _exact_equal():
 async def _verify_chunk(conn, job, policy):
     async with conn.transaction():
         await _settings(conn, policy)
-        selected, _size_bytes = await _batch(conn, job["source_name"], job["verify_id"], job["verify_created_at"], policy)
+        selected, _size_bytes = await _batch(conn, job["source_name"], job["verify_id"], job["verify_created_at"], policy,
+                                             topics_only=job.get("target_method") == "topics")
+        if job.get("topic_stage_name"):
+            await archive_topics.verify_chunk(conn,job,selected)
         if not selected:
             extra = await conn.fetchval(f"SELECT EXISTS(SELECT 1 FROM {_q(job['stage_name'])} "
                 "WHERE ($1::bigint IS NULL OR (id,created_at)>($1,$2::timestamptz)) LIMIT 1)",
@@ -685,6 +756,11 @@ async def _verify_chunk(conn, job, policy):
             await conn.execute("UPDATE public.storage_archive_jobs SET phase='ready',updated_at=clock_timestamp() WHERE job_id=$1", job["job_id"])
             return
         last = selected[-1]
+        if job.get("target_method") == "topics":
+            await conn.execute("""UPDATE public.storage_archive_jobs SET verify_id=$2,verify_created_at=$3,
+                rows_verified=rows_verified+$4,blocked_reason=NULL,updated_at=clock_timestamp() WHERE job_id=$1""",
+                job["job_id"],last["id"],last["created_at"],len(selected))
+            return
         # FULL JOIN detects extra and missing keys; bytea equality makes text
         # checks exact even under a case-insensitive database collation.
         good = await conn.fetchval(f"""WITH s AS MATERIALIZED (
@@ -707,7 +783,10 @@ async def _cutover(conn, job, policy, free_bytes):
     async with conn.transaction():
         await _settings(conn, policy)
         await conn.execute("LOCK TABLE ONLY public.mqtt_messages IN ACCESS EXCLUSIVE MODE NOWAIT")
+        await conn.execute("LOCK TABLE ONLY public.mqtt_archive_topics IN ACCESS EXCLUSIVE MODE NOWAIT")
         await conn.execute(f"LOCK TABLE ONLY {_q(job['source_name'])}, {_q(job['stage_name'])} IN ACCESS EXCLUSIVE MODE NOWAIT")
+        if job.get("topic_stage_name") and job["topic_stage_name"] != job["stage_name"]:
+            await conn.execute(f"LOCK TABLE ONLY {_q(job['topic_stage_name'])} IN ACCESS EXCLUSIVE MODE NOWAIT")
         defaults = await conn.fetch("""SELECT c.relname FROM pg_class c JOIN pg_inherits i ON i.inhrelid=c.oid
             WHERE i.inhparent='public.mqtt_messages'::regclass AND pg_get_expr(c.relpartbound,c.oid)='DEFAULT'""")
         for row in defaults:
@@ -719,6 +798,16 @@ async def _cutover(conn, job, policy, free_bytes):
         _free(free_bytes, policy, 2*policy.batch_bytes)
         if job["rows_verified"] != job["rows_copied"] or job["inflight_bytes"] is not None or not job["analyzed"]:
             raise ArchiveBlocked("Archive is not fully verified")
+        if job.get("target_method") == "topics":
+            await archive_topics.attach(conn,job)
+            await conn.execute("""UPDATE public.storage_archive_jobs SET phase='complete',source_frozen=false,
+                blocked_reason=NULL,updated_at=clock_timestamp(),finished_at=clock_timestamp() WHERE job_id=$1""",job["job_id"])
+            return
+        if job.get("target_method") == "heap":
+            helper = await archive_topics.attached_partition(conn,job["bound_start"],job["bound_end"])
+            if helper is not None:
+                await conn.execute(f"LOCK TABLE ONLY {_q(helper['name'])} IN ACCESS EXCLUSIVE MODE NOWAIT")
+                await conn.execute(f"DROP TABLE {_q(helper['name'])}")
         retired = "meshinfo_archive_retired_"+job["job_id"].hex[:24]
         await conn.execute(f"ALTER TABLE public.mqtt_messages DETACH PARTITION {_q(job['source_name'])}")
         await conn.execute(f"ALTER TABLE {_q(job['source_name'])} RENAME TO {quote_identifier(retired)}")
@@ -735,6 +824,8 @@ async def _cutover(conn, job, policy, free_bytes):
                    else job.get("original_comment"))
         comment_sql = await conn.fetchval("SELECT quote_nullable($1::text)", comment)
         await conn.execute(f"COMMENT ON TABLE {_q(job['source_name'])} IS {comment_sql}")
+        if job.get("target_method", "columnar") == "columnar":
+            await archive_topics.attach(conn,job)
         await conn.execute("""UPDATE public.storage_archive_jobs SET phase='complete',source_frozen=false,
             blocked_reason=NULL,updated_at=clock_timestamp(),finished_at=clock_timestamp() WHERE job_id=$1""", job["job_id"])
 
@@ -757,18 +848,23 @@ async def _cancel_locked(conn, job, policy):
         if (not source or source["amname"] != job.get("source_method", "heap")
                 or monthly_partition_bounds(source["bound"]) != (job["bound_start"],job["bound_end"])
                 or not await _guarded(conn, source["oid"], job["job_id"])
-                or not stage or stage["attached"] or stage["comment"] != f"meshinfo archive stage {job['job_id']}"):
+                or not stage or stage["attached"] or stage["comment"] != (
+                    f"meshinfo archive topics stage {job['job_id']}" if job.get("target_method") == "topics"
+                    else f"meshinfo archive stage {job['job_id']}")):
             raise ArchiveBlocked("Cannot establish source/staging ownership for safe cancellation")
         # Cancellation retains the source and its external dependencies, so
         # source schema changes or a damaged staging index need not trap a job.
         # DROP still deliberately omits CASCADE for dependencies on staging.
-        await conn.execute(f"DROP TABLE {_q(job['stage_name'])}")
+        if job.get("topic_stage_name"):
+            await archive_topics.drop_owned_stage(conn,job)
+        if job.get("target_method") != "topics":
+            await conn.execute(f"DROP TABLE {_q(job['stage_name'])}")
         await conn.execute(f"DROP TRIGGER meshinfo_archive_freeze ON {_q(job['source_name'])}")
         await conn.execute(f"DROP TRIGGER meshinfo_archive_freeze_truncate ON {_q(job['source_name'])}")
         if job.get("previous_guard_job") is not None:
             await _freeze(conn, job["source_name"], job["previous_guard_job"])
         await conn.execute("""UPDATE public.storage_archive_jobs SET phase='cancelled',source_frozen=false,
-            stage_oid=NULL,inflight_bytes=NULL,blocked_reason=NULL,updated_at=clock_timestamp(),
+            stage_oid=NULL,topic_stage_oid=NULL,topic_stage_name=NULL,inflight_bytes=NULL,blocked_reason=NULL,updated_at=clock_timestamp(),
             finished_at=clock_timestamp() WHERE job_id=$1""", job["job_id"])
     return {"status": "cancelled", "job_id": str(job["job_id"]), "source_preserved": True}
 
@@ -783,6 +879,8 @@ async def _analyze_stage(conn, job, policy):
                     JOIN pg_am a ON a.oid=c.relam WHERE i.indrelid=$1 AND a.amname='gin'""", job["stage_oid"]):
                 await conn.fetchval("SELECT gin_clean_pending_list($1::oid::regclass)", index["oid"])
         await conn.execute(f"ANALYZE {_q(job['stage_name'])}", timeout=seconds+.25)
+        if job.get("topic_stage_name") and job["topic_stage_name"] != job["stage_name"]:
+            await conn.execute(f"ANALYZE {_q(job['topic_stage_name'])}",timeout=seconds+.25)
         await conn.execute("UPDATE public.storage_archive_jobs SET analyzed=true,updated_at=clock_timestamp() WHERE job_id=$1", job["job_id"])
 
 
@@ -853,7 +951,8 @@ async def run_archive_cycle(conn, config, *, free_bytes: Callable[[], int] | Non
                     candidates = [row for row in preview["partitions"] if row["eligible"]]
                     if not candidates:
                         return {"status": "idle"}
-                    job_id = await _start(conn, candidates[0], policy, free_bytes)
+                    job_id = await _start(conn, candidates[0], policy, free_bytes,
+                                          target_method=candidates[0].get("target_method","columnar"))
                 job = await _job(conn, job_id)
                 async with conn.transaction():
                     await _settings(conn, policy)
@@ -861,7 +960,9 @@ async def run_archive_cycle(conn, config, *, free_bytes: Callable[[], int] | Non
                     await _recover_inflight(conn, job, policy)
                 if job["abort_count"] >= 3:
                     result = await _cancel_locked(conn, job, policy)
-                    result["reason"] = "Three interrupted copy batches; staging reclaimed and original source unfrozen"
+                    result["reason"] = "Three interrupted copy batches; staging reclaimed and original source preserved"
+                    if job.get("blocked_reason"):
+                        result["reason"] += ". Last copy refusal: "+job["blocked_reason"]
                     await conn.execute("UPDATE public.storage_archive_jobs SET phase='failed',blocked_reason=$2 WHERE job_id=$1",
                                        job["job_id"], result["reason"])
                     result["status"] = "failed"

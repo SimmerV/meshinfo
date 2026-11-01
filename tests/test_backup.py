@@ -495,7 +495,8 @@ def test_pruning_failure_is_visible_without_losing_verified_backup(tmp_path, cli
 def test_columnar_options_survive_normal_snapshot_transport(tmp_path, clients, monkeypatch, mode):
     relations = [{"schema": "archive_stage", "name": "cold_2025_01",
                   "chunk_group_row_limit": 1000, "stripe_row_limit": 150000,
-                  "compression_level": 7, "compression": "zstd"}]
+                  "compression_level": 7, "compression": "zstd",
+                  "geometry": {"row_count": 384, "max_stripe_rows": 128, "max_chunk_group_rows": 128}}]
     monkeypatch.setenv("TEST_COLUMNAR_RELATIONS", json.dumps(relations))
     destination = tmp_path / "destination"
     settings = {}
@@ -504,6 +505,7 @@ def test_columnar_options_survive_normal_snapshot_transport(tmp_path, clients, m
         settings = {"mode": "ssh", "remote_target": f"backup@host:{destination}"}
     result = asyncio.run(create_snapshot(config(destination, **settings), tmp_path, pg_command_prefix=clients))
     manifest = json.loads((destination / (result.filename + MANIFEST_SUFFIX)).read_text())
+    assert manifest["restore_metadata"]["schema"] == 2
     assert manifest["restore_metadata"]["relations"] == relations
     assert manifest["restore_metadata"]["extension"] == "14.1-1"
     assert manifest["restore_metadata_sha256"] == backup_remote.restore_metadata_checksum(manifest["restore_metadata"])
@@ -522,7 +524,8 @@ def test_columnar_metadata_larger_than_old_manifest_limit_survives_ssh(tmp_path,
     fake_ssh(monkeypatch)
     relations = [{"schema": "archive_stage", "name": f"history_{i}",
                   "chunk_group_row_limit": 1000, "stripe_row_limit": 150000,
-                  "compression_level": 3, "compression": "zstd"} for i in range(450)]
+                  "compression_level": 3, "compression": "zstd",
+                  "geometry": {"row_count": 384, "max_stripe_rows": 128, "max_chunk_group_rows": 128}} for i in range(450)]
     monkeypatch.setenv("TEST_COLUMNAR_RELATIONS", json.dumps(relations))
     remote = tmp_path / "remote"
     result = asyncio.run(create_snapshot(config(tmp_path / "local", mode="ssh", remote_target=f"backup@host:{remote}"),

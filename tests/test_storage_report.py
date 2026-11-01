@@ -74,7 +74,7 @@ class FakeConnection:
         assert self.active
         self.commands.append(query)
         assert "COUNT(" not in query.upper()
-        assert set(names) == {"mqtt_messages", "packet_receptions", "telemetry", "chat_messages", "traceroutes", "node_neighborinfo_history"}
+        assert set(names) == {"mqtt_messages", "packet_receptions", "telemetry", "chat_messages", "traceroutes", "node_neighborinfo_history", "mqtt_archive_topics"}
         if self.error:
             raise self.error
         return self.catalog
@@ -124,6 +124,20 @@ def test_only_whole_expired_paired_partitions_are_candidates():
     assert "SET LOCAL statement_timeout = '3s'" in conn.commands
     assert "SET LOCAL lock_timeout = '250ms'" in conn.commands
     assert conn.closed
+
+
+def test_topic_lookup_storage_is_counted_once_without_becoming_a_retention_scope():
+    before, _ = report()
+    catalog = paired_catalog() + [catalog_row('mqtt_archive_topics'),
+                                catalog_row('mqtt_archive_topics', month='2026-06-01')]
+    after, _ = report(catalog)
+    lookup = after['details']['archive']['topic_lookup']
+    assert lookup['total_bytes'] == 16384
+    assert lookup['index_bytes'] == 4096
+    assert after['details']['history_bytes'] == before['details']['history_bytes'] + 16384
+    assert after['details']['scopes'] == before['details']['scopes']
+    assert 'topic_lookup' not in after['public']['archive']
+    assert 'mqtt_archive_topics' not in json.dumps(after['public'])
 
 
 def test_bounds_exclude_empty_future_partitions_and_identify_approximation():

@@ -73,20 +73,26 @@ async def run():
             INSERT INTO history SELECT i,'2025-01-15',repeat('lossless 雪 ',100)||i FROM generate_series(1,4096)i;
             INSERT INTO history SELECT i,'2025-02-15','hot '||i FROM generate_series(4097,4146)i;
             CREATE SCHEMA archive_stage;
-            CREATE TABLE archive_stage.copy(id bigint,payload text) USING columnar;
+            CREATE TABLE archive_stage.copy(id bigint,payload text,"雪
+""column" text) USING columnar;
             ALTER TABLE archive_stage.copy SET(columnar.compression='lz4',columnar.compression_level=1,
                 columnar.chunk_group_row_limit=2000,columnar.stripe_row_limit=200000);
-            INSERT INTO archive_stage.copy SELECT i,'staging '||i FROM generate_series(1,128)i;
+            INSERT INTO archive_stage.copy SELECT i,'staging '||i,'quoted UTF8 雪 '||i FROM generate_series(1,128)i;
+            INSERT INTO archive_stage.copy SELECT i,'staging '||i,'quoted UTF8 雪 '||i FROM generate_series(129,256)i;
+            INSERT INTO archive_stage.copy SELECT i,CASE WHEN i=384 THEN repeat('large COPY row 雪 ',131072)
+                ELSE 'staging '||i END,'quoted UTF8 雪 '||i FROM generate_series(257,384)i;
             CREATE FUNCTION reject_frozen() RETURNS trigger LANGUAGE plpgsql AS
                 $$BEGIN RAISE EXCEPTION 'historical source is frozen'; END$$;
             CREATE TRIGGER frozen_source BEFORE INSERT ON cold FOR EACH ROW EXECUTE FUNCTION reject_frozen();
             CREATE TABLE archive_job_state(schema_name text,table_name text,marker uuid,state text);
             INSERT INTO archive_job_state VALUES('archive_stage','copy','12345678-1234-1234-1234-123456789abc','copying');""")
         expected_rows = sql(source, "SELECT count(*),md5(string_agg(id::text||':'||day::text||':'||payload,'|' ORDER BY day,id)) FROM history")
-        expected_stage = sql(source, "SELECT count(*),md5(string_agg(id::text||':'||payload,'|' ORDER BY id)) FROM archive_stage.copy")
+        expected_stage = sql(source, "SELECT count(*),md5(string_agg(row_to_json(copy)::text,'|' ORDER BY id)) FROM archive_stage.copy")
+        require(int(sql(source, "SELECT max(octet_length(payload)) FROM archive_stage.copy")) > 2*1024*1024,
+                "fixture must stream a COPY row larger than two MiB")
         expected_options = json.loads(sql(source, OPTIONS_SQL))
         expected_groups = sql(source, "SELECT sum(chunk_group_count),sum(row_count) FROM columnar.stripe")
-        require(expected_groups.startswith("6|"), "fixture must distinguish 1000-row chunks from defaults")
+        require(expected_groups.startswith("8|"), "fixture must distinguish 1000-row chunks from defaults")
         # The normal low-level snapshot contract requires the caller to hold
         # the shared storage-maintenance lock for its entire operation.
         lock = await asyncio.create_subprocess_exec("psql", "-X", "-qAt", "--set=ON_ERROR_STOP=1", "--dbname", source,
@@ -115,7 +121,7 @@ async def run():
             restored = await restore.run(args)
             require(restored["status"] == "restored", "restore did not commit")
             require(sql(target, "SELECT count(*),md5(string_agg(id::text||':'||day::text||':'||payload,'|' ORDER BY day,id)) FROM history") == expected_rows, "packet rows changed")
-            require(sql(target, "SELECT count(*),md5(string_agg(id::text||':'||payload,'|' ORDER BY id)) FROM archive_stage.copy") == expected_stage, "staged rows changed")
+            require(sql(target, "SELECT count(*),md5(string_agg(row_to_json(copy)::text,'|' ORDER BY id)) FROM archive_stage.copy") == expected_stage, "staged rows changed")
             require(json.loads(sql(target, OPTIONS_SQL)) == expected_options, "restored options changed")
             require(sql(target, "SELECT sum(chunk_group_count),sum(row_count) FROM columnar.stripe") == expected_groups, "physical chunk geometry proves options were not applied before COPY")
             require(sql(target, "SELECT state FROM archive_job_state") == "copying", "resume state was lost")
@@ -147,8 +153,8 @@ async def run():
             marker.write_bytes(saved)
             # Producer failure after rows reached psql must not turn EOF into a
             # commit. The real PostgreSQL transaction must leave the DB empty.
-            async def interrupted(fd, section, process):
-                await original_stream(fd, section, process)
+            async def interrupted(fd, section, process, **options):
+                await original_stream(fd, section, process, **options)
                 if section == "data":
                     raise restore.RestoreRefused("injected producer failure")
             restore.stream_section = interrupted
@@ -172,7 +178,9 @@ async def run():
             require(json.loads(remote_marker.read_text())["restore_metadata"] == manifest["restore_metadata"], "remote metadata differs")
             return {"status": "passed", "postgres_major": manifest["restore_metadata"]["postgres_major"],
                     "columnar_version": manifest["restore_metadata"]["extension"],
-                    "rows": 4274, "columnar_relations": 2, "chunk_groups": 6,
+                    "rows": 4530, "columnar_relations": 2, "chunk_groups": 8,
+                    "physical_geometry_preserved": restored["physical_geometry_preserved"],
+                    "multi_megabyte_copy_row_verified": True,
                     "local_and_remote_receiver": True, "single_transaction_rollback": True,
                     "stage_state_and_guards_preserved": True}
     finally:

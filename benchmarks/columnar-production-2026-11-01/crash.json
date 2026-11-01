@@ -1,0 +1,13 @@
+{
+  "container_crash_only": true,
+  "all_checks_passed": true,
+  "canonical_rows": 513,
+  "archived_rows": 512,
+  "committed_chunk_rows": 64,
+  "aborted_bytes": 8192,
+  "source_digest": "1512170c0332351e59c6ecc232dd5763efc2c2a0b500a71c8cc5e30d8a6c1ca1",
+  "uncommitted_row_rejected": true,
+  "hot_write_preserved": true,
+  "checkpoint_resumed": true,
+  "wal_recovery": true
+}

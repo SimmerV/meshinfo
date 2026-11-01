@@ -6,9 +6,11 @@ on:
       - 'Dockerfile.postgres-columnar'
       - 'docker-compose.columnar.yml'
       - 'storage/backup*.py'
-      - 'storage/columnar_backup.py'
+      - 'storage/columnar*.py'
+      - 'tests/test_columnar*.py'
       - 'storage/db/archive*.py'
       - 'storage/db/postgres.py'
+      - 'storage/db/history_queries.py'
       - 'storage/db/retention_executor.py'
       - 'storage/db/storage_report.py'
       - 'config.py'
@@ -17,6 +19,8 @@ on:
       - 'scripts/compact_mqtt_partitions.py'
       - 'tests/test_legacy_storage*.py'
       - 'tests/test_archive*.py'
+      - 'tests/test_history_queries*.py'
+      - 'scripts/benchmark_history_read_plans.py'
       - 'scripts/restore_database.py'
       - 'scripts/verify_columnar_backup_restore.py'
       - '.github/workflows/columnar.yml'
@@ -25,9 +29,11 @@ on:
       - 'Dockerfile.postgres-columnar'
       - 'docker-compose.columnar.yml'
       - 'storage/backup*.py'
-      - 'storage/columnar_backup.py'
+      - 'storage/columnar*.py'
+      - 'tests/test_columnar*.py'
       - 'storage/db/archive*.py'
       - 'storage/db/postgres.py'
+      - 'storage/db/history_queries.py'
       - 'storage/db/retention_executor.py'
       - 'storage/db/storage_report.py'
       - 'config.py'
@@ -36,6 +42,8 @@ on:
       - 'scripts/compact_mqtt_partitions.py'
       - 'tests/test_legacy_storage*.py'
       - 'tests/test_archive*.py'
+      - 'tests/test_history_queries*.py'
+      - 'scripts/benchmark_history_read_plans.py'
       - 'scripts/restore_database.py'
       - 'scripts/verify_columnar_backup_restore.py'
       - '.github/workflows/columnar.yml'
@@ -110,8 +118,17 @@ jobs:
             columnar-native-ci python3 -m pytest -q -p no:cacheprovider \
             tests/test_archive_integration.py tests/test_archive_application_integration.py \
             tests/test_archive_catalog_integration.py tests/test_archive.py \
-            tests/test_archive_catalog.py tests/test_columnar_backup.py \
+            tests/test_archive_catalog.py tests/test_columnar_backup.py tests/test_columnar_copy.py \
             tests/test_legacy_storage_guards.py tests/test_legacy_storage_integration.py
+      - name: Verify production history readers on heap and mixed partitions
+        run: |
+          docker exec columnar-native-ci createdb -U postgres native_columnar_test
+          docker exec columnar-native-ci psql -U postgres -d native_columnar_test \
+            -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION citus_columnar; CREATE EXTENSION pg_trgm;'
+          docker exec -w /work \
+            -e MESHINFO_HISTORY_TEST_DSN=postgresql://postgres@127.0.0.1:5432/native_columnar_test \
+            columnar-native-ci python3 -m pytest -q -p no:cacheprovider \
+            tests/test_history_queries.py tests/test_history_queries_integration.py
       - name: Remove the isolated cluster and anonymous data volume
         if: always()
         run: |

@@ -62,7 +62,7 @@ def validate_restore_metadata(metadata: dict) -> dict:
     """Validate the bounded, versioned metadata accepted across SSH and restore."""
     if not isinstance(metadata, dict) or set(metadata) != {"schema", "postgres_major", "extension", "relations"}:
         raise BackupError("invalid Columnar restore metadata fields")
-    if type(metadata["schema"]) is not int or metadata["schema"] != 1 or type(metadata["postgres_major"]) is not int or not 10 <= metadata["postgres_major"] <= 99:
+    if type(metadata["schema"]) is not int or metadata["schema"] not in (1, 2) or type(metadata["postgres_major"]) is not int or not 10 <= metadata["postgres_major"] <= 99:
         raise BackupError("unsupported Columnar restore metadata version")
     extension = metadata["extension"]
     if extension is not None and (not isinstance(extension, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*-[0-9]+", extension) or len(extension) > 64):
@@ -72,6 +72,8 @@ def validate_restore_metadata(metadata: dict) -> dict:
         raise BackupError("invalid Columnar relation inventory")
     names = set()
     expected = {"schema", "name", "chunk_group_row_limit", "stripe_row_limit", "compression_level", "compression"}
+    if metadata["schema"] == 2:
+        expected.add("geometry")
     for relation in relations:
         if not isinstance(relation, dict) or set(relation) != expected:
             raise BackupError("invalid Columnar relation options")
@@ -90,6 +92,16 @@ def validate_restore_metadata(metadata: dict) -> dict:
             raise BackupError("invalid Columnar compression level")
         if relation["compression"] not in ("none", "pglz", "lz4", "zstd"):
             raise BackupError("unsupported Columnar compression algorithm")
+        if metadata["schema"] == 2:
+            geometry = relation["geometry"]
+            fields = {"row_count", "max_stripe_rows", "max_chunk_group_rows"}
+            if not isinstance(geometry, dict) or set(geometry) != fields:
+                raise BackupError("invalid Columnar physical geometry")
+            if any(type(geometry[key]) is not int or not 0 <= geometry[key] <= 2**63-1 for key in fields):
+                raise BackupError("invalid Columnar geometry row count")
+            rows, stripe, group = (geometry[key] for key in ("row_count", "max_stripe_rows", "max_chunk_group_rows"))
+            if (rows == 0 and (stripe or group)) or (rows > 0 and not 1 <= group <= stripe <= min(rows, 1000000000)):
+                raise BackupError("inconsistent Columnar physical geometry")
     encoded = json.dumps(metadata, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
     if len(encoded) > RESTORE_METADATA_BYTES:
         raise BackupError("Columnar restore metadata exceeds its bounded budget")

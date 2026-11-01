@@ -23,8 +23,11 @@ from zoneinfo import ZoneInfo
 
 from storage.db.ingest_guard import NodeRateLimiter, SuppressedCopyLog
 from storage.db.history_queries import (
+    HISTORY_ACQUIRE_TIMEOUT_SECONDS,
     HistoryReadError,
     HistoryUnavailableError,
+    fetch_packet_page,
+    fetch_topic_packet_page,
     literal_topic_pattern,
     packet_page_sql,
     page_limit,
@@ -2060,10 +2063,12 @@ class PostgresStorage:
         limit = page_limit(limit)
         try:
             import time
-            async with self.pool.acquire() as conn:
+            async with self.pool.acquire(timeout=HISTORY_ACQUIRE_TIMEOUT_SECONDS) as conn:
                 conditions: list = []
                 params: list = []
                 idx = 1
+                search_parameter = None
+                candidate_conditions = []
 
                 if range_seconds is not None:
                     conditions.append(f"timestamp >= ${idx}")
@@ -2071,6 +2076,7 @@ class PostgresStorage:
                     idx += 1
 
                 if search:
+                    search_parameter = idx
                     conditions.append(search_condition(idx, self._reception_lookback))
                     params.append(search)
                     idx += 1
@@ -2078,20 +2084,30 @@ class PostgresStorage:
                 if topic:
                     # Channel names land here and can carry ILIKE metacharacters
                     # ("My_Chan" must not match "MyXChan") — escape + ESCAPE.
-                    conditions.append(
-                        f"topic ILIKE '%' || ${idx} || '%' ESCAPE '\\'"
-                    )
+                    topic_condition = f"topic ILIKE '%' || ${idx} || '%' ESCAPE '\\'"
+                    conditions.append(topic_condition)
+                    candidate_conditions.append(topic_condition)
                     params.append(literal_topic_pattern(topic))
                     idx += 1
 
+                window_condition_start = len(conditions)
                 idx = self._append_window_conditions(conditions, params, idx, start, end, before)
+                candidate_conditions.extend(conditions[window_condition_start:])
 
                 params.append(limit + 1)  # +1 row tells us whether another page exists
 
-                rows = await conn.fetch(
-                    packet_page_sql(conditions, idx, self._reception_count_sql),
-                    *params,
-                )
+                if topic or (not search and range_seconds is None and (end is not None or before is not None)):
+                    rows = await fetch_topic_packet_page(conn, conditions, params, idx, self._reception_count_sql,
+                        candidate_conditions=candidate_conditions, search_parameter=search_parameter,
+                        window_start=start, window_end=end)
+                else:
+                    rows = await fetch_packet_page(
+                        conn,
+                        packet_page_sql(conditions, idx, self._reception_count_sql,
+                                        search_parameter=search_parameter),
+                        *params,
+                        custom_plan=bool(topic),
+                    )
             return self._build_mqtt_message_page(rows, limit)
         except Exception as e:
             raise read_failure("query_mqtt_messages", e) from e
@@ -2113,13 +2129,13 @@ class PostgresStorage:
         limit = page_limit(limit)
         node_id = self._normalize_node_id(node_id) or node_id
         try:
-            async with self.pool.acquire() as conn:
+            async with self.pool.acquire(timeout=HISTORY_ACQUIRE_TIMEOUT_SECONDS) as conn:
                 conditions: list = ["(from_node_id = $1 OR to_node_id = $1)"]
                 params: list = [node_id]
                 idx = self._append_window_conditions(conditions, params, 2, start, end, before)
                 params.append(limit + 1)
                 rows = await conn.fetch(
-                    packet_page_sql(conditions, idx, self._reception_count_sql),
+                    packet_page_sql(conditions, idx, self._reception_count_sql, strategy="node_rows"),
                     *params,
                 )
             return self._build_mqtt_message_page(rows, limit)
@@ -2194,7 +2210,7 @@ class PostgresStorage:
         if not self._ready("query_mqtt_message_by_packet"):
             raise HistoryUnavailableError("query_mqtt_message_by_packet")
         try:
-            async with self.pool.acquire() as conn:
+            async with self.pool.acquire(timeout=HISTORY_ACQUIRE_TIMEOUT_SECONDS) as conn:
                 row_id = await conn.fetchval(
                     """SELECT id FROM mqtt_messages
                        WHERE from_node_id = $1 AND packet_id = $2
@@ -2216,7 +2232,7 @@ class PostgresStorage:
         if not self._ready("query_mqtt_message_by_id"):
             raise HistoryUnavailableError("query_mqtt_message_by_id")
         try:
-            async with self.pool.acquire() as conn:
+            async with self.pool.acquire(timeout=HISTORY_ACQUIRE_TIMEOUT_SECONDS) as conn:
                 row = await conn.fetchrow(
                     """SELECT id, topic, payload, qos, retain, timestamp, created_at
                        FROM mqtt_messages WHERE id = $1""",

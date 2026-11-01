@@ -60,6 +60,26 @@ def test_oversized_single_row_blocks_instead_of_silently_skipping_it():
         asyncio.run(_batch(Connection(), "example", None, None, ArchivePolicy(batch_mib=1)))
 
 
+def test_topic_index_budget_bounds_prefix_and_refuses_one_oversized_topic():
+    policy = ArchivePolicy(batch_mib=1,max_wal_mib=16)
+
+    class Connection:
+        large = False
+
+        async def fetch(self,*arguments):
+            return [{"id":1,"created_at":None,"logical_bytes":100,
+                     "topic_index_budget":policy.max_wal_bytes if self.large else 3*1024**2},
+                    {"id":2,"created_at":None,"logical_bytes":100,"topic_index_budget":2*1024**2},
+                    {"id":3,"created_at":None,"logical_bytes":100,"topic_index_budget":1}]
+
+    conn = Connection()
+    rows,size = asyncio.run(_batch(conn,"example",None,None,policy,build_topic_index=True))
+    assert [row["id"] for row in rows] == [1] and size == 100
+    conn.large = True
+    with pytest.raises(ArchiveBlocked,match="GIN/WAL budget"):
+        asyncio.run(_batch(conn,"example",None,None,policy,build_topic_index=True))
+
+
 def test_exact_comparison_includes_all_columns_and_uses_binary_text_equality():
     sql = _exact_equal()
     for name in ("payload", "topic", "from_node_id", "to_node_id"):

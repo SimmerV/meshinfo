@@ -181,7 +181,7 @@ async def build_storage_report(connection_or_pool, config: Mapping, *,
     an explicit unavailable response. The caller should cache public requests.
     """
     policy = retention_policy(config)
-    table_names = [name for names in SCOPE_TABLES.values() for name in names]
+    table_names = [name for names in SCOPE_TABLES.values() for name in names] + ['mqtt_archive_topics']
     async with _connection(connection_or_pool) as conn:
         async with conn.transaction(isolation="repeatable_read", readonly=True):
             await conn.execute("SET LOCAL statement_timeout = '3s'")
@@ -196,6 +196,14 @@ async def build_storage_report(connection_or_pool, config: Mapping, *,
     from storage.db.archive import archive_policy
     archive = archive_policy(config)
     archived = [row for row in catalog if row.get('access_method') == 'columnar' and row['parent_name'] == 'mqtt_messages']
+    lookup_relations = [_relation_detail(row, None) for row in catalog
+                        if row['parent_name'] == 'mqtt_archive_topics']
+    archive_inventory['topic_lookup'] = {
+        'total_bytes': sum(row['total_bytes'] for row in lookup_relations),
+        'table_bytes': sum(row['table_bytes'] for row in lookup_relations),
+        'index_bytes': sum(row['index_bytes'] for row in lookup_relations),
+        'relations': lookup_relations,
+    }
     public['archive'] = {'enabled': archive.enabled, 'after_months': archive.after_months,
                          'compressed_partitions': len(archived), 'history_remains_queryable': True}
     public["maintenance"] = public_status(maintenance)
@@ -228,7 +236,7 @@ async def build_storage_report(connection_or_pool, config: Mapping, *,
     details = {
         "generated_at": public["generated_at"],
         "database_bytes": database_bytes,
-        "history_bytes": sum(s["total_bytes"] for s in scopes.values()),
+        "history_bytes": sum(s["total_bytes"] for s in scopes.values()) + archive_inventory['topic_lookup']['total_bytes'],
         "candidate_partition_bytes": sum(s["candidate_partition_bytes"] for s in scopes.values()),
         "row_estimates_source": "pg_class.reltuples (may be stale; no table scans)",
         "candidate_bytes_note": "Whole paired partitions before the UTC cutoff; execution checks may retain them. Row deletes do not promise filesystem space reclamation.",
@@ -251,7 +259,7 @@ async def _archive_inventory(conn):
     value = await conn.fetchval("""SELECT json_build_object(
         'staging_bytes', (SELECT coalesce(sum(pg_total_relation_size(c.oid)),0)
             FROM public.storage_archive_jobs j JOIN pg_namespace n ON n.nspname='public'
-            JOIN pg_class c ON c.relnamespace=n.oid AND c.relname=j.stage_name
+            JOIN pg_class c ON c.relnamespace=n.oid AND c.relname IN (j.stage_name,j.topic_stage_name)
             WHERE NOT c.relispartition AND j.phase IN ('copying','verifying','ready','failed')),
         'metadata_bytes', (SELECT coalesce(sum(pg_total_relation_size(c.oid)),0)
             FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace

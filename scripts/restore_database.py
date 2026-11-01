@@ -29,7 +29,7 @@ from storage.backup_remote import (
     validate_manifest_restore_metadata,
 )
 from storage.columnar_backup import (
-    connection_arguments, inventory_assertion_sql, options_assertion_sql,
+    connection_arguments, geometry_assertion_sql, inventory_assertion_sql, options_assertion_sql,
     options_sql, quote_literal,
 )
 
@@ -174,13 +174,24 @@ async def send_sql(proc, sql):
     await proc.stdin.drain()
 
 
-async def stream_section(fd, section, target):
+async def stream_section(fd, section, target, metadata=None):
     proc = await archive_process(fd, "--section=" + section, "--file=-")
     errors = asyncio.create_task(_tail(proc.stderr))
+    async def write(chunk):
+        target.stdin.write(chunk)
+        await target.stdin.drain()
+    splitter = None
+    if section == "data" and metadata is not None and metadata["schema"] == 2 and metadata["relations"]:
+        from storage.columnar_copy import CopyBatchStream
+        splitter = CopyBatchStream(metadata, write)
     try:
         while chunk := await proc.stdout.read(CHUNK_BYTES):
-            target.stdin.write(chunk)
-            await target.stdin.drain()
+            if splitter is None:
+                await write(chunk)
+            else:
+                await splitter.feed(chunk)
+        if splitter is not None:
+            await splitter.finish()
         if await proc.wait() != 0:
             raise RestoreRefused("archive section decoding failed; restore rolled back")
     finally:
@@ -212,13 +223,17 @@ async def apply_archive(fd, pg, environment, metadata, identity):
             await send_sql(proc, "CREATE EXTENSION IF NOT EXISTS citus_columnar VERSION "
                            + quote_literal(effective["extension"]) + ";\n")
         await stream_section(fd, "pre-data", proc)
+        # Generated identifiers are UTF-8. Legacy pg_restore sections can set a
+        # different source encoding; each following section reinstates its own.
+        await send_sql(proc, "SET client_encoding='UTF8';\n")
         await send_sql(proc, inventory_assertion_sql(effective))
         await send_sql(proc, options_sql(effective))
         await send_sql(proc, options_assertion_sql(effective))
-        await stream_section(fd, "data", proc)
+        await stream_section(fd, "data", proc, metadata=effective)
         await stream_section(fd, "post-data", proc)
         await send_sql(proc, inventory_assertion_sql(effective))
         await send_sql(proc, options_assertion_sql(effective))
+        await send_sql(proc, geometry_assertion_sql(effective))
         if file_identity(fd) != identity:
             raise RestoreRefused("backup archive changed during restore; transaction was not committed")
         await _close_stdin(proc)
@@ -279,6 +294,10 @@ async def run(args):
             return {"status": "restored" if args.apply else "verified", "bytes": size,
                     "sha256": checksum, "manifest_verified": manifest is not None,
                     "columnar_relations": len(metadata["relations"]) if metadata else 0,
+                    "physical_geometry_preserved": bool(metadata is not None and metadata["schema"] == 2),
+                    "geometry_note": ("Snapshot physical stripe/chunk upper bounds preserved"
+                        if metadata is not None and metadata["schema"] == 2 else
+                        "Legacy metadata: data/options restored; physical geometry and query latency may change"),
                     "single_transaction": True, "data_loaded": bool(args.apply)}
     finally:
         os.close(fd)

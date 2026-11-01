@@ -68,9 +68,10 @@ async def fixture():
         yield conn, expected
     finally:
         # This database is dedicated and all named objects were created above.
-        for job in await conn.fetch("SELECT stage_name FROM public.storage_archive_jobs"):
-            await conn.execute(f'DROP TABLE IF EXISTS public."{job["stage_name"]}"')
-        await conn.execute("DROP TABLE IF EXISTS public.mqtt_messages; DROP TABLE IF EXISTS public.storage_archive_jobs")
+        for job in await conn.fetch("SELECT stage_name,topic_stage_name FROM public.storage_archive_jobs"):
+            for name in {job["stage_name"],job["topic_stage_name"]}-{None}:
+                await conn.execute(f'DROP TABLE IF EXISTS public."{name}"')
+        await conn.execute("DROP TABLE IF EXISTS public.mqtt_messages; DROP TABLE IF EXISTS public.mqtt_archive_topics; DROP TABLE IF EXISTS public.storage_archive_jobs")
         await conn.close()
 
 
@@ -380,6 +381,7 @@ def test_real_active_checkpoint_snapshot_restore_and_resume(tmp_path):
                 source_oid = await restored.fetchval("SELECT 'public.mqtt_messages_1901_01'::regclass::oid")
                 assert await archive._guarded(restored, source_oid, job["job_id"])
                 assert await restored.fetchval(f"SELECT count(*) FROM {archive._q(job['stage_name'])}") == 3
+                assert await restored.fetchval(f"SELECT count(*) FROM {archive._q(job['topic_stage_name'])}") == 3
                 await until_done(restored)
                 final = await restored.fetchrow("SELECT * FROM public.storage_archive_jobs WHERE job_id=$1", job["job_id"])
                 assert final["phase"] == "complete" and final["rows_verified"] == len(expected)
@@ -387,10 +389,128 @@ def test_real_active_checkpoint_snapshot_restore_and_resume(tmp_path):
                 assert [tuple(row) for row in await restored.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
                 options = await restored.fetchrow("SELECT compression,compression_level,chunk_group_row_limit FROM columnar.options WHERE relation='public.mqtt_messages_1901_01'::regclass")
                 assert tuple(options) == ("zstd", 3, 1000)
+                assert await restored.fetchval("SELECT count(*) FROM public.mqtt_archive_topics") == len(expected)
             finally:
                 if restored is not None:
                     await restored.close()
                 await conn.execute(f'DROP DATABASE "{target}" WITH (FORCE)')
+    asyncio.run(scenario())
+
+
+def test_topic_lookup_exact_nullable_literal_data_and_atomic_visibility(monkeypatch):
+    async def scenario():
+        async with fixture() as (conn, _expected):
+            await conn.execute("UPDATE public.mqtt_messages SET topic=NULL WHERE id=1")
+            await conn.execute("UPDATE public.mqtt_messages SET topic=$1 WHERE id=2", "雪_%\\literal ")
+            expected = [tuple(row) for row in await conn.fetch("SELECT id,created_at,topic FROM public.mqtt_messages ORDER BY id,created_at")]
+            job = await pause_after_first_checkpoint(conn,monkeypatch)
+            assert await conn.fetchval("SELECT count(*) FROM public.mqtt_archive_topics") == 0
+            assert await conn.fetchval(f"SELECT count(*) FROM {archive._q(job['topic_stage_name'])}") == 3
+            await until_done(conn)
+            actual = [tuple(row) for row in await conn.fetch("SELECT id,created_at,topic FROM public.mqtt_archive_topics ORDER BY id,created_at")]
+            assert actual == expected
+            helper = await archive.archive_topics.attached_partition(conn,job["bound_start"],job["bound_end"])
+            assert helper["name"] == "mqtt_archive_topics_1901_01" and helper["total_bytes"] > 0
+            for sql in ("UPDATE public.mqtt_archive_topics SET topic='changed' WHERE id=1",
+                        "DELETE FROM public.mqtt_archive_topics WHERE id=1",
+                        "TRUNCATE public.mqtt_archive_topics_1901_01",
+                        "INSERT INTO public.mqtt_archive_topics VALUES(999,'1901-01-02',NULL)"):
+                with pytest.raises(asyncpg.ObjectNotInPrerequisiteStateError):
+                    await conn.execute(sql)
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("mutation", ["change", "delete", "extra"])
+def test_topic_lookup_corruption_blocks_cutover_and_cancellation_preserves_source(mutation):
+    async def scenario():
+        async with fixture() as (conn,expected):
+            job = await create_paused_job(conn)
+            stage = archive._q(job["topic_stage_name"])
+            async with conn.transaction():
+                await conn.execute("SELECT set_config('meshinfo.archive_job',$1,true)",str(job["job_id"]))
+                if mutation == "change":
+                    await conn.execute(f"UPDATE {stage} SET topic=NULL WHERE id=1")
+                elif mutation == "delete":
+                    await conn.execute(f"DELETE FROM {stage} WHERE id=1")
+                else:
+                    await conn.execute(f"INSERT INTO {stage} VALUES(0,'1901-01-02','extra')")
+            for _ in range(30):
+                result = await archive.run_archive_cycle(conn,POLICY,free_bytes=FREE)
+                if result["status"] == "blocked":
+                    break
+            assert result["status"] == "blocked" and "Topic lookup exact" in result["reason"]
+            assert await conn.fetchval("SELECT count(*) FROM public.mqtt_archive_topics") == 0
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+            assert (await archive.cancel_archive(conn,job["job_id"],config=POLICY))["status"] == "cancelled"
+            assert await conn.fetchval("SELECT to_regclass($1) IS NULL",stage)
+    asyncio.run(scenario())
+
+
+def test_existing_columnar_topic_backfill_is_resumable_without_payload_rewrite(monkeypatch):
+    async def scenario():
+        async with fixture() as (conn,expected):
+            await until_done(conn)
+            source_before = await conn.fetchrow("SELECT oid,relfilenode FROM pg_class WHERE oid='public.mqtt_messages_1901_01'::regclass")
+            await conn.execute("DROP TABLE public.mqtt_archive_topics_1901_01")
+            plan = await archive.plan_archive(conn,POLICY)
+            assert next(row for row in plan["partitions"] if row["eligible"])["target_method"] == "topics"
+            job = await pause_after_first_checkpoint(conn,monkeypatch)
+            assert job["target_method"] == "topics" and job["stage_name"] == job["topic_stage_name"]
+            assert await conn.fetchval("SELECT count(*) FROM public.mqtt_archive_topics") == 0
+            await until_done(conn)
+            source_after = await conn.fetchrow("SELECT oid,relfilenode FROM pg_class WHERE oid='public.mqtt_messages_1901_01'::regclass")
+            assert source_after == source_before
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+            assert await conn.fetchval("SELECT count(*) FROM public.mqtt_archive_topics") == len(expected)
+            assert (await archive.plan_archive(conn,POLICY))["partitions"][0]["reason"] == "already_archived"
+    asyncio.run(scenario())
+
+
+def test_cancel_topic_backfill_restores_original_columnar_guard(monkeypatch):
+    async def scenario():
+        async with fixture() as (conn,expected):
+            completed = await until_done(conn)
+            await conn.execute("DROP TABLE public.mqtt_archive_topics_1901_01")
+            job = await pause_after_first_checkpoint(conn,monkeypatch)
+            assert job["previous_guard_job"] == uuid.UUID(completed["job_id"])
+            await archive.cancel_archive(conn,job["job_id"],config=POLICY)
+            assert await archive._guarded(conn,job["source_oid"],job["previous_guard_job"])
+            assert await conn.fetchval("SELECT to_regclass($1) IS NULL",archive._q(job["stage_name"]))
+            assert await conn.fetchval("SELECT count(*) FROM public.mqtt_archive_topics") == 0
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+    asyncio.run(scenario())
+
+
+def test_heap_reversal_atomically_removes_owned_topic_lookup():
+    async def scenario():
+        async with fixture() as (conn,expected):
+            await until_done(conn)
+            assert await conn.fetchval("SELECT count(*) FROM public.mqtt_archive_topics") == len(expected)
+            requested = await archive.start_restore_archive(conn,"mqtt_messages_1901_01",RESTORE_POLICY,free_bytes=FREE)
+            assert requested["status"] == "copying"
+            assert await conn.fetchval("SELECT count(*) FROM public.mqtt_archive_topics") == len(expected)
+            await until_done(conn,RESTORE_POLICY)
+            assert await conn.fetchval("SELECT to_regclass('public.mqtt_archive_topics_1901_01') IS NULL")
+            assert await conn.fetchval("SELECT count(*) FROM public.mqtt_archive_topics") == 0
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+    asyncio.run(scenario())
+
+
+def test_oversized_imported_topic_pauses_before_gin_write_then_resumes_with_budget():
+    async def scenario():
+        async with fixture() as (conn,_expected):
+            await conn.execute("UPDATE public.mqtt_messages SET topic=$1 WHERE id=1","oversized/import/"+"x"*150000)
+            expected = [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")]
+            result = await archive.run_archive_cycle(conn,POLICY,free_bytes=FREE)
+            assert result["status"] == "blocked" and "GIN/WAL budget" in result["reason"]
+            job = await archive._job(conn,uuid.UUID(result["job_id"]))
+            assert job["rows_copied"] == 0
+            assert await conn.fetchval(f"SELECT count(*) FROM {archive._q(job['topic_stage_name'])}") == 0
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+            larger = {"storage":{"archive":{**POLICY["storage"]["archive"],"max_wal_mib":128}}}
+            await until_done(conn,larger)
+            assert [tuple(row) for row in await conn.fetch("SELECT * FROM public.mqtt_messages ORDER BY id,created_at")] == expected
+            assert await conn.fetchval("SELECT octet_length(topic) FROM public.mqtt_archive_topics WHERE id=1") == 150017
     asyncio.run(scenario())
 
 
