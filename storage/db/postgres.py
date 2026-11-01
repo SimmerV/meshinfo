@@ -28,6 +28,7 @@ from storage.db.history_queries import (
     HistoryUnavailableError,
     fetch_packet_page,
     fetch_packet_detail,
+    fetch_node_packet_page,
     fetch_topic_packet_page,
     literal_topic_pattern,
     packet_page_sql,
@@ -2135,7 +2136,7 @@ class PostgresStorage:
                 params: list = [node_id]
                 idx = self._append_window_conditions(conditions, params, 2, start, end, before)
                 params.append(limit + 1)
-                rows = await conn.fetch(
+                rows = await fetch_node_packet_page(conn,
                     packet_page_sql(conditions, idx, self._reception_count_sql, strategy="node_rows"),
                     *params,
                 )

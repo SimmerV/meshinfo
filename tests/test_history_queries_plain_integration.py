@@ -1,4 +1,4 @@
-"""Actual packet details on PostgreSQL 18 without Columnar loaded or installed.
+"""Actual packet details and node pages without Columnar loaded or installed.
 
 MESHINFO_PLAIN_HISTORY_TEST_CONNECTION names a private JSON connection file for
 an explicitly disposable *_plain_reader_test database. No schema initializer,
@@ -17,6 +17,7 @@ import asyncpg
 import pytest
 
 from storage.db.postgres import PostgresStorage
+from storage.db import history_queries
 
 
 CONNECTION_FILE = os.environ.get("MESHINFO_PLAIN_HISTORY_TEST_CONNECTION", "")
@@ -72,6 +73,8 @@ async def fixture():
             CREATE TABLE packets_february PARTITION OF mqtt_messages
                 FOR VALUES FROM ('2020-02-01') TO ('2020-03-01');
             CREATE INDEX sender_packet ON mqtt_messages(from_node_id,packet_id,created_at DESC,id DESC);
+            CREATE INDEX sender_history ON mqtt_messages(from_node_id,created_at DESC,id DESC);
+            CREATE INDEX recipient_history ON mqtt_messages(to_node_id,created_at DESC,id DESC);
             CREATE TABLE mqtt_topics(id integer PRIMARY KEY,topic text NOT NULL);
             CREATE TABLE packet_receptions(mqtt_row_id bigint,created_at timestamptz,
                 gateway varchar(8),topic_id integer,rx_rssi smallint,rx_snr double precision,
@@ -89,6 +92,12 @@ async def fixture():
             (60, "old packet", '{"text":"old packet id"}', 0, False, 160, JANUARY, "00000003", None, 777),
             (61, "tie low", '{"text":"tie low"}', 0, False, 261, FEBRUARY, "00000003", None, 777),
             (62, "tie high", '{"text":"tie high"}', 0, False, 262, FEBRUARY, "00000003", None, 777),
+            (64, "recipient only", '{"text":"null sender"}', 0, False, 164,
+             JANUARY+timedelta(days=6), None, "00000001", 864),
+            (65, "self addressed", '{"text":"self addressed"}', 0, False, 265,
+             FEBRUARY+timedelta(days=1), "00000001", "00000001", 865),
+            (66, "rare node", '{"text":"rare node"}', 0, False, 266,
+             FEBRUARY-timedelta(days=1), "000000ff", None, 866),
         ]
         await conn.copy_records_to_table("mqtt_messages", schema_name=schema, records=rows)
         await conn.execute("INSERT INTO mqtt_topics VALUES(1,$1),(2,'newer receipt')", TOPIC)
@@ -187,4 +196,132 @@ def test_plain_postgres_packet_details_without_columnar(case):
                 result = await storage.query_mqtt_message_by_id(10, True)
                 assert result["receptions"][0]["reconstructed"] == ORIGINAL_COPY
                 assert await writer.fetchval("SELECT gateway FROM packet_receptions WHERE mqtt_row_id=10") == "00000009"
+    asyncio.run(scenario())
+
+
+def message_ids(page):
+    return [message["mqtt_row_id"] for message in page["messages"]]
+
+
+@pytest.mark.parametrize("limit", [1, 50, 50_000])
+@pytest.mark.parametrize("node,expected", [
+    ("00000001", [65, 50, 64, 12, 11, 10]),
+    ("000000ff", [66]),
+    ("ffffffff", []),
+])
+def test_plain_postgres_node_page_limits(node, expected, limit):
+    async def scenario():
+        async with fixture() as (_, storage):
+            page = await storage.query_node_mqtt_messages(node, limit=limit)
+            assert message_ids(page) == expected[:limit]
+            assert bool(page["next_cursor"]) is (len(expected) > limit)
+            if node == "00000001" and limit > 1:
+                # A self-addressed row belongs to one UNION branch; a NULL
+                # sender must still qualify through the recipient branch.
+                assert message_ids(page).count(65) == 1 and 64 in message_ids(page)
+                by_id = {message["mqtt_row_id"]: message for message in page["messages"]}
+                assert by_id[11]["raw"] == '{"broken":' and by_id[12]["raw"] == 42
+                assert by_id[10]["reception_count"] == 1
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("start,end,expected", [
+    (JANUARY, BOUNDARY, [50, 64, 12, 11, 10]),
+    (BOUNDARY+timedelta(seconds=1), FEBRUARY+timedelta(days=1), [65]),
+    (JANUARY, FEBRUARY+timedelta(days=1), [65, 50, 64, 12, 11, 10]),
+    (JANUARY, JANUARY, [12, 11, 10]),
+])
+def test_plain_postgres_node_windows(start, end, expected):
+    async def scenario():
+        async with fixture() as (_, storage):
+            page = await storage.query_node_mqtt_messages("00000001", start=start, end=end)
+            assert message_ids(page) == expected and page["next_cursor"] is None
+    asyncio.run(scenario())
+
+
+def test_plain_postgres_node_cursor_ties_and_identity():
+    async def scenario():
+        async with fixture() as (_, storage):
+            cursor, seen = None, []
+            for _ in range(7):
+                page = await storage.query_node_mqtt_messages("!00000001", limit=1,
+                    start=JANUARY, end=FEBRUARY+timedelta(days=1), before=cursor)
+                seen.extend(message_ids(page))
+                cursor = page["next_cursor"]
+                if cursor is None:
+                    break
+            assert cursor is None and seen == [65, 50, 64, 12, 11, 10]
+            # The same numeric ID also exists in February for a different
+            # sender. Neither partition nor sender may leak through a cursor.
+            other = await storage.query_node_mqtt_messages("00000002")
+            assert message_ids(other) == [50, 10]
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("failure", [None, "sql", "deadline", "cancel"])
+def test_plain_postgres_node_read_scope_and_recovery(failure, monkeypatch):
+    async def scenario():
+        async with fixture() as (_, storage):
+            pool = storage.pool
+            entered = asyncio.Event()
+            async with pool.acquire() as check:
+                original_pid = await check.fetchval("SELECT pg_backend_pid()")
+
+            class Hooked:
+                def __init__(self, connection):
+                    self.connection = connection
+
+                def __getattr__(self, name):
+                    return getattr(self.connection, name)
+
+                async def fetch(self, query, *args):
+                    assert self.connection.is_in_transaction()
+                    assert await self.connection.fetchval("SHOW transaction_isolation") == "repeatable read"
+                    assert await self.connection.fetchval("SHOW transaction_read_only") == "on"
+                    assert await self.connection.fetchval("SHOW plan_cache_mode") == "force_generic_plan"
+                    assert await self.connection.fetchval(
+                        "SELECT current_setting('columnar.enable_custom_scan',true)") is None
+                    entered.set()
+                    if failure == "sql":
+                        await self.connection.execute("SELECT 1/0")
+                    elif failure in {"deadline", "cancel"}:
+                        await self.connection.execute("SELECT pg_sleep(1)")
+                    return await self.connection.fetch(query, *args)
+
+            class Pool:
+                @asynccontextmanager
+                async def acquire(self, **kwargs):
+                    async with pool.acquire(**kwargs) as connection:
+                        yield Hooked(connection)
+
+            storage.pool = Pool()
+            if failure == "deadline":
+                monkeypatch.setattr(history_queries, "HISTORY_READ_TIMEOUT_SECONDS", 0.1)
+            if failure == "cancel":
+                task = asyncio.create_task(storage.query_node_mqtt_messages("00000001"))
+                try:
+                    await asyncio.wait_for(entered.wait(), 2)
+                    task.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await task
+                finally:
+                    if not task.done():
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+            elif failure:
+                with pytest.raises(history_queries.HistoryReadError) as raised:
+                    await storage.query_node_mqtt_messages("00000001")
+                assert raised.value.operation == "query_node_mqtt_messages"
+                assert raised.value.timed_out is (failure == "deadline")
+            else:
+                assert message_ids(await storage.query_node_mqtt_messages("00000001")) == [65, 50, 64, 12, 11, 10]
+            assert entered.is_set()
+            storage.pool = pool
+            async with pool.acquire() as check:
+                assert await check.fetchval("SELECT pg_backend_pid()") == original_pid
+                assert not check.is_in_transaction()
+                assert await check.fetchval("SHOW plan_cache_mode") == "auto"
+                assert await check.fetchval("SELECT current_setting('columnar.enable_custom_scan',true)") is None
+                assert await check.fetchval("SELECT 1") == 1
+            assert message_ids(await storage.query_node_mqtt_messages("000000ff")) == [66]
     asyncio.run(scenario())

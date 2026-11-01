@@ -134,8 +134,8 @@ jobs:
             -e MESHINFO_HISTORY_TEST_DSN=postgresql://postgres@127.0.0.1:5432/native_columnar_test \
             columnar-native-ci python3 -m pytest -q -p no:cacheprovider \
             tests/test_history_queries.py tests/test_history_queries_integration.py \
-            tests/test_history_candidates_integration.py
-      - name: Verify packet details on PostgreSQL without Columnar loaded or installed
+            tests/test_history_candidates_integration.py tests/test_history_queries_nodes_integration.py
+      - name: Verify packet details and node pages without Columnar loaded or installed
         run: |
           # Reuse the built image but override its preload default. No extension
           # is created in this separate database; the tests assert both facts.

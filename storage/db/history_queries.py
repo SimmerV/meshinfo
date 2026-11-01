@@ -112,7 +112,7 @@ async def fetch_packet_page(connection, query, *parameters, custom_plan=False):
 
 
 async def fetch_bounded_payload(connection, query, *parameters, columnar_optional=False):
-    """Reuse a plan only after exact packet identities have been bounded.
+    """Reuse a plan for bounded identities or approved indexed node pages.
 
     Columnar's planner repeatedly enumerates stripe metadata even with its
     custom scan disabled. A generic prepared plan avoids that work on reuse;
@@ -138,6 +138,17 @@ async def fetch_bounded_payload(connection, query, *parameters, columnar_optiona
             setting += "; SET LOCAL columnar.enable_custom_scan = " + previous["scan"]
         await connection.execute(setting)
         return rows
+
+
+@history_read_deadline
+async def fetch_node_packet_page(connection, query, *parameters):
+    """Keep bounded sender/recipient branches on reusable index-oriented plans.
+
+    The node SQL retains its complete predicates and disjoint ordered branches;
+    this scope changes only planning. Other packet searches remain unaffected.
+    """
+    async with connection.transaction(isolation="repeatable_read", readonly=True):
+        return await fetch_bounded_payload(connection, query, *parameters, columnar_optional=True)
 
 
 @history_read_deadline
