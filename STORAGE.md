@@ -4,6 +4,44 @@ MeshInfo keeps retained history in PostgreSQL. Packet links, per-gateway copy
 reconstruction, pagination, and existing API responses remain available without
 an archive restore or a second storage service.
 
+Retention and compression are separate choices. A finite retention policy deletes
+expired history; optional Columnar archiving compresses older retained packet
+partitions in the same database. Archiving requires the explicitly installed
+Columnar image described below. Ordinary PostgreSQL deployments remain supported
+without enabling it, and retaining everything still means storage grows over time.
+
+## Current validated release checkpoint
+
+The pinned PostgreSQL 18.6/Citus 14.1.0 build with the `planner-costing-v2` patch,
+revision `283e35ec7b517cd236c9688ad105b0631f5d4d00`, passed the defined release
+checks on this development deployment and native amd64/arm64 CI. July–September
+now contain **18,094,923 copied and verified canonical packets** in searchable
+Columnar partitions. Including their indexes, topic helpers and all shared
+archive metadata, they occupy **9.884 GiB**, saving **7.297 GiB (42.47%)** against
+the same partitions after earlier index packing. Reception history remains
+available; this percentage is not a whole-database reduction.
+
+The final unchanged two-reader, 60-second HTTP check returned **240/240 matching
+responses**, with all 15 cases below the **250 ms p95** limit; the worst was
+**215.390 ms**. The first page after PostgreSQL recreation took **150.594 ms**.
+Five simultaneous fresh readers are a separate, more demanding observation:
+their first calls took **321.908–429.023 ms**, then **16.375–46.950 ms** warm.
+These finite measurements do not promise identical speed for every query or load.
+
+Current whole-database size is **19.798 GiB**, with **17.554 GiB** free. This
+machine retains all history, archives eligible complete months after one month,
+and has three completed archives with no active or cleanup jobs. Its backups
+remain off by local request; production backup policy is independent. Follow the
+image, admission, cancellation and controlled restore procedures below before
+enabling archiving elsewhere. Keeping all data still requires growing capacity,
+and migration temporarily needs both source and replacement storage.
+
+The [final validation checkpoint](#native-planner-v2-final-validation-checkpoint)
+and [acceptance evidence](benchmarks/columnar-production-2026-11-01/ACCEPTANCE.md)
+record the exact scope, limitations and provenance. Earlier dated checkpoints
+below are historical evidence; their failed gates remain unchanged. Raw report
+timestamps are UTC.
+
 ## Implementation phases
 
 1. **Retention and visibility.** Add validated, backwards-compatible retention
@@ -17,10 +55,11 @@ an archive restore or a second storage service.
    retained records and current state survive using an isolated PostgreSQL test
    database. Existing deployments continue to retain everything by default.
 3. **Measured storage optimization.** Benchmark representative retained data,
-   implement only lossless transformations compatible with ordinary PostgreSQL,
-   preserve query behavior and packet reconstruction, and report measured size
-   and latency changes. Maintenance must check temporary-space requirements and
-   must not rewrite a live large partition merely to produce a benchmark.
+   preserve ordinary PostgreSQL compatibility, and offer optional lossless
+   Columnar compression with verified query behavior and packet reconstruction.
+   Report measured size and latency changes. Maintenance must check temporary-space
+   requirements and must not rewrite a live large partition merely to produce a
+   benchmark.
 4. **Backup coordination.** Separate backup retention from live-history
    retention, make completed backups and failures observable, prevent overlapping
    maintenance, and support bounded-memory off-box backup streaming without a
@@ -1447,3 +1486,74 @@ remain unchanged. [The v1 provenance](benchmarks/columnar-production-2026-11-01/
 records those distinct results, source/image identities and corrected harness
 failures. A further native change is being evaluated; v1 does not establish final
 performance acceptance or production readiness.
+
+### Native planner v2 final validation checkpoint
+
+Revision `283e35ec7b517cd236c9688ad105b0631f5d4d00` streams stripe statistics and
+row counts through the shared metadata iterator, avoiding retained stripe arrays
+while preserving cost formulas, validation and snapshot visibility. It was
+deployed on November 1 at 09:19 UTC using the same data volume. The first page
+after PostgreSQL recreation took **150.594 ms**, followed by **14.844/13.994 ms**,
+with matching hashes. The host page cache was not cleared.
+
+The **292-case paired native comparison** passed, including three additional
+cross-connection repeatable-read cases: a reader saw zero new rows before and
+after another connection committed, then 64 after releasing its snapshot.
+Separate runs passed **260 tests in 104.69 seconds**, **1,016 backend tests with
+192 skipped in 22.49 seconds**, and the actual **4,530-row restore proof**. Exact
+revision amd64 and arm64 [CI](https://github.com/SimmerV/meshinfo/actions/runs/41292577040)
+passed its recorded build, parity, lifecycle, restore and reader checks.
+
+On unchanged August history, first planning was **86.687 ms** for a page,
+**161.294 ms** for a node, **86.843 ms** for a literal topic and **85.594 ms** for
+topic/text. Allocated planner memory was **1,048/1,048/1,048/2,080 KiB**,
+respectively, versus **200,474/336,923/200,474/229,794 KiB** before either native
+patch. All four response hashes matched. These component measurements use JIT
+off and include extra instrumented work; they are not ordinary HTTP timings.
+
+Five simultaneous fresh production-reader sessions, with normal server JIT on,
+returned **10/10 matching responses** across first and warm calls and restored
+their connection settings. First calls took **321.908–429.023 ms**; warm calls
+took **16.375–46.950 ms**. The first calls therefore did **not** all meet 250 ms.
+The sampled PostgreSQL working-set peak was **331.3 MiB**, **13.5 MiB** above the
+five-idle-connection baseline, with at least **868.1 MiB** host memory available
+and no OOM/limit events. Thirty samples had a maximum gap of **48.834 ms**, so
+shorter spikes can be missed. This working-set observation is distinct from
+planner-context allocation and is not a stable p95 estimate.
+
+The final unchanged two-reader, 60-second HTTP acceptance test **passed**:
+**240/240 responses matched**, and all 15 cases met the **250 ms p95** limit.
+The worst was August literal-topic at **215.390 ms**; case medians ranged
+**7.612–128.391 ms**. Each case had 16 observations, so nearest-rank p95 equals
+its maximum. Cases were warmed before concurrency, normal ingestion continued,
+and neither PostgreSQL nor OS caches were flushed. This test is distinct from
+the five-fresh-reader result above; it does not turn those slower first calls
+into sub-250 ms results. Unrestricted full-text/native-fallback queries retain
+their separate bounded 10-second policy.
+
+At the final November 2 UTC observation, both services were healthy after roughly
+19 hours, with zero recorded container restarts or OOMs. A bounded check of recent
+logs found no error markers; it is not an exhaustive lifetime log audit. The
+operator report confirms retention forever, archiving after one calendar month,
+three archived partitions and no active or cleanup jobs. Actual snapshot metadata
+capture covered all **18,094,923 rows** in **239.824 ms**, closing in **3.113 ms**.
+That operation created no full-history dump; the controlled restore proof above
+used 4,530 rows, and the earlier separate workload restored 63,800 archived rows.
+
+The current database is **21,257,725,631 bytes (19.798 GiB)**, with
+**18,848,829,440 bytes (17.554 GiB)** free and **83,886,080 bytes (80 MiB)** of
+WAL. All ten cold packet/helper/internal-table relations match the earlier
+physical ledger byte-for-byte in table and index size. The **9.884 GiB** fully
+charged cohort ledger retains its original small sequence/journal measurements;
+those supplemental objects were not remeasured in the final inventory. New
+ingestion grew the whole database by **107,085,824 bytes** after cutover.
+Removing three owned test clusters, their credentials and network separately
+increased free space by about **409 MB**; that is not compression savings.
+
+[V2 provenance](benchmarks/columnar-production-2026-11-01/native-planner-v2-provenance.json)
+and the [final observation](benchmarks/columnar-production-2026-11-01/native-v2-final-observation.json)
+bind the exact source, image, tests, storage ledger and probes. Release validation
+is complete for this pinned stack and the declared workload budgets. Larger
+concurrency, unrestricted search, growing metadata and different hardware still
+require capacity planning. Historical failed gates remain intact; the final
+results supersede their pending readiness status without relabeling them.

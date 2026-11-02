@@ -1,0 +1,28 @@
+{
+  "checked_utc": "2026-11-02T04:52:52.076431+00:00",
+  "containers": [
+    {
+      "name": "meshinfo-postgres-1",
+      "image_id": "sha256:80a9b7e3d5b146b42b2a373b3b2c7c2b75e157af9429ad26c793518a91d6dc4d",
+      "started_at": "2026-11-01T09:18:56.667707836Z",
+      "restart_count": 0,
+      "oom_killed": false,
+      "health": "healthy",
+      "bounded_log_lines": 49,
+      "error_marker_count": 0,
+      "error_line_sha256": []
+    },
+    {
+      "name": "meshinfo-meshinfo-1",
+      "image_id": "sha256:2efdf6ff83b36dc430a94c4216bb331f3bc29e46aef9be670fe0ec0f4d7d523d",
+      "started_at": "2026-11-01T09:19:03.064222746Z",
+      "restart_count": 0,
+      "oom_killed": false,
+      "health": "healthy",
+      "bounded_log_lines": 400,
+      "error_marker_count": 0,
+      "error_line_sha256": []
+    }
+  ],
+  "log_scope": "Last 2000 lines requested from the previous two hours per service; bounded diagnostic, not an exhaustive lifetime log audit."
+}

@@ -1,0 +1,172 @@
+{
+  "implementation_revision": "283e35ec7b517cd236c9688ad105b0631f5d4d00",
+  "run_url": "https://github.com/SimmerV/meshinfo/actions/runs/41292577040",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "name": "PostgreSQL 18.6 / Citus 14.1 (amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the production image on its native architecture",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the unpatched baseline from the same compiled source stage",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Start an isolated test cluster without published ports",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Add minimal test dependencies to the disposable container",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Compare native planner costs and results with the unpatched release",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Preserve the source-free native planner comparison",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify actual backup, settings before COPY, staging and rollback",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify checkpoint restore, cancellation, queries and startup indexes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify production history readers on heap and mixed partitions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify packet details and node pages without Columnar loaded or installed",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Remove the isolated cluster and anonymous data volume",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "PostgreSQL 18.6 / Citus 14.1 (arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the production image on its native architecture",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the unpatched baseline from the same compiled source stage",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Start an isolated test cluster without published ports",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Add minimal test dependencies to the disposable container",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Compare native planner costs and results with the unpatched release",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Preserve the source-free native planner comparison",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify actual backup, settings before COPY, staging and rollback",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify checkpoint restore, cancellation, queries and startup indexes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify production history readers on heap and mixed partitions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify packet details and node pages without Columnar loaded or installed",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Remove the isolated cluster and anonymous data volume",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ]
+}

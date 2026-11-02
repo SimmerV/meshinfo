@@ -1,0 +1,319 @@
+{
+  "runtime_commit_reported_by_deployment_owner": "283e35ec7b517cd236c9688ad105b0631f5d4d00",
+  "postgres_image": "sha256:80a9b7e3d5b146b42b2a373b3b2c7c2b75e157af9429ad26c793518a91d6dc4d",
+  "read_only": true,
+  "component_report": "live-august-native-v2-planning.json",
+  "concurrent_report": "live-native-v2-five-readers.json",
+  "all_component_hashes_match": true,
+  "all_concurrent_correctness_checks_passed": true,
+  "geometry": {
+    "stripes": 156390,
+    "rows": 14544219,
+    "min_stripe_rows": 42,
+    "max_stripe_rows": 93
+  },
+  "cases": [
+    {
+      "name": "month_08_page",
+      "response_sha256": "7950f9fab4171603ecf240cf2ff2aad7048c4418f47002c4eb0086c3a9a02864",
+      "matches_baseline": true,
+      "unmodified": {
+        "first_planning_ms": 886.018,
+        "first_execution_ms": 4.694,
+        "first_planner_used_kib": 193173,
+        "first_planner_allocated_kib": 200474,
+        "warm_planning_ms": 0.081,
+        "warm_execution_ms": 1.983,
+        "warm_fetch_ms": [
+          33.83,
+          4.713,
+          7.395
+        ],
+        "instrumented_whole_reader_ms": 971.395,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        }
+      },
+      "native_v1": {
+        "first_planning_ms": 156.97,
+        "first_execution_ms": 2.531,
+        "first_planner_used_kib": 16632,
+        "first_planner_allocated_kib": 35161,
+        "warm_planning_ms": 0.081,
+        "warm_execution_ms": 2.296,
+        "warm_fetch_ms": [
+          6.266,
+          2.854,
+          2.449
+        ],
+        "instrumented_whole_reader_ms": 209.885,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        }
+      },
+      "native_v2": {
+        "first_planning_ms": 86.687,
+        "first_execution_ms": 2.927,
+        "first_planner_used_kib": 583,
+        "first_planner_allocated_kib": 1048,
+        "warm_planning_ms": 0.076,
+        "warm_execution_ms": 1.964,
+        "warm_fetch_ms": [
+          2.472,
+          2.413,
+          2.363
+        ],
+        "instrumented_whole_reader_ms": 138.955,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        }
+      }
+    },
+    {
+      "name": "month_08_node",
+      "response_sha256": "5a739df81ebaec0608a1f1a13ee254c3f192e627c52fe30fc3378fb2f1b73a56",
+      "matches_baseline": true,
+      "unmodified": {
+        "first_planning_ms": 1494.128,
+        "first_execution_ms": 14.423,
+        "first_planner_used_kib": 335876,
+        "first_planner_allocated_kib": 336923,
+        "warm_planning_ms": 0.025,
+        "warm_execution_ms": 11.939,
+        "warm_fetch_ms": [
+          29.585,
+          12.659,
+          12.068
+        ],
+        "instrumented_whole_reader_ms": 1587.258,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        }
+      },
+      "native_v1": {
+        "first_planning_ms": 270.875,
+        "first_execution_ms": 121.478,
+        "first_planner_used_kib": 32921,
+        "first_planner_allocated_kib": 45721,
+        "warm_planning_ms": 0.027,
+        "warm_execution_ms": 11.658,
+        "warm_fetch_ms": [
+          17.649,
+          12.149,
+          14.136
+        ],
+        "instrumented_whole_reader_ms": 460.917,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        }
+      },
+      "native_v2": {
+        "first_planning_ms": 161.294,
+        "first_execution_ms": 145.162,
+        "first_planner_used_kib": 823,
+        "first_planner_allocated_kib": 1048,
+        "warm_planning_ms": 0.027,
+        "warm_execution_ms": 11.495,
+        "warm_fetch_ms": [
+          13.393,
+          12.497,
+          12.017
+        ],
+        "instrumented_whole_reader_ms": 366.169,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        }
+      }
+    },
+    {
+      "name": "month_08_topic",
+      "response_sha256": "fd6855708243d0b0f9bce5547ee02da033a8944b8b8258a84b76b6f64a5f9c6e",
+      "matches_baseline": true,
+      "unmodified": {
+        "first_planning_ms": 623.032,
+        "first_execution_ms": 11.124,
+        "first_planner_used_kib": 193157,
+        "first_planner_allocated_kib": 200474,
+        "warm_planning_ms": 0.074,
+        "warm_execution_ms": 10.038,
+        "warm_fetch_ms": [
+          10.63,
+          10.49,
+          11.576
+        ],
+        "instrumented_whole_reader_ms": 781.93,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        }
+      },
+      "native_v1": {
+        "first_planning_ms": 137.595,
+        "first_execution_ms": 54.176,
+        "first_planner_used_kib": 16616,
+        "first_planner_allocated_kib": 35161,
+        "warm_planning_ms": 0.072,
+        "warm_execution_ms": 10.039,
+        "warm_fetch_ms": [
+          12.323,
+          10.428,
+          10.689
+        ],
+        "instrumented_whole_reader_ms": 1018.807,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        }
+      },
+      "native_v2": {
+        "first_planning_ms": 86.843,
+        "first_execution_ms": 60.499,
+        "first_planner_used_kib": 567,
+        "first_planner_allocated_kib": 1048,
+        "warm_planning_ms": 0.082,
+        "warm_execution_ms": 10.531,
+        "warm_fetch_ms": [
+          10.817,
+          10.497,
+          10.404
+        ],
+        "instrumented_whole_reader_ms": 980.949,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        }
+      }
+    },
+    {
+      "name": "month_08_topic_search",
+      "response_sha256": "fd6855708243d0b0f9bce5547ee02da033a8944b8b8258a84b76b6f64a5f9c6e",
+      "matches_baseline": true,
+      "unmodified": {
+        "first_planning_ms": 731.525,
+        "first_execution_ms": 27.796,
+        "first_planner_used_kib": 225754,
+        "first_planner_allocated_kib": 229794,
+        "warm_planning_ms": 0.136,
+        "warm_execution_ms": 24.395,
+        "warm_fetch_ms": [
+          27.544,
+          25.911,
+          25.348
+        ],
+        "instrumented_whole_reader_ms": 968.407,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        }
+      },
+      "native_v1": {
+        "first_planning_ms": 124.869,
+        "first_execution_ms": 115.35,
+        "first_planner_used_kib": 17115,
+        "first_planner_allocated_kib": 35169,
+        "warm_planning_ms": 0.156,
+        "warm_execution_ms": 25.453,
+        "warm_fetch_ms": [
+          27.919,
+          26.105,
+          26.331
+        ],
+        "instrumented_whole_reader_ms": 441.221,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        }
+      },
+      "native_v2": {
+        "first_planning_ms": 85.594,
+        "first_execution_ms": 135.017,
+        "first_planner_used_kib": 1065,
+        "first_planner_allocated_kib": 2080,
+        "warm_planning_ms": 0.166,
+        "warm_execution_ms": 25.737,
+        "warm_fetch_ms": [
+          26.264,
+          25.038,
+          25.899
+        ],
+        "instrumented_whole_reader_ms": 419.303,
+        "prepared_counts": {
+          "generic_plans": 5,
+          "custom_plans": 0
+        }
+      }
+    }
+  ],
+  "qualifications": [
+    "Component probe uses one fresh connection and newly prepared statements with JIT off. Five-session probe uses actual ordinary production readers, no EXPLAIN, and normal server JIT on.",
+    "Five fresh simultaneous node requests exceeded250ms; their correctness/memory pass is not a claim that the250ms latency criterion passed.",
+    "Only five requests per phase were measured; report raw durations and median/range, not a stable production p95 estimate.",
+    "No caches were flushed. Component reads preceded the five-session test, so its data caches may be warm while all five backend plans are fresh.",
+    "Component whole-reader times include first/warm EXPLAIN and three extra fetches. They are not ordinary HTTP latency; the topic instrumented call was980.949ms and remains recorded.",
+    "Planner memory is PostgreSQL context KiB, not RSS. Cgroup working set is memory.current minus inactive_file; sampled peaks can miss spikes shorter than the observed48.834ms maximum sample interval.",
+    "Streaming metadata aggregation bounds its scratch memory but still scans visible metadata. New connections and invalidated plans retain first-use CPU cost; no identical-speed or constant-total-memory claim is made."
+  ],
+  "five_readers": {
+    "session_count": 5,
+    "distinct_backend_pids": true,
+    "jit": [
+      "on"
+    ],
+    "peak_working_set_bytes": 347344896,
+    "pre_query_working_set_bytes": 333217792,
+    "working_set_peak_above_pre_query_bytes": 14127104,
+    "working_set_peak_above_initial_bytes": 23060480,
+    "working_set_after_close_bytes": 324321280,
+    "peak_memory_current_bytes": 662474752,
+    "minimum_host_available_bytes": 910303232,
+    "sample_count": 30,
+    "max_sample_gap_ms": 48.834,
+    "event_deltas": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0
+    },
+    "resource_guard_triggered": false,
+    "first": {
+      "reader_ms": [
+        367.615,
+        429.023,
+        409.728,
+        321.908,
+        355.006
+      ],
+      "median_ms": 367.615,
+      "min_ms": 321.908,
+      "max_ms": 429.023,
+      "start_spread_ms": 0.668,
+      "all_under_250ms": false,
+      "all_hashes_match": true,
+      "all_settings_restored": true
+    },
+    "warm": {
+      "reader_ms": [
+        27.96,
+        16.375,
+        35.168,
+        46.95,
+        40.602
+      ],
+      "median_ms": 35.168,
+      "min_ms": 16.375,
+      "max_ms": 46.95,
+      "start_spread_ms": 0.729,
+      "all_under_250ms": true,
+      "all_hashes_match": true,
+      "all_settings_restored": true
+    }
+  }
+}

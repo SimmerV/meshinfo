@@ -1,0 +1,131 @@
+{
+  "retention": {
+    "months": 0,
+    "enabled": false
+  },
+  "archive_enabled": true,
+  "archive_after_months": 1,
+  "backups_schedule": "off",
+  "public": {
+    "archive": {
+      "after_months": 1,
+      "compressed_partitions": 3,
+      "enabled": true,
+      "history_remains_queryable": true
+    },
+    "configured_enabled": false,
+    "enforcement_enabled": false,
+    "generated_at": "2026-11-02T04:54:42.410515Z",
+    "granularity": "calendar_month",
+    "maintenance": {
+      "archive": {
+        "scopes": {},
+        "status": "idle",
+        "updated_at": "2026-11-02T04:54:10.882716+00:00"
+      },
+      "compression": {
+        "scopes": {},
+        "status": "packed",
+        "updated_at": "2026-10-29T03:17:07.189134+00:00"
+      },
+      "retention": {
+        "scopes": {},
+        "status": "disabled",
+        "updated_at": "2026-11-02T04:54:10.806346+00:00"
+      }
+    },
+    "scopes": {
+      "chat": {
+        "available_bounds_kind": "unknown",
+        "cutoff": null,
+        "effective_cutoff": null,
+        "months": 0,
+        "newest_available": null,
+        "oldest_available": null
+      },
+      "neighbors": {
+        "available_bounds_kind": "unknown",
+        "cutoff": null,
+        "effective_cutoff": null,
+        "months": 0,
+        "newest_available": null,
+        "oldest_available": null
+      },
+      "packets": {
+        "available_bounds_kind": "partition",
+        "cutoff": null,
+        "effective_cutoff": null,
+        "months": 0,
+        "newest_available": "2026-12-01T00:00:00Z",
+        "oldest_available": "2026-07-01T00:00:00Z"
+      },
+      "telemetry": {
+        "available_bounds_kind": "unknown",
+        "cutoff": null,
+        "effective_cutoff": null,
+        "months": 0,
+        "newest_available": null,
+        "oldest_available": null
+      },
+      "traceroutes": {
+        "available_bounds_kind": "unknown",
+        "cutoff": null,
+        "effective_cutoff": null,
+        "months": 0,
+        "newest_available": null,
+        "oldest_available": null
+      }
+    }
+  },
+  "active_or_cleanup_jobs": [],
+  "candidates": [
+    {
+      "name": "mqtt_messages_2026_09",
+      "method": "columnar",
+      "eligible": false,
+      "reason": "already_archived"
+    },
+    {
+      "name": "mqtt_messages_2026_07",
+      "method": "columnar",
+      "eligible": false,
+      "reason": "already_archived"
+    },
+    {
+      "name": "mqtt_messages_2026_08",
+      "method": "columnar",
+      "eligible": false,
+      "reason": "already_archived"
+    },
+    {
+      "name": "mqtt_messages_2026_12",
+      "method": "heap",
+      "eligible": false,
+      "reason": "too_recent"
+    },
+    {
+      "name": "mqtt_messages_2027_01",
+      "method": "heap",
+      "eligible": false,
+      "reason": "too_recent"
+    },
+    {
+      "name": "mqtt_messages_default",
+      "method": "heap",
+      "eligible": false,
+      "reason": "not_monthly_partition"
+    },
+    {
+      "name": "mqtt_messages_2026_11",
+      "method": "heap",
+      "eligible": false,
+      "reason": "too_recent"
+    },
+    {
+      "name": "mqtt_messages_2026_10",
+      "method": "heap",
+      "eligible": false,
+      "reason": "too_recent"
+    }
+  ]
+}

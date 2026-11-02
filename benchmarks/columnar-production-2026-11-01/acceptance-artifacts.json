@@ -273,6 +273,74 @@
     "live-native-final-concurrent-reads.json": {
       "bytes": 35252,
       "sha256": "2f536b46d06645dfcee93e99953a9de8eb311835b45f59cdb8ae8bf286508832"
+    },
+    "planner-native-parity-v4.json": {
+      "bytes": 1290486,
+      "sha256": "8c3f9ce776bf3e5e1bac9348ad17e2ba390eaaf6452a37ed9da39a48429d416b"
+    },
+    "backend-native-v2-regressions.txt": {
+      "bytes": 1788,
+      "sha256": "4966b7136500219ecb0718bb77fad26c5a495d87fae4be954ccaedbe87c3e15c"
+    },
+    "isolated-native-v2-regressions.txt": {
+      "bytes": 352,
+      "sha256": "6c9da1a1380bd67d126bb82dd985073970994bd64af72281e5b25cb236e4a22f"
+    },
+    "native-v2-backup-restore.json": {
+      "bytes": 486,
+      "sha256": "535368f96c47afeee2a5115ab28430bb82e4950b807627991592d434216c2f8b"
+    },
+    "live-native-planner-v2-deployment.json": {
+      "bytes": 3988,
+      "sha256": "f16bb794b3a35d8666d864871f02b7c6a08dfc6d731b8d1e87817a945766e377"
+    },
+    "native-planner-v2-provenance.json": {
+      "bytes": 11155,
+      "sha256": "8e75cbf3458f9b9a9829b5ee568b91f003a2ef9735efac98404deec95d1ebded"
+    },
+    "native-ci-283e35e.json": {
+      "bytes": 5298,
+      "sha256": "26e24e79ea21cb5b03b29326be1637f9c3b0ef93c688a534327fa8071fd7090e"
+    },
+    "live-august-native-v2-planning.json": {
+      "bytes": 163618,
+      "sha256": "44cfb10852de1337a500080f98a4d4619fc24f8157ef3400c7b9d20bf7b192ad"
+    },
+    "live-native-v2-five-readers.json": {
+      "bytes": 20434,
+      "sha256": "e8fe6aba9a1dafbd1f7cb91d29978645fdb463b509790ee1ed99bd40ccbac3ed"
+    },
+    "live-native-v2-planning-and-concurrency-summary.json": {
+      "bytes": 9868,
+      "sha256": "7b430d8c34b0ca378c9230583e98effb13f9233dac6f99acac5136363decb758"
+    },
+    "live-native-v2-final-concurrent-reads.json": {
+      "bytes": 35289,
+      "sha256": "b3725186309512e809098317eedc0c5c61cda0863794fa7a0862b85ef2a43695"
+    },
+    "live-native-v2-health.json": {
+      "bytes": 959,
+      "sha256": "0942b137e95280ed582766514b7598d098215ba0e9a6bbea0fc21fff371d0596"
+    },
+    "isolated-test-cleanup-final.json": {
+      "bytes": 965,
+      "sha256": "e5061fc824a4fa937dbf8186ea2c34c91481d05ec0cad58e05d27bc8591cd06e"
+    },
+    "live-native-v2-final-accounting.json": {
+      "bytes": 8463,
+      "sha256": "c4327bc33e2ed4d0616307d6a3f282a7f4361c5733f59618b7c4c2efa0ea21f3"
+    },
+    "live-native-v2-final-operator-status.json": {
+      "bytes": 3194,
+      "sha256": "b6f0625d06978d7fecfbde38b643dd8d04a8b80584d945e2db4ea536e2c70448"
+    },
+    "live-native-v2-snapshot-start.json": {
+      "bytes": 1423,
+      "sha256": "3ef8c505bca700b89da295157175a82974e76174916295557fa81f2e05fa084e"
+    },
+    "native-v2-final-observation.json": {
+      "bytes": 4531,
+      "sha256": "e596b7ad38f351ef3d00655b619b6364166366b5576e26be67d9911d9e246005"
     }
   }
 }

@@ -1,0 +1,81 @@
+{
+  "format_version": 1,
+  "implementation_revision": "283e35ec7b517cd236c9688ad105b0631f5d4d00",
+  "observation_utc": "2026-11-02T04:54:41.244043+00:00",
+  "release_validation_complete": true,
+  "scope": "Pinned PostgreSQL 18.6/Citus 14.1.0 plus planner-costing-v2, retained same-volume history, declared two-reader HTTP budget and tested backup/restore/lifecycle behavior. This is finite test evidence, not a guarantee for arbitrary workloads or hardware.",
+  "archive_cohort": {
+    "canonical_rows_copied_and_verified": 18094923,
+    "completed_months": 3,
+    "fully_charged_bytes": 10612932608,
+    "source_after_packing_bytes": 18447892480,
+    "saved_after_packing_bytes": 7834959872,
+    "saved_after_packing_percent": 42.47075854596481,
+    "source_before_packing_bytes": 18552209408,
+    "saved_before_packing_bytes": 7939276800,
+    "saved_before_packing_percent": 42.79423881759582,
+    "ledger_artifact": "live-final-storage-accounting.json",
+    "ledger_scope": "Original November 1 UTC ledger charges canonical tables/indexes, canonical-topic helpers/indexes, all shared Columnar metadata/sequence and app maintenance journals once. All 10 overlapping cold canonical/helper/internal-table relations have identical physical table/index totals in the final November 2 UTC inventory. The small supplemental sequence/journal measurements were not repeated in that inventory.",
+    "cold_physical_relation_comparisons": 10,
+    "all_compared_cold_relation_bytes_unchanged": true,
+    "reception_tables_and_indexes_bytes": 8807284736,
+    "receptions_remain_heap": true
+  },
+  "current_storage": {
+    "database_bytes": 21257725631,
+    "filesystem_free_bytes": 18848829440,
+    "wal_bytes": 83886080,
+    "whole_database_growth_since_cutover_bytes": 107085824,
+    "scope": "Current whole database includes new ingestion. WAL is separate. Free-space gains also include cache/test cleanup and must not be attributed solely to compression."
+  },
+  "final_declared_http_gate": {
+    "artifact": "live-native-v2-final-concurrent-reads.json",
+    "workers": 2,
+    "duration_seconds": 60,
+    "responses": 240,
+    "all_hashes_match": true,
+    "indexed_250ms_p95_gate": true,
+    "cases": 15,
+    "samples_per_case": 16,
+    "worst_p95_ms": 215.39,
+    "scope": "Fixed cases warmed first; normal ingestion continued; no OS/PostgreSQL cache flush. At 16 observations nearest-rank p95 equals maximum."
+  },
+  "full_size_snapshot_metadata": {
+    "artifact": "live-native-v2-snapshot-start.json",
+    "start_ms": 239.824,
+    "close_ms": 3.113,
+    "rows": 18094923,
+    "session_closed": true,
+    "scope": "Actual metadata snapshot only; no full-history dump or full-history restore was performed."
+  },
+  "operator_state": {
+    "artifact": "live-native-v2-final-operator-status.json",
+    "retention_months": 0,
+    "deletion_enabled": false,
+    "archive_after_months": 1,
+    "compressed_partitions": 3,
+    "active_or_cleanup_jobs": 0,
+    "local_backups_schedule": "off",
+    "scope": "These are development-machine settings, not upstream defaults or a recommendation to disable production backups. Calendar-month policy, not rolling 30 days."
+  },
+  "test_cleanup": {
+    "artifact": "isolated-test-cleanup-final.json",
+    "owned_clusters_removed": 3,
+    "credential_files_removed": 11,
+    "network_removed": true,
+    "observed_free_space_increase_bytes": 409006080,
+    "scope": "Separate from compression savings; concurrent live filesystem activity can affect this observation."
+  },
+  "limitations": [
+    "Five simultaneous fresh reader calls were 321.908\u2013429.023 ms; their 250 ms check remains false. Warm calls were 16.375\u201346.950 ms.",
+    "Unrestricted full-text/native-fallback queries retain the separate bounded 10-second policy; not all arbitrary queries are indexed or sub-250 ms.",
+    "First-use metadata traversal still costs CPU; sampled memory and a short two-reader load test do not establish capacity for arbitrary concurrency.",
+    "Retaining all history still grows indefinitely; source and replacement coexist during migration and the free-space/WAL reserve remains mandatory.",
+    "Actual controlled restore was proved on 4,530 rows, with a separate 63,800-archived-row workload proof earlier; metadata capture on the final 18,094,923-row history does not constitute a restore at that full scale."
+  ],
+  "historical_failed_gates_preserved": [
+    "live-final-concurrent-reads.json",
+    "live-final-restart-validation.json",
+    "live-native-final-concurrent-reads.json"
+  ]
+}

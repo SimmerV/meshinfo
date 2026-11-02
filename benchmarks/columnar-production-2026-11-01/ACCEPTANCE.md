@@ -1,3 +1,30 @@
+# Storage acceptance evidence
+
+## Current release checkpoint
+
+The pinned PostgreSQL 18.6/Citus 14.1.0 `planner-costing-v2` runtime at revision
+`283e35ec7b517cd236c9688ad105b0631f5d4d00` passed the defined release checks.
+All **18,094,923 canonical packets** in July–September were copied and verified;
+the fully charged archive occupies **9.884 GiB**, saving **7.297 GiB (42.47%)**
+against its post-index-packing source. This includes helpers, indexes and shared
+metadata; reception history remains heap data and available.
+
+The final unchanged two-reader, 60-second HTTP gate passed **240/240 response
+checks**, with every case p95 below 250 ms (worst **215.390 ms**). Exact-revision
+amd64/arm64 CI, 292 paired native plan/cost/result comparisons, the 260-test native
+suite, 1,016 backend tests and the controlled restore proof passed in separate
+runs. Five simultaneous fresh reads still took **321.908–429.023 ms**; the
+passing two-reader gate does not make a universal sub-250 ms claim.
+
+See the [final checkpoint](#native-planner-v2-final-validation-checkpoint) and
+[scoped final observation](native-v2-final-observation.json) for provenance,
+current storage, policy and limitations. The following earlier checkpoints are
+historical evidence. Their failures remain unchanged and are not counted as
+passes. Report timestamps are UTC; remote CI clock inconsistencies are not used
+to infer local measurement chronology.
+
+## Earlier source/restored workload acceptance
+
 The final source and restored concurrent runs passed the operational criteria
 specified before those runs. Both preserve `all_checks_passed: false` and
 `latency_gates_passed: false`: the original universal 3×/1-second gates did not
@@ -528,3 +555,124 @@ Finally, `live-native-final-concurrent-reads.json` preserves the unchanged decla
 **308.461/263.389 ms**, with 16 observations per case. The successful restart gate
 and lower medians do not override this failed load gate. Further native work is
 separate; this v1 checkpoint makes no final readiness claim.
+
+## Native planner v2 final validation checkpoint
+
+Revision `283e35ec7b517cd236c9688ad105b0631f5d4d00` removes the remaining full
+stripe-list allocations from scalar metadata aggregation and table row counting.
+The shared iterator preserves validation and transaction visibility; cost
+formulas, storage format and SQL extension version remain unchanged. The image
+was deployed on November 1 at 09:19 UTC; the following final probes were collected
+after the session resumed on November 2 UTC. These dates are not inferred from the
+historically inconsistent remote CI timestamps.
+
+`planner-native-parity-v4.json` contains **292 passing paired cases**, retaining
+all 289 v1 comparisons and adding three cross-connection repeatable-read checks.
+Both implementations see zero new rows before a writer commits, still zero
+inside the existing reader snapshot after commit, and 64 after that snapshot
+is released. Estimated plans/costs, ordered hashes and initial fixture statistics/
+geometry agree; both schemas were removed. This is synthetic fixture evidence,
+not a claim that every possible SQL statement was proved equivalent.
+
+The separate validation artifacts record:
+
+- `backend-native-v2-regressions.txt`: 1,016 passed, 192 skipped, one existing
+  warning in 22.49 seconds. Only the warning's absolute workspace path is redacted.
+- `isolated-native-v2-regressions.txt`: 260 tests passed in 104.69 seconds.
+- `native-v2-backup-restore.json`: the actual 4,530-row/two-relation/eight-group
+  local/remote-receiver restore proof passed, including geometry, large COPY,
+  stage guards, coincident-OID statistics invalidation and rollback.
+- `native-ci-283e35e.json`: exact-revision amd64 and arm64 build/parity/lifecycle/
+  restore/reader checks passed in [run 41292577040](https://github.com/SimmerV/meshinfo/actions/runs/41292577040).
+
+`live-native-planner-v2-deployment.json` records the same data volume, unchanged
+extension version, healthy services and matching response hashes. The first
+page took **150.594 ms**, followed by **14.844/13.994 ms**, passing the unchanged
+1,000 ms restart-page limit. Shared buffers were reset; the host page cache was
+not. Prior failed restart/load reports and the v1 result remain unchanged.
+
+`live-august-native-v2-planning.json` and the combined summary preserve four
+matching responses on the same 156,390-stripe/14,544,219-row August geometry:
+
+| Read | Unmodified first planning (ms) | V2 first planning (ms) | Unmodified → v2 allocated planner KiB | V2 warm execution (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Page | 886.018 | 86.687 | 200,474 → 1,048 | 1.964 |
+| Node | 1,494.128 | 161.294 | 336,923 → 1,048 | 11.495 |
+| Literal topic | 623.032 | 86.843 | 200,474 → 1,048 | 10.531 |
+| Topic/text | 731.525 | 85.594 | 229,794 → 2,080 | 25.737 |
+
+First node/topic/topic-text execution still took 145.162/60.499/135.017 ms.
+The instrumented topic call took 980.949 ms. Its extra EXPLAIN and repeated-fetch
+work means it is not an HTTP latency. Planner context KiB is not peak RSS, and
+the component probe's JIT-off setting is distinct from the normal-JIT reader
+probe below. Metadata traversal still takes CPU time; new connections and plan
+invalidation retain first-use cost.
+
+`live-native-v2-five-readers.json` ran five independent simultaneous production
+node readers with normal server JIT on and no EXPLAIN instrumentation. All ten
+first/warm responses and connection-setting checks passed. First calls were
+367.615/429.023/409.728/321.908/355.006 ms (median 367.615 ms), explicitly
+**not all under 250 ms**. Warm calls ranged 16.375–46.950 ms (median 35.168 ms).
+Five samples per phase do not establish a stable production p95. Component reads
+preceded this probe, so data/OS caches may have been warm while plans were fresh.
+
+The sampled PostgreSQL cgroup working-set peak was 347,344,896 bytes (331.3 MiB),
+14,127,104 bytes (13.5 MiB) above five idle connections. Host available memory
+remained at least 910,303,232 bytes (868.1 MiB); all OOM/limit-event deltas were
+zero and no resource guard fired. Working set is `memory.current - inactive_file`,
+not process RSS; 30 samples with a maximum 48.834 ms gap may miss shorter spikes.
+Connection backend PIDs are retained solely to establish five distinct sessions;
+no source values or credentials are present.
+
+`live-native-v2-final-concurrent-reads.json` records the final unchanged declared
+HTTP test: two workers for 60 seconds, at most two requests per second per worker,
+while normal ingestion continued. **240/240 responses matched**, and all 15 cases
+passed the **250 ms p95** gate. Every case has 16 observations, so nearest-rank p95
+is its maximum. The worst was August literal-topic at **215.390 ms**; medians
+ranged **7.612–128.391 ms**. Each case was warmed before the run, with no cache
+flush. This finite sample validates the declared workload, not an unlimited
+concurrency or universally cold-cache claim. The five fresh sessions above retain
+their separate failed 250 ms observation.
+
+`live-native-v2-health.json` reports both services healthy after roughly 19 hours,
+zero container restarts/OOMs and no error markers in bounded recent logs. The
+log check requested at most 2,000 lines per service from the preceding two hours;
+it is not an exhaustive lifetime error audit. `live-native-v2-final-operator-status.json`
+confirms three archives, no active or cleanup jobs, retention forever and an
+archive threshold of one calendar month. The local backup schedule remains off
+by request; neither that setting nor local archive enablement changes upstream
+defaults or production backup policy.
+
+`live-native-v2-snapshot-start.json` records the actual full-size metadata
+operation: **239.824 ms** to start, **3.113 ms** to close, three relations and
+exactly **18,094,923 rows**, all with maximum stripe/group size 93. It created no
+dump and is not a full-history restore. Actual restore evidence comprises the
+separate 4,530-row controlled proof and the earlier 63,800-archived-row workload.
+
+`live-native-v2-final-accounting.json` records **21,257,725,631 database bytes**
+(19.798 GiB), **18,848,829,440 free bytes** (17.554 GiB), and **83,886,080 WAL
+bytes** (80 MiB). All ten cold canonical/helper/internal-table relations retain
+their original table/index byte totals. The fully charged original cohort ledger
+is **10,612,932,608 bytes**, including **638,230,528** bytes of shared Columnar
+metadata/sequence and **630,784** bytes of maintenance journals. The small sequence
+and journal supplement was measured in the original November 1 UTC ledger and
+was not repeated in this final inventory; its original charge is retained.
+Savings remain **7,834,959,872 bytes (42.47%)** against the post-packing baseline,
+or **7,939,276,800 bytes (42.79%)** against the separate before-packing baseline.
+These are archive-cohort comparisons, not whole-database percentages. The whole
+database grew **107,085,824 bytes** after cutover while ingestion continued.
+
+`isolated-test-cleanup-final.json` records removal of three owned test clusters,
+11 credential files and their network. Observed free space rose **409,006,080
+bytes**, separately from compression; concurrent filesystem activity can affect
+that observation. No production volume was removed.
+
+`native-planner-v2-provenance.json` binds the patch checksum, immutable image,
+source files at the exact revision and independently scoped results.
+`native-v2-final-observation.json` reconciles the final state with the unchanged
+physical ledger. Release validation is complete for the pinned stack and declared
+budgets. Remaining limits include five-session first-use latency, metadata CPU
+growth, unrestricted full-text/native-fallback work with its separate 10-second
+budget, temporary staging headroom, and continuing growth when retention is
+forever. Historical failed gates remain unchanged; they are superseded as the
+current readiness checkpoint, not rewritten as passing measurements.

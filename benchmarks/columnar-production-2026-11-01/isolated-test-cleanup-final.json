@@ -1,0 +1,41 @@
+{
+  "started_utc": "2026-11-02T04:53:24.672133+00:00",
+  "free_before_bytes": 18440470528,
+  "clusters": [
+    {
+      "container": "meshinfo-archive-test",
+      "result": {
+        "removed_owned_test_data": true
+      }
+    },
+    {
+      "container": "meshinfo-planner-baseline",
+      "result": {
+        "removed_owned_test_data": true
+      }
+    },
+    {
+      "container": "meshinfo-columnar-planner-test",
+      "result": {
+        "removed_owned_test_data": true
+      }
+    }
+  ],
+  "credentials_removed": [
+    "connection.json",
+    "docker.env",
+    "history-test.env",
+    "engine-test.env",
+    "planner-connections.json",
+    "planner-connections-v1.json",
+    "planner-tests.env",
+    "planner-native-tests.env",
+    "planner-backup-tests.env",
+    "planner-baseline.env",
+    "planner-patched.env"
+  ],
+  "test_network_removed": true,
+  "completed": true,
+  "free_after_bytes": 18849476608,
+  "finished_utc": "2026-11-02T04:53:27.193579+00:00"
+}

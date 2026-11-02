@@ -1,0 +1,249 @@
+{
+  "format_version": 1,
+  "recorded_date_utc": "2026-11-02",
+  "implementation_revision": "283e35ec7b517cd236c9688ad105b0631f5d4d00",
+  "deployment_started_utc": "2026-11-01T09:18:53.843409+00:00",
+  "deployment_finished_utc": "2026-11-01T09:19:09.006298+00:00",
+  "runtime_image_id": "sha256:80a9b7e3d5b146b42b2a373b3b2c7c2b75e157af9429ad26c793518a91d6dc4d",
+  "postgres_manifest": "sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6",
+  "citus_source_release": "v14.1.0",
+  "citus_tarball_sha256": "e174ed00efba74aaf5a9da87f770f6a7e11274066cce8449d804bc6b17df6ff8",
+  "patch_version": "planner-costing-v2",
+  "patch_sha256": "5b4c632429471bb1010c3b710766fb328494ea53ae42b897290c176b1ce044c3",
+  "extension_sql_version": "14.1-1",
+  "build_scope": "Same pinned source/configuration as baseline; checksum-verified zero-fuzz patch; clean all Columnar objects after shared-header changes; bounded single-job default compilation; runtime excludes compiler/distributed extension.",
+  "source_files": {
+    "Dockerfile.postgres-columnar": {
+      "bytes": 3711,
+      "sha256": "9c968f7dbd59dc25fbd7bfaf7d30cd81b80c0c3640b840ae721e6b244328a455"
+    },
+    ".github/workflows/columnar.yml": {
+      "bytes": 12070,
+      "sha256": "a3de5c77ae52d2a2b5a47ebd35403020c0eac8cc0b059e2e86cd76addb79fc97"
+    },
+    "patches/citus-14.1.0-planner-costing.patch": {
+      "bytes": 21631,
+      "sha256": "5b4c632429471bb1010c3b710766fb328494ea53ae42b897290c176b1ce044c3"
+    },
+    "scripts/verify_columnar_planner_costs.py": {
+      "bytes": 25083,
+      "sha256": "52945ac9f3d73743afbc4e612388f4cea7ec65a19473c72899f5c6a421d8ae86"
+    },
+    "tests/test_columnar_planner_costs.py": {
+      "bytes": 6292,
+      "sha256": "77c4ec86368d7c58cf64b01eb4a683afde84df94e5d3d97378c8af9a5ee5a2b9"
+    },
+    "tests/test_columnar_planner_costs_integration.py": {
+      "bytes": 1100,
+      "sha256": "bfbb1c38e20264ce6c5bc94d1d94a2fa7d27c6c89226d24417a85b083fa129ed"
+    }
+  },
+  "native_parity": {
+    "artifact": "planner-native-parity-v4.json",
+    "paired_cases": 292,
+    "all_exact_cost_plan_and_response_comparisons_passed": true,
+    "both_owned_schemas_removed": true,
+    "synthetic_only": true,
+    "scope": "Retains 289 earlier comparisons and adds 3 repeatable-read cross-connection cases. A committed writer remains invisible within the existing snapshot (0 then 0 rows); releasing it exposes 64 rows on both implementations. Finite fixture proof; timings descriptive."
+  },
+  "validation_runs": [
+    {
+      "artifact": "backend-native-v2-regressions.txt",
+      "passed": 1016,
+      "skipped": 192,
+      "warnings": 1,
+      "duration_seconds": 22.49
+    },
+    {
+      "artifact": "isolated-native-v2-regressions.txt",
+      "passed": 260,
+      "duration_seconds": 104.69
+    },
+    {
+      "artifact": "native-v2-backup-restore.json",
+      "status": "passed",
+      "rows": 4530,
+      "columnar_relations": 2,
+      "chunk_groups": 8
+    }
+  ],
+  "first_page_gate": {
+    "artifact": "live-native-planner-v2-deployment.json",
+    "limit_ms": 1000,
+    "passed": true,
+    "samples_ms": [
+      150.594,
+      14.844,
+      13.994
+    ],
+    "all_response_checks_passed": true,
+    "same_data_volume": true,
+    "scope": "Actual PostgreSQL recreation on same volume with patched binary; shared buffers reset, host cache untouched, normal backend startup before first historical request."
+  },
+  "native_ci": {
+    "run_id": 41292577040,
+    "run_url": "https://github.com/SimmerV/meshinfo/actions/runs/41292577040",
+    "implementation_revision": "283e35ec7b517cd236c9688ad105b0631f5d4d00",
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "all_recorded_critical_steps_passed": true,
+    "artifact": "native-ci-283e35e.json"
+  },
+  "final_large_history_planning_and_load_acceptance": {
+    "artifact": "live-native-v2-final-concurrent-reads.json",
+    "workers": 2,
+    "duration_seconds": 60,
+    "responses": 240,
+    "all_hashes_match": true,
+    "indexed_250ms_p95_gate": true,
+    "cases": 15,
+    "samples_per_case": 16,
+    "worst_p95_ms": 215.39,
+    "scope": "Fixed cases warmed first; normal ingestion continued; no OS/PostgreSQL cache flush. At 16 observations nearest-rank p95 equals maximum."
+  },
+  "earlier_failures_preserved": [
+    "live-final-concurrent-reads.json",
+    "live-final-restart-validation.json",
+    "live-native-final-concurrent-reads.json"
+  ],
+  "privacy_audit": "Production request/payload values and credentials excluded; native parity contains only generated synthetic predicates. Image/volume identities substantiate continuity. Only the backend warning absolute workspace path was redacted.",
+  "artifacts": {
+    "backend-native-v2-regressions.txt": {
+      "bytes": 1788,
+      "sha256": "4966b7136500219ecb0718bb77fad26c5a495d87fae4be954ccaedbe87c3e15c",
+      "source_file_modified_utc": "2026-11-01T09:14:19.613198+00:00",
+      "redaction": "Absolute workspace path replaced with <workspace>; test output otherwise unchanged."
+    },
+    "isolated-native-v2-regressions.txt": {
+      "bytes": 352,
+      "sha256": "6c9da1a1380bd67d126bb82dd985073970994bd64af72281e5b25cb236e4a22f",
+      "source_file_modified_utc": "2026-11-01T09:16:53.471305+00:00"
+    },
+    "native-v2-backup-restore.json": {
+      "bytes": 486,
+      "sha256": "535368f96c47afeee2a5115ab28430bb82e4950b807627991592d434216c2f8b",
+      "source_file_modified_utc": "2026-11-01T09:17:04.417534+00:00"
+    },
+    "live-native-planner-v2-deployment.json": {
+      "bytes": 3988,
+      "sha256": "f16bb794b3a35d8666d864871f02b7c6a08dfc6d731b8d1e87817a945766e377",
+      "source_file_modified_utc": "2026-11-01T09:19:09.005228+00:00"
+    },
+    "planner-native-parity-v4.json": {
+      "bytes": 1290486,
+      "sha256": "8c3f9ce776bf3e5e1bac9348ad17e2ba390eaaf6452a37ed9da39a48429d416b",
+      "source_file_modified_utc": "2026-11-01T09:13:32.247875+00:00"
+    },
+    "native-ci-283e35e.json": {
+      "bytes": 5298,
+      "sha256": "26e24e79ea21cb5b03b29326be1637f9c3b0ef93c688a534327fa8071fd7090e",
+      "source_file_modified_utc": "2026-11-02T04:49:09.450641+00:00"
+    },
+    "live-august-native-v2-planning.json": {
+      "bytes": 163618,
+      "sha256": "44cfb10852de1337a500080f98a4d4619fc24f8157ef3400c7b9d20bf7b192ad",
+      "source_file_modified_utc": "2026-11-02T04:49:53.372658+00:00"
+    },
+    "live-native-v2-five-readers.json": {
+      "bytes": 20434,
+      "sha256": "e8fe6aba9a1dafbd1f7cb91d29978645fdb463b509790ee1ed99bd40ccbac3ed",
+      "source_file_modified_utc": "2026-11-02T04:50:09.182025+00:00"
+    },
+    "live-native-v2-planning-and-concurrency-summary.json": {
+      "bytes": 9868,
+      "sha256": "7b430d8c34b0ca378c9230583e98effb13f9233dac6f99acac5136363decb758",
+      "source_file_modified_utc": "2026-11-02T04:51:23.255753+00:00"
+    },
+    "live-native-v2-final-concurrent-reads.json": {
+      "bytes": 35289,
+      "sha256": "b3725186309512e809098317eedc0c5c61cda0863794fa7a0862b85ef2a43695",
+      "source_file_modified_utc": "2026-11-02T04:51:57.908565+00:00"
+    },
+    "live-native-v2-health.json": {
+      "bytes": 959,
+      "sha256": "0942b137e95280ed582766514b7598d098215ba0e9a6bbea0fc21fff371d0596",
+      "source_file_modified_utc": "2026-11-02T04:52:52.222841+00:00"
+    },
+    "isolated-test-cleanup-final.json": {
+      "bytes": 965,
+      "sha256": "e5061fc824a4fa937dbf8186ea2c34c91481d05ec0cad58e05d27bc8591cd06e",
+      "source_file_modified_utc": "2026-11-02T04:53:27.192666+00:00"
+    },
+    "live-native-v2-final-accounting.json": {
+      "bytes": 8463,
+      "sha256": "c4327bc33e2ed4d0616307d6a3f282a7f4361c5733f59618b7c4c2efa0ea21f3",
+      "source_file_modified_utc": "2026-11-02T04:54:41.386420+00:00"
+    },
+    "live-native-v2-final-operator-status.json": {
+      "bytes": 3194,
+      "sha256": "b6f0625d06978d7fecfbde38b643dd8d04a8b80584d945e2db4ea536e2c70448",
+      "source_file_modified_utc": "2026-11-02T04:54:42.511447+00:00"
+    },
+    "live-native-v2-snapshot-start.json": {
+      "bytes": 1423,
+      "sha256": "3ef8c505bca700b89da295157175a82974e76174916295557fa81f2e05fa084e",
+      "source_file_modified_utc": "2026-11-02T04:56:35.887141+00:00"
+    },
+    "native-v2-final-observation.json": {
+      "bytes": 4531,
+      "sha256": "e596b7ad38f351ef3d00655b619b6364166366b5576e26be67d9911d9e246005",
+      "derived_from": "Final raw reports and unchanged November 1 UTC physical ledger; source reports preserved byte-for-byte."
+    }
+  },
+  "final_component_probe": {
+    "artifact": "live-august-native-v2-planning.json",
+    "cases": 4,
+    "all_response_hashes_match": true,
+    "geometry_unchanged": true,
+    "memory_unit": "KiB of planner context, not process RSS",
+    "scope": "New prepared statements on one fresh connection, JIT off. Extra EXPLAIN and repeated fetches mean whole instrumented times are not ordinary HTTP latency."
+  },
+  "five_fresh_readers": {
+    "artifact": "live-native-v2-five-readers.json",
+    "sessions": 5,
+    "correct_reads": 10,
+    "all_settings_restored": true,
+    "first_ms": [
+      367.615,
+      429.023,
+      409.728,
+      321.908,
+      355.006
+    ],
+    "first_all_under_250ms": false,
+    "warm_ms": [
+      27.96,
+      16.375,
+      35.168,
+      46.95,
+      40.602
+    ],
+    "peak_working_set_bytes": 347344896,
+    "working_set_peak_above_pre_query_bytes": 14127104,
+    "minimum_host_available_bytes": 910303232,
+    "sample_count": 30,
+    "maximum_sample_gap_ms": 48.834,
+    "event_deltas": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0
+    },
+    "resource_guard_triggered": false,
+    "scope": "Five fresh independent production-reader sessions with normal server JIT on; data/OS caches not flushed. Working set is cgroup memory.current minus inactive_file. Sampled peaks can miss shorter spikes; no stable production p95 inference from five calls."
+  },
+  "release_validation_complete": true,
+  "readiness_scope": "Pinned PostgreSQL 18.6/Citus 14.1.0 plus planner-costing-v2, retained same-volume history, declared two-reader HTTP budget and tested backup/restore/lifecycle behavior. This is finite test evidence, not a guarantee for arbitrary workloads or hardware.",
+  "remaining_limitations": [
+    "Five simultaneous fresh reader calls were 321.908\u2013429.023 ms; their 250 ms check remains false. Warm calls were 16.375\u201346.950 ms.",
+    "Unrestricted full-text/native-fallback queries retain the separate bounded 10-second policy; not all arbitrary queries are indexed or sub-250 ms.",
+    "First-use metadata traversal still costs CPU; sampled memory and a short two-reader load test do not establish capacity for arbitrary concurrency.",
+    "Retaining all history still grows indefinitely; source and replacement coexist during migration and the free-space/WAL reserve remains mandatory.",
+    "Actual controlled restore was proved on 4,530 rows, with a separate 63,800-archived-row workload proof earlier; metadata capture on the final 18,094,923-row history does not constitute a restore at that full scale."
+  ],
+  "final_observation_artifact": "native-v2-final-observation.json"
+}
